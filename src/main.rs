@@ -4,10 +4,10 @@ mod domain;
 mod inventory;
 mod storage;
 
-use app::{get_domain_stats, list_domains, scan_domain};
+use app::{get_domain_stats, get_inventory_diff, list_domains, scan_domain};
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
-use cli::{handle_list_command, handle_scan_command, handle_stats_command};
+use cli::{handle_diff_command, handle_list_command, handle_scan_command, handle_stats_command};
 use storage::JsonlStorage;
 
 fn print_usage() {
@@ -17,6 +17,7 @@ fn print_usage() {
     eprintln!("  balebos list --unique        - List unique domains in inventory");
     eprintln!("  balebos stats                - Show basic domain statistics");
     eprintln!("  balebos stats --by-domain    - Show detailed statistics per domain");
+    eprintln!("  balebos diff                 - Show domain changes (last 7 days)");
 }
 
 fn main() {
@@ -139,6 +140,38 @@ fn main() {
             return;
         }
         StatsOptions::None => {}
+    }
+
+    // Check if we're handling a 'diff' command
+    if handle_diff_command() {
+        match get_inventory_diff(&storage, None) {
+            Ok(diff) => {
+                println!("Domain Changes (last 7 days)");
+                println!("---------------------------");
+
+                if !diff.new_domains.is_empty() {
+                    println!("\nNew domains:");
+                    for domain in &diff.new_domains {
+                        println!("+ {}", domain);
+                    }
+                }
+
+                if !diff.missing_domains.is_empty() {
+                    println!("\nMissing domains (not seen recently):");
+                    for domain in &diff.missing_domains {
+                        println!("- {}", domain);
+                    }
+                }
+
+                if diff.new_domains.is_empty() && diff.missing_domains.is_empty() {
+                    println!("No changes detected.");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error getting inventory diff: {}", e);
+            }
+        }
+        return;
     }
 
     // If we get here, no valid command was provided
