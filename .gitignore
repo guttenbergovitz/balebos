@@ -18,6 +18,9 @@ Cargo.lock
 # Generated documentation
 /doc/
 
+# Application data
+/data/
+
 # LLM
 AGENTS.md
 CLAUDE.md
