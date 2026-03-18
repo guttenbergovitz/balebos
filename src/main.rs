@@ -4,8 +4,8 @@ mod domain;
 mod inventory;
 mod storage;
 
-use app::{list_domains, scan_domain};
-use cli::{handle_list_command, handle_scan_command};
+use app::{get_domain_stats, list_domains, scan_domain};
+use cli::{handle_list_command, handle_scan_command, handle_stats_command};
 use storage::JsonlStorage;
 
 fn main() {
@@ -52,9 +52,37 @@ fn main() {
         return;
     }
 
+    // Check if we're handling a 'stats' command
+    if handle_stats_command() {
+        // Get domain statistics from inventory
+        match get_domain_stats(&storage) {
+            Ok(stats) => {
+                println!("Domain Statistics");
+                println!("----------------");
+                println!("Total domain entries: {}", stats.total_entries);
+                println!("Unique domains: {}", stats.unique_domains);
+
+                if let Some(latest) = stats.latest_domain {
+                    println!("Latest domain: {}", latest);
+
+                    if let Some(timestamp) = stats.latest_timestamp {
+                        println!("Added on: {}", timestamp);
+                    }
+                } else {
+                    println!("No domains found in inventory.");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error getting domain statistics: {}", e);
+            }
+        }
+        return;
+    }
+
     // If we get here, no valid command was provided
     // We'll show a helpful message to guide the user
     eprintln!("Usage:");
     eprintln!("  balebos scan <domain>  - Scan a domain and add to inventory");
     eprintln!("  balebos list           - List all domains in inventory");
+    eprintln!("  balebos stats          - Show domain statistics");
 }
