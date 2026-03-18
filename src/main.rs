@@ -5,13 +5,14 @@ mod inventory;
 mod storage;
 
 use app::{
-    check_inventory, get_domain_stats, get_inventory_diff, list_domains, scan_domain, Severity,
+    check_inventory, generate_report, get_domain_stats, get_inventory_diff, list_domains,
+    scan_domain, Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
 use cli::{
-    handle_check_command, handle_diff_command, handle_list_command, handle_scan_command,
-    handle_stats_command,
+    handle_check_command, handle_diff_command, handle_list_command, handle_report_command,
+    handle_scan_command, handle_stats_command,
 };
 use storage::JsonlStorage;
 
@@ -24,6 +25,7 @@ fn print_usage() {
     eprintln!("  balebos stats --by-domain    - Show detailed statistics per domain");
     eprintln!("  balebos diff                 - Show domain changes (last 7 days)");
     eprintln!("  balebos check                - Check for inventory issues and anomalies");
+    eprintln!("  balebos report               - Generate consolidated status report");
 }
 
 fn main() {
@@ -225,6 +227,104 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Error checking inventory: {}", e);
+            }
+        }
+        return;
+    }
+
+    // Check if we're handling a 'report' command
+    if handle_report_command() {
+        match generate_report(&storage) {
+            Ok(report) => {
+                println!("Balebos Report (last 7 days)");
+                println!("----------------------------");
+                println!();
+
+                println!("Inventory:");
+                println!("- total domains: {}", report.total_domains);
+                println!("- unique domains: {}", report.unique_domains);
+                println!();
+
+                println!("Changes:");
+                if report.new_domains > 0 {
+                    println!(
+                        "+ {} new domain{}",
+                        report.new_domains,
+                        if report.new_domains == 1 { "" } else { "s" }
+                    );
+                } else {
+                    println!("+ no new domains");
+                }
+
+                if report.missing_domains > 0 {
+                    println!(
+                        "- {} missing domain{}",
+                        report.missing_domains,
+                        if report.missing_domains == 1 { "" } else { "s" }
+                    );
+                } else {
+                    println!("- no missing domains");
+                }
+                println!();
+
+                println!("Issues:");
+                let total_issues = report.critical_issues + report.warning_issues;
+
+                if total_issues == 0 {
+                    println!("- no issues detected");
+                } else {
+                    if report.stale_domains > 0 {
+                        println!(
+                            "- {} stale domain{} (>14 days)",
+                            report.stale_domains,
+                            if report.stale_domains == 1 { "" } else { "s" }
+                        );
+                    }
+
+                    if report.low_confidence_domains > 0 {
+                        println!(
+                            "- {} low confidence domain{}",
+                            report.low_confidence_domains,
+                            if report.low_confidence_domains == 1 {
+                                ""
+                            } else {
+                                "s"
+                            }
+                        );
+                    }
+
+                    if report.unknown_sources > 0 {
+                        println!(
+                            "- {} unknown source{}",
+                            report.unknown_sources,
+                            if report.unknown_sources == 1 { "" } else { "s" }
+                        );
+                    }
+
+                    if report.invalid_data > 0 {
+                        println!(
+                            "- {} normalization issue{}",
+                            report.invalid_data,
+                            if report.invalid_data == 1 { "" } else { "s" }
+                        );
+                    }
+                }
+                println!();
+
+                println!("Summary:");
+                if report.needs_attention {
+                    println!("⚠️ attention required");
+                } else {
+                    println!("✅ all systems normal");
+                }
+                println!();
+
+                println!("Run specific commands for details:");
+                println!("- 'balebos diff' for change details");
+                println!("- 'balebos check' for issue details");
+            }
+            Err(e) => {
+                eprintln!("Error generating report: {}", e);
             }
         }
         return;
