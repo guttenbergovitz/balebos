@@ -8,7 +8,6 @@ pub struct DomainStats {
     pub unique_domains: usize,
     pub latest_domain: Option<String>,
     pub latest_timestamp: Option<String>,
-    pub domain_counts: HashMap<String, usize>,
     pub top_domains: Vec<(String, usize)>,
 }
 
@@ -66,7 +65,6 @@ pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats, io::Error
         unique_domains: unique_domains.len(),
         latest_domain,
         latest_timestamp,
-        domain_counts,
         top_domains,
     })
 }
