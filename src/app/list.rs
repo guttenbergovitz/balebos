@@ -1,5 +1,6 @@
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
+use std::collections::HashSet;
 use std::io;
 
 // List all domains in the inventory
@@ -7,18 +8,15 @@ use std::io;
 // 1. Reads all inventory items from storage
 // 2. Filters out only domain items
 // 3. Returns a Result with a vector of domain names
-pub fn list_domains(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
-    // Read all inventory items, handling any errors using the ? operator
-    // The ? operator is Rust's way of saying "if this returns an Err, exit the function with that Err"
-    // It's much cleaner than nesting match or if-let statements
+// 4. Optionally deduplicates the domains
+pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>, io::Error> {
+    // Read all inventory items
     let inventory_items: Vec<InventoryItem> = storage.read_all()?;
 
-    // Filter for domain items and collect their names
-    // We're using functional programming concepts here - filter_map is both filtering and transforming
+    // Filter for domain items
     let domains: Vec<String> = inventory_items
         .iter()
         .filter_map(|item| {
-            // Only include items with type "domain"
             if item.item_type == "domain" {
                 Some(item.name.clone())
             } else {
@@ -27,5 +25,12 @@ pub fn list_domains(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
         })
         .collect();
 
-    Ok(domains)
+    // If unique flag is set, deduplicate domains using a HashSet
+    if unique {
+        // Convert to HashSet to remove duplicates and back to Vec
+        let unique_domains: HashSet<String> = domains.into_iter().collect();
+        Ok(unique_domains.into_iter().collect())
+    } else {
+        Ok(domains)
+    }
 }

@@ -1,6 +1,6 @@
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 
 pub struct DomainStats {
@@ -8,6 +8,8 @@ pub struct DomainStats {
     pub unique_domains: usize,
     pub latest_domain: Option<String>,
     pub latest_timestamp: Option<String>,
+    pub domain_counts: HashMap<String, usize>,
+    pub top_domains: Vec<(String, usize)>,
 }
 
 pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats, io::Error> {
@@ -39,10 +41,32 @@ pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats, io::Error
         None => (None, None),
     };
 
+    // Count occurrences of each domain
+    let mut domain_counts = HashMap::new();
+    for domain in domains.iter() {
+        *domain_counts.entry(domain.name.clone()).or_insert(0) += 1;
+    }
+
+    // Find top domains (by count)
+    let mut top_domains: Vec<(String, usize)> = domain_counts
+        .iter()
+        .map(|(name, count)| (name.clone(), *count))
+        .collect();
+
+    // Sort by count (descending)
+    top_domains.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Limit to top 5 for display
+    if top_domains.len() > 5 {
+        top_domains.truncate(5);
+    }
+
     Ok(DomainStats {
         total_entries,
         unique_domains: unique_domains.len(),
         latest_domain,
         latest_timestamp,
+        domain_counts,
+        top_domains,
     })
 }

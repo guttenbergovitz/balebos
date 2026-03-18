@@ -5,12 +5,22 @@ mod inventory;
 mod storage;
 
 use app::{get_domain_stats, list_domains, scan_domain};
+use cli::list::ListOptions;
+use cli::stats::StatsOptions;
 use cli::{handle_list_command, handle_scan_command, handle_stats_command};
 use storage::JsonlStorage;
 
+fn print_usage() {
+    eprintln!("Usage:");
+    eprintln!("  balebos scan <domain>        - Scan a domain and add to inventory");
+    eprintln!("  balebos list                 - List all domains in inventory");
+    eprintln!("  balebos list --unique        - List unique domains in inventory");
+    eprintln!("  balebos stats                - Show basic domain statistics");
+    eprintln!("  balebos stats --by-domain    - Show detailed statistics per domain");
+}
+
 fn main() {
-    // Create storage with the new inventory.jsonl file
-    // This is our centralized inventory for all assets
+    // Create storage with the inventory.jsonl file
     let storage = JsonlStorage::new("data/inventory.jsonl");
 
     // Check if we're handling a 'scan' command
@@ -21,9 +31,13 @@ fn main() {
                 println!("Domain scanned successfully: {}", domain.name);
                 println!("Domain ID: {:?}", domain.id);
                 println!("Discovered at: {}", domain.discovered_at);
+
+                // If the domain was normalized, show the original input
+                if domain_name != domain.name {
+                    println!("Normalized from: {}", domain_name);
+                }
             }
             Err(e) => {
-                // Error handling is important! We don't panic, but inform the user
                 eprintln!("Error scanning domain: {}", e);
             }
         }
@@ -31,58 +45,102 @@ fn main() {
     }
 
     // Check if we're handling a 'list' command
-    if handle_list_command() {
-        // List all domains from inventory
-        match list_domains(&storage) {
-            Ok(domains) => {
-                if domains.is_empty() {
-                    println!("No domains found in inventory.");
-                } else {
-                    println!("Domains in inventory:");
-                    // Iterate through each domain and print it
-                    for domain in domains {
-                        println!("- {}", domain);
+    match handle_list_command() {
+        ListOptions::All => {
+            // List all domains from inventory
+            match list_domains(&storage, false) {
+                Ok(domains) => {
+                    if domains.is_empty() {
+                        println!("No domains found in inventory.");
+                    } else {
+                        println!("All domains in inventory ({}):", domains.len());
+                        for domain in domains {
+                            println!("- {}", domain);
+                        }
                     }
                 }
+                Err(e) => {
+                    eprintln!("Error listing domains: {}", e);
+                }
             }
-            Err(e) => {
-                eprintln!("Error listing domains: {}", e);
-            }
+            return;
         }
-        return;
+        ListOptions::Unique => {
+            // List unique domains from inventory
+            match list_domains(&storage, true) {
+                Ok(domains) => {
+                    if domains.is_empty() {
+                        println!("No domains found in inventory.");
+                    } else {
+                        println!("Unique domains in inventory ({}):", domains.len());
+                        for domain in domains {
+                            println!("- {}", domain);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error listing domains: {}", e);
+                }
+            }
+            return;
+        }
+        ListOptions::None => {}
     }
 
     // Check if we're handling a 'stats' command
-    if handle_stats_command() {
-        // Get domain statistics from inventory
-        match get_domain_stats(&storage) {
-            Ok(stats) => {
-                println!("Domain Statistics");
-                println!("----------------");
-                println!("Total domain entries: {}", stats.total_entries);
-                println!("Unique domains: {}", stats.unique_domains);
+    match handle_stats_command() {
+        StatsOptions::Basic => {
+            // Get domain statistics from inventory
+            match get_domain_stats(&storage) {
+                Ok(stats) => {
+                    println!("Domain Statistics");
+                    println!("----------------");
+                    println!("Total domain entries: {}", stats.total_entries);
+                    println!("Unique domains: {}", stats.unique_domains);
 
-                if let Some(latest) = stats.latest_domain {
-                    println!("Latest domain: {}", latest);
+                    if let Some(latest) = stats.latest_domain {
+                        println!("Latest domain: {}", latest);
 
-                    if let Some(timestamp) = stats.latest_timestamp {
-                        println!("Added on: {}", timestamp);
+                        if let Some(timestamp) = stats.latest_timestamp {
+                            println!("Added on: {}", timestamp);
+                        }
+                    } else {
+                        println!("No domains found in inventory.");
                     }
-                } else {
-                    println!("No domains found in inventory.");
+                }
+                Err(e) => {
+                    eprintln!("Error getting domain statistics: {}", e);
                 }
             }
-            Err(e) => {
-                eprintln!("Error getting domain statistics: {}", e);
-            }
+            return;
         }
-        return;
+        StatsOptions::ByDomain => {
+            // Get domain statistics with detailed counts
+            match get_domain_stats(&storage) {
+                Ok(stats) => {
+                    println!("Domain Statistics By Domain");
+                    println!("---------------------------");
+                    println!("Total domain entries: {}", stats.total_entries);
+                    println!("Unique domains: {}", stats.unique_domains);
+
+                    if !stats.top_domains.is_empty() {
+                        println!("\nTop Domains:");
+                        for (domain, count) in stats.top_domains {
+                            println!("- {} ({} entries)", domain, count);
+                        }
+                    } else {
+                        println!("\nNo domains found in inventory.");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error getting domain statistics: {}", e);
+                }
+            }
+            return;
+        }
+        StatsOptions::None => {}
     }
 
     // If we get here, no valid command was provided
-    // We'll show a helpful message to guide the user
-    eprintln!("Usage:");
-    eprintln!("  balebos scan <domain>  - Scan a domain and add to inventory");
-    eprintln!("  balebos list           - List all domains in inventory");
-    eprintln!("  balebos stats          - Show domain statistics");
+    print_usage();
 }

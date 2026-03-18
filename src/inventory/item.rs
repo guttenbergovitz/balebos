@@ -13,7 +13,7 @@ pub struct InventoryItem {
     // Unique identifier for the item
     pub id: String,
 
-    // Name of the item (e.g., domain name)
+    // Name of the item (e.g., normalized domain name)
     pub name: String,
 
     // When this item was discovered/added to inventory
@@ -21,17 +21,22 @@ pub struct InventoryItem {
 
     // Where this item came from (e.g., "cli", could be "api", "scan", etc. in the future)
     pub source: String,
+
+    // Original input (before normalization) - optional
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_input: Option<String>,
 }
 
 impl InventoryItem {
     // Create a new inventory item from a domain
-    pub fn from_domain(domain: &Domain, source: &str) -> Self {
+    pub fn from_domain(domain: &Domain, source: &str, original_input: Option<String>) -> Self {
         Self {
             item_type: "domain".to_string(),
             id: format!("{:?}", domain.id),
             name: domain.name.clone(),
             discovered_at: domain.discovered_at,
             source: source.to_string(),
+            original_input,
         }
     }
 }
