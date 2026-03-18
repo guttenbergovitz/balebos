@@ -42,4 +42,75 @@ Balebos exists to make that visible and controlled.
 
 ## Status
 
-Early stage. Core pipeline under active development.
+Alpha stage with working core functionality. Main features are implemented and tested.
+
+## Usage
+
+Balebos provides several commands for managing and monitoring your infrastructure:
+
+```bash
+# Scan a domain and add to inventory
+balebos scan example.com
+
+# Discover subdomains using subfinder
+balebos probe subdomains example.com
+
+# List domains in inventory
+balebos list
+balebos list --unique
+
+# Show domain statistics
+balebos stats
+balebos stats --by-domain
+
+# Check for inventory issues and anomalies
+balebos check
+
+# Show changes (last 7 days)
+balebos diff
+
+# Generate consolidated status report
+balebos report
+```
+
+### Data Storage
+
+Balebos stores all data in append-only JSONL files located in the `data/` directory:
+- `data/inventory.jsonl` - Main inventory file containing all assets
+
+This approach ensures:
+- Simple, human-readable storage
+- Audit trail of all changes
+- Easy backup and version control
+- No database dependencies
+
+### Core Concepts
+
+1. **Inventory** - Centralized registry of all infrastructure assets
+2. **Normalization** - Assets are normalized for consistent storage and analysis
+3. **Anomaly detection** - Identification of suspicious patterns and deviations
+4. **Operational monitoring** - Regular reports highlighting changes requiring attention
+
+### Integration
+
+Balebos integrates with external tools to leverage proven solutions:
+- `subfinder` - For subdomain enumeration
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/balebos.git
+cd balebos
+
+# Build the binary
+cargo build --release
+
+# Run Balebos
+./target/release/balebos
+```
+
+### Dependencies
+
+- Rust 2021 edition or newer
+- For subdomain scanning: [subfinder](https://github.com/projectdiscovery/subfinder)
