@@ -1,2 +1,24 @@
+# Rust build artifacts
+/target/
+
+# IDE configurations
 .idea/
-target/
+.vscode/
+
+# Dependency files
+Cargo.lock
+
+# Backup files
+**/*.rs.bk
+
+# Environment variables
+.env
+.env.*
+
+# Generated documentation
+/doc/
+
+# LLM
+AGENTS.md
+CLAUDE.md
+GEMINI.md
