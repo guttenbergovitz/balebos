@@ -341,6 +341,18 @@ fn main() {
                             if report.invalid_data == 1 { "" } else { "s" }
                         );
                     }
+
+                    if report.suspicious_subdomains > 0 {
+                        println!(
+                            "- {} suspicious subdomain pattern{}",
+                            report.suspicious_subdomains,
+                            if report.suspicious_subdomains == 1 {
+                                ""
+                            } else {
+                                "s"
+                            }
+                        );
+                    }
                 }
                 println!();
 
