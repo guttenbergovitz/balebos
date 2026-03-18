@@ -7,9 +7,13 @@ pub struct Report {
     pub total_domains: usize,
     pub unique_domains: usize,
 
-    // Changes
+    // Domain Changes
     pub new_domains: usize,
     pub missing_domains: usize,
+
+    // Subdomain Changes
+    pub new_subdomains: usize,
+    pub missing_subdomains: usize,
 
     // Issues
     pub critical_issues: usize,
@@ -20,6 +24,7 @@ pub struct Report {
     pub low_confidence_domains: usize,
     pub unknown_sources: usize,
     pub invalid_data: usize,
+    pub suspicious_subdomains: usize,
 
     // Attention level
     pub needs_attention: bool,
@@ -68,11 +73,18 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
         })
         .count();
 
+    let suspicious_subdomains = issues
+        .iter()
+        .filter(|i| i.message.contains("Suspicious subdomain"))
+        .count();
+
     // Determine if attention is needed
     let needs_attention = critical_issues > 0
         || warning_issues >= 2
         || !diff.new_domains.is_empty()
-        || !diff.missing_domains.is_empty();
+        || !diff.missing_domains.is_empty()
+        || !diff.new_subdomains.is_empty()
+        || suspicious_subdomains > 0;
 
     Ok(Report {
         total_domains: stats.total_entries,
@@ -81,6 +93,9 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
         new_domains: diff.new_domains.len(),
         missing_domains: diff.missing_domains.len(),
 
+        new_subdomains: diff.new_subdomains.len(),
+        missing_subdomains: diff.missing_subdomains.len(),
+
         critical_issues,
         warning_issues,
 
@@ -88,6 +103,7 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
         low_confidence_domains,
         unknown_sources,
         invalid_data,
+        suspicious_subdomains,
 
         needs_attention,
     })

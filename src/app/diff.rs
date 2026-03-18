@@ -6,8 +6,13 @@ use std::io;
 use std::time::{Duration, SystemTime};
 
 pub struct InventoryDiff {
+    // Domains
     pub new_domains: Vec<String>,
     pub missing_domains: Vec<String>,
+
+    // Subdomains
+    pub new_subdomains: Vec<String>,
+    pub missing_subdomains: Vec<String>,
 }
 
 // Parse a string as a duration in days
@@ -38,9 +43,10 @@ pub fn get_inventory_diff(
     // Threshold time for recent vs past
     let threshold = get_time_threshold(days_ago);
 
-    // Split items into recent and past
-    let mut recent_items = Vec::new();
-    let mut past_items = Vec::new();
+    // Process domains =======================================
+    // Split domain items into recent and past
+    let mut recent_domains = HashSet::new();
+    let mut past_domains = HashSet::new();
 
     for item in &items {
         // Skip non-domain items
@@ -53,15 +59,11 @@ pub fn get_inventory_diff(
         let system_time = SystemTime::from(datetime);
 
         if system_time >= threshold {
-            recent_items.push(item);
+            recent_domains.insert(&item.name);
         } else {
-            past_items.push(item);
+            past_domains.insert(&item.name);
         }
     }
-
-    // Get unique domain names
-    let recent_domains: HashSet<&String> = recent_items.iter().map(|item| &item.name).collect();
-    let past_domains: HashSet<&String> = past_items.iter().map(|item| &item.name).collect();
 
     // Find new and missing domains
     let new_domains: Vec<String> = recent_domains
@@ -74,8 +76,42 @@ pub fn get_inventory_diff(
         .map(|&s| s.clone())
         .collect();
 
+    // Process subdomains ===================================
+    // Now handle subdomains
+    let mut recent_subdomains = HashSet::new();
+    let mut past_subdomains = HashSet::new();
+
+    for item in &items {
+        if item.item_type != "subdomain" {
+            continue;
+        }
+
+        // Convert DateTime<Utc> to SystemTime
+        let datetime: DateTime<Utc> = item.discovered_at;
+        let system_time = SystemTime::from(datetime);
+
+        if system_time >= threshold {
+            recent_subdomains.insert(&item.name);
+        } else {
+            past_subdomains.insert(&item.name);
+        }
+    }
+
+    // Find new and missing subdomains
+    let new_subdomains: Vec<String> = recent_subdomains
+        .difference(&past_subdomains)
+        .map(|&s| s.clone())
+        .collect();
+
+    let missing_subdomains: Vec<String> = past_subdomains
+        .difference(&recent_subdomains)
+        .map(|&s| s.clone())
+        .collect();
+
     Ok(InventoryDiff {
         new_domains,
         missing_domains,
+        new_subdomains,
+        missing_subdomains,
     })
 }

@@ -1,6 +1,7 @@
 pub mod check;
 pub mod diff;
 pub mod list;
+pub mod probe;
 pub mod report;
 pub mod scan;
 pub mod stats;
@@ -8,6 +9,7 @@ pub mod stats;
 pub use self::check::{check_inventory, Severity};
 pub use self::diff::get_inventory_diff;
 pub use self::list::list_domains;
+pub use self::probe::probe_subdomains;
 pub use self::report::generate_report;
 pub use self::scan::scan_domain;
 pub use self::stats::get_domain_stats;

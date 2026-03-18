@@ -6,26 +6,27 @@ mod storage;
 
 use app::{
     check_inventory, generate_report, get_domain_stats, get_inventory_diff, list_domains,
-    scan_domain, Severity,
+    probe_subdomains, scan_domain, Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
 use cli::{
-    handle_check_command, handle_diff_command, handle_list_command, handle_report_command,
-    handle_scan_command, handle_stats_command,
+    handle_check_command, handle_diff_command, handle_list_command, handle_probe_command,
+    handle_report_command, handle_scan_command, handle_stats_command,
 };
 use storage::JsonlStorage;
 
 fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  balebos scan <domain>        - Scan a domain and add to inventory");
-    eprintln!("  balebos list                 - List all domains in inventory");
-    eprintln!("  balebos list --unique        - List unique domains in inventory");
-    eprintln!("  balebos stats                - Show basic domain statistics");
-    eprintln!("  balebos stats --by-domain    - Show detailed statistics per domain");
-    eprintln!("  balebos diff                 - Show domain changes (last 7 days)");
-    eprintln!("  balebos check                - Check for inventory issues and anomalies");
-    eprintln!("  balebos report               - Generate consolidated status report");
+    eprintln!("  balebos scan <domain>         - Scan a domain and add to inventory");
+    eprintln!("  balebos list                  - List all domains in inventory");
+    eprintln!("  balebos list --unique         - List unique domains in inventory");
+    eprintln!("  balebos stats                 - Show basic domain statistics");
+    eprintln!("  balebos stats --by-domain     - Show detailed statistics per domain");
+    eprintln!("  balebos diff                  - Show domain changes (last 7 days)");
+    eprintln!("  balebos check                 - Check for inventory issues and anomalies");
+    eprintln!("  balebos report                - Generate consolidated status report");
+    eprintln!("  balebos probe subdomains <domain> - Discover subdomains using subfinder");
 }
 
 fn main() {
@@ -246,6 +247,7 @@ fn main() {
                 println!();
 
                 println!("Changes:");
+                // Domain changes
                 if report.new_domains > 0 {
                     println!(
                         "+ {} new domain{}",
@@ -254,6 +256,37 @@ fn main() {
                     );
                 } else {
                     println!("+ no new domains");
+                }
+
+                if report.missing_domains > 0 {
+                    println!(
+                        "- {} missing domain{}",
+                        report.missing_domains,
+                        if report.missing_domains == 1 { "" } else { "s" }
+                    );
+                } else {
+                    println!("- no missing domains");
+                }
+
+                // Subdomain changes (if available)
+                if report.new_subdomains > 0 {
+                    println!(
+                        "+ {} new subdomain{}",
+                        report.new_subdomains,
+                        if report.new_subdomains == 1 { "" } else { "s" }
+                    );
+                }
+
+                if report.missing_subdomains > 0 {
+                    println!(
+                        "- {} missing subdomain{}",
+                        report.missing_subdomains,
+                        if report.missing_subdomains == 1 {
+                            ""
+                        } else {
+                            "s"
+                        }
+                    );
                 }
 
                 if report.missing_domains > 0 {
@@ -328,6 +361,31 @@ fn main() {
             }
         }
         return;
+    }
+
+    // Check if we're handling a 'probe' command
+    if let Some((probe_type, domain)) = handle_probe_command() {
+        if probe_type == "subdomains" {
+            match probe_subdomains(&domain, &storage) {
+                Ok(subdomains) => {
+                    if subdomains.is_empty() {
+                        println!("No subdomains found for {}", domain);
+                    } else {
+                        println!("Found {} subdomains for {}:", subdomains.len(), domain);
+                        for subdomain in &subdomains {
+                            println!("- {}", subdomain);
+                        }
+                        println!("\nAll subdomains added to inventory.");
+                        println!("Run 'balebos diff' to see changes or 'balebos check' to detect anomalies.");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error probing subdomains: {}", e);
+                    eprintln!("\nMake sure subfinder is installed: https://github.com/projectdiscovery/subfinder");
+                }
+            }
+            return;
+        }
     }
 
     // If we get here, no valid command was provided

@@ -149,6 +149,40 @@ fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
     issues
 }
 
+// Check for suspicious subdomains that don't match expected patterns
+fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
+    // Common legitimate patterns for subdomains
+    let allowed_patterns = vec![
+        "www", "api", "dev", "staging", "test", "admin", "mail", "smtp", "ftp", "blog", "shop",
+        "store", "support",
+    ];
+
+    let mut issues = Vec::new();
+
+    for item in items.iter().filter(|item| item.item_type == "subdomain") {
+        // Check if subdomain starts with any allowed pattern
+        let subdomain_parts: Vec<&str> = item.name.split('.').collect();
+
+        if subdomain_parts.is_empty() {
+            continue;
+        }
+
+        // Get the first part of the subdomain (before first dot)
+        let first_part = subdomain_parts[0];
+
+        // If it doesn't match any allowed pattern, flag it
+        if !allowed_patterns
+            .iter()
+            .any(|pattern| first_part.contains(pattern))
+        {
+            let message = format!("Suspicious subdomain pattern: {}", item.name);
+            issues.push(Issue::warning(&message));
+        }
+    }
+
+    issues
+}
+
 // Run all checks and collect issues
 pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> {
     let items: Vec<InventoryItem> = storage.read_all()?;
@@ -164,6 +198,7 @@ pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> 
     issues.extend(check_low_confidence(&items));
     issues.extend(check_unknown_sources(&items));
     issues.extend(check_invalid_data(&items));
+    issues.extend(check_subdomain_patterns(&items)); // New check for suspicious subdomains
 
     Ok(issues)
 }
