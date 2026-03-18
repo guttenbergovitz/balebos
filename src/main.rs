@@ -4,10 +4,15 @@ mod domain;
 mod inventory;
 mod storage;
 
-use app::{get_domain_stats, get_inventory_diff, list_domains, scan_domain};
+use app::{
+    check_inventory, get_domain_stats, get_inventory_diff, list_domains, scan_domain, Severity,
+};
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
-use cli::{handle_diff_command, handle_list_command, handle_scan_command, handle_stats_command};
+use cli::{
+    handle_check_command, handle_diff_command, handle_list_command, handle_scan_command,
+    handle_stats_command,
+};
 use storage::JsonlStorage;
 
 fn print_usage() {
@@ -18,6 +23,7 @@ fn print_usage() {
     eprintln!("  balebos stats                - Show basic domain statistics");
     eprintln!("  balebos stats --by-domain    - Show detailed statistics per domain");
     eprintln!("  balebos diff                 - Show domain changes (last 7 days)");
+    eprintln!("  balebos check                - Check for inventory issues and anomalies");
 }
 
 fn main() {
@@ -169,6 +175,56 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Error getting inventory diff: {}", e);
+            }
+        }
+        return;
+    }
+
+    // Check if we're handling a 'check' command
+    if handle_check_command() {
+        match check_inventory(&storage) {
+            Ok(issues) => {
+                if issues.is_empty() {
+                    println!("No issues found in inventory.");
+                    return;
+                }
+
+                // Count issues by severity
+                let critical_count = issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::Critical)
+                    .count();
+                let warning_count = issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::Warning)
+                    .count();
+
+                println!("Inventory Check Results");
+                println!("----------------------");
+                println!(
+                    "Found {} issues ({} critical, {} warnings)",
+                    issues.len(),
+                    critical_count,
+                    warning_count
+                );
+
+                // Group and display by severity
+                if critical_count > 0 {
+                    println!("\nCRITICAL ISSUES:");
+                    for issue in issues.iter().filter(|i| i.severity == Severity::Critical) {
+                        println!("! {}", issue.message);
+                    }
+                }
+
+                if warning_count > 0 {
+                    println!("\nWARNINGS:");
+                    for issue in issues.iter().filter(|i| i.severity == Severity::Warning) {
+                        println!("- {}", issue.message);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error checking inventory: {}", e);
             }
         }
         return;
