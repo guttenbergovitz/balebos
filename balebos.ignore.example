@@ -1,0 +1,26 @@
+# Balebos ignore file
+# Each line represents an asset pattern to ignore
+# Empty lines and lines starting with # are ignored
+
+# ----- Example Configuration -----
+
+# Exact matches by domain name
+test.example.com
+staging.example.org
+
+# Glob patterns (wildcard matching)
+*.dev.*
+*.staging.*
+*.test.*
+*-temp.*
+
+# System-generated patterns
+www*.cdn-*
+
+# ----- Usage Instructions -----
+# 1. Copy this file to "balebos.ignore" to activate
+# 2. Customize the patterns to match your environment
+# 3. Run balebos commands to see filtered results
+#
+# Note: Ignoring only affects display of results;
+# all data continues to be stored for future reference.
