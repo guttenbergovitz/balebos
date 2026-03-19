@@ -284,13 +284,11 @@ pub fn check_inventory(
 
     if let Ok(file) = std::fs::File::open(file_path) {
         let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(line_content) = line {
-                if line_content.contains("\"item_type\":\"http_check\"") {
-                    match serde_json::from_str::<HttpObservation>(&line_content) {
-                        Ok(obs) => http_observations.push(obs),
-                        Err(e) => eprintln!("Error parsing HTTP observation: {}", e),
-                    }
+        for line_content in reader.lines().map_while(Result::ok) {
+            if line_content.contains("\"item_type\":\"http_check\"") {
+                match serde_json::from_str::<HttpObservation>(&line_content) {
+                    Ok(obs) => http_observations.push(obs),
+                    Err(e) => eprintln!("Error parsing HTTP observation: {}", e),
                 }
             }
         }
