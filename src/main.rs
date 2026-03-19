@@ -10,6 +10,7 @@ use exit_codes::*;
 use ignore::load_ignore_patterns;
 use std::process;
 
+use app::probe_http::HttpErrorKind;
 use app::{
     check_inventory, generate_report, get_domain_stats, get_inventory_diff, http_check,
     list_domains, probe_subdomains, scan_domain, Severity,
@@ -442,16 +443,42 @@ fn main() {
             match http_check(&domain, &storage) {
                 Ok(observation) => {
                     println!("HTTP check completed for {}", domain);
-                    println!("Status: {}", observation.status);
-                    println!("Response time: {}ms", observation.response_time_ms);
-                    println!("\nObservation added to inventory.");
-                    println!("Run 'balebos check' to detect anomalies or 'balebos report' for a status summary.");
 
-                    // Return appropriate exit code based on HTTP status
-                    if observation.status >= 500 {
-                        process::exit(EXIT_HTTP_SERVER_ERROR);
-                    } else if observation.status >= 400 {
-                        process::exit(EXIT_HTTP_CLIENT_ERROR);
+                    // Display result based on success or error
+                    if let Some(status) = observation.status {
+                        println!("Status: {}", status);
+                        println!("Response time: {}ms", observation.response_time_ms);
+                    } else if let Some(error_kind) = observation.error_kind {
+                        println!("Probe failed: {:?}", error_kind);
+                        println!(
+                            "Error: {}",
+                            observation.error_message.as_deref().unwrap_or("unknown")
+                        );
+                        println!("Response time: {}ms", observation.response_time_ms);
+                    }
+
+                    println!("\nObservation added to inventory.");
+                    println!(
+                        "Run 'balebos check' to detect anomalies or 'balebos report' for a status summary."
+                    );
+
+                    // Map observation to exit code
+                    if let Some(error_kind) = observation.error_kind {
+                        match error_kind {
+                            HttpErrorKind::DnsNotFound => {
+                                process::exit(EXIT_DOMAIN_NOT_FOUND);
+                            }
+                            HttpErrorKind::Timeout | HttpErrorKind::ConnectionError => {
+                                process::exit(EXIT_PROBE_ERROR);
+                            }
+                            _ => process::exit(EXIT_PROBE_ERROR),
+                        }
+                    } else if let Some(status) = observation.status {
+                        if status >= 500 {
+                            process::exit(EXIT_HTTP_SERVER_ERROR);
+                        } else if status >= 400 {
+                            process::exit(EXIT_HTTP_CLIENT_ERROR);
+                        }
                     }
                     process::exit(EXIT_SUCCESS);
                 }
