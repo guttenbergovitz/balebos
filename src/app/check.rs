@@ -1,9 +1,10 @@
+use crate::app::probe_http::HttpObservation;
 use crate::domain::normalize_domain;
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
-use std::io;
+use std::io::{self, BufRead, BufReader};
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,9 +184,114 @@ fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
     issues
 }
 
+// Check for HTTP status issues
+fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservation]) -> Vec<Issue> {
+    let mut issues = Vec::new();
+
+    // Find the latest HTTP check for each domain
+    let mut domain_latest_http: HashMap<String, &HttpObservation> = HashMap::new();
+
+    for obs in http_observations {
+        if obs.asset_type == "domain" {
+            match domain_latest_http.get(&obs.target) {
+                Some(existing) => {
+                    if obs.checked_at > existing.checked_at {
+                        domain_latest_http.insert(obs.target.clone(), obs);
+                    }
+                }
+                None => {
+                    domain_latest_http.insert(obs.target.clone(), obs);
+                }
+            }
+        }
+    }
+
+    // Check HTTP status codes
+    for (domain, observation) in &domain_latest_http {
+        // Critical for 5xx errors
+        if observation.status >= 500 {
+            let message = format!(
+                "Domain {} returned HTTP status {} (server error)",
+                domain, observation.status
+            );
+            issues.push(Issue::critical(&message));
+        }
+        // Warning for 4xx errors
+        else if observation.status >= 400 {
+            let message = format!(
+                "Domain {} returned HTTP status {} (client error)",
+                domain, observation.status
+            );
+            issues.push(Issue::warning(&message));
+        }
+    }
+
+    // Check for domains without HTTP checks in the last 24 hours
+    let now = Utc::now();
+    let one_day = chrono::Duration::days(1);
+
+    // Build set of domains in inventory
+    let domains: HashSet<String> = items
+        .iter()
+        .filter(|item| item.item_type == "domain")
+        .map(|item| item.name.clone())
+        .collect();
+
+    // Wypisz informacje diagnostyczne
+    println!("Found {} domains in inventory", domains.len());
+    println!("Found {} HTTP observations", http_observations.len());
+    for obs in http_observations.iter() {
+        println!("HTTP observation for {}: status {}", obs.target, obs.status);
+    }
+
+    // Check which domains are missing HTTP observations
+    for domain in domains {
+        match domain_latest_http.get(&domain) {
+            Some(obs) => {
+                // Check if the last observation is older than 24 hours
+                let age = now.signed_duration_since(obs.checked_at);
+                if age > one_day {
+                    let message = format!(
+                        "No recent HTTP check for domain {} (last check: {})",
+                        domain,
+                        obs.checked_at.format("%Y-%m-%d %H:%M")
+                    );
+                    issues.push(Issue::warning(&message));
+                }
+            }
+            None => {
+                // This domain has no HTTP observations at all
+                let message = format!("No HTTP checks found for domain {}", domain);
+                issues.push(Issue::warning(&message));
+            }
+        }
+    }
+
+    issues
+}
+
 // Run all checks and collect issues
 pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> {
     let items: Vec<InventoryItem> = storage.read_all()?;
+
+    // Odczytaj obserwacje HTTP - używamy bezpośredniego wczytywania pliku
+    // aby uniknąć problemów z typami serializacji
+    let file_path = storage.get_filepath();
+    let mut http_observations = Vec::new();
+
+    if let Ok(file) = std::fs::File::open(file_path) {
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line_content) = line {
+                if line_content.contains("\"item_type\":\"http_check\"") {
+                    match serde_json::from_str::<HttpObservation>(&line_content) {
+                        Ok(obs) => http_observations.push(obs),
+                        Err(e) => eprintln!("Error parsing HTTP observation: {}", e),
+                    }
+                }
+            }
+        }
+    }
 
     if items.is_empty() {
         return Ok(vec![Issue::warning("No items in inventory")]);
@@ -198,7 +304,8 @@ pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> 
     issues.extend(check_low_confidence(&items));
     issues.extend(check_unknown_sources(&items));
     issues.extend(check_invalid_data(&items));
-    issues.extend(check_subdomain_patterns(&items)); // New check for suspicious subdomains
+    issues.extend(check_subdomain_patterns(&items)); // Check for suspicious subdomains
+    issues.extend(check_http_status(&items, &http_observations)); // Check HTTP status issues
 
     Ok(issues)
 }

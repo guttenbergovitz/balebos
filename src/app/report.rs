@@ -26,6 +26,10 @@ pub struct Report {
     pub invalid_data: usize,
     pub suspicious_subdomains: usize,
 
+    // HTTP issues
+    pub http_errors: usize,
+    pub missing_http_checks: usize,
+
     // Attention level
     pub needs_attention: bool,
 }
@@ -78,13 +82,26 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
         .filter(|i| i.message.contains("Suspicious subdomain"))
         .count();
 
+    let http_errors = issues
+        .iter()
+        .filter(|i| i.message.contains("HTTP status"))
+        .count();
+
+    let missing_http_checks = issues
+        .iter()
+        .filter(|i| {
+            i.message.contains("No HTTP checks") || i.message.contains("No recent HTTP check")
+        })
+        .count();
+
     // Determine if attention is needed
     let needs_attention = critical_issues > 0
         || warning_issues >= 2
         || !diff.new_domains.is_empty()
         || !diff.missing_domains.is_empty()
         || !diff.new_subdomains.is_empty()
-        || suspicious_subdomains > 0;
+        || suspicious_subdomains > 0
+        || http_errors > 0;
 
     Ok(Report {
         total_domains: stats.total_entries,
@@ -104,6 +121,8 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
         unknown_sources,
         invalid_data,
         suspicious_subdomains,
+        http_errors,
+        missing_http_checks,
 
         needs_attention,
     })

@@ -17,6 +17,11 @@ impl JsonlStorage {
         }
     }
 
+    // Getter dla ścieżki pliku
+    pub fn get_filepath(&self) -> &str {
+        &self.filepath
+    }
+
     // Save an item to JSONL storage
     // This is append-only - we only add new records, never modify existing ones
     // Why append-only?

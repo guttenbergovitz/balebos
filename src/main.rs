@@ -1,12 +1,16 @@
 mod app;
 mod cli;
 mod domain;
+mod exit_codes;
 mod inventory;
 mod storage;
 
+use exit_codes::*;
+use std::process;
+
 use app::{
-    check_inventory, generate_report, get_domain_stats, get_inventory_diff, list_domains,
-    probe_subdomains, scan_domain, Severity,
+    check_inventory, generate_report, get_domain_stats, get_inventory_diff, http_check,
+    list_domains, probe_subdomains, scan_domain, Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
@@ -27,6 +31,7 @@ fn print_usage() {
     eprintln!("  balebos check                 - Check for inventory issues and anomalies");
     eprintln!("  balebos report                - Generate consolidated status report");
     eprintln!("  balebos probe subdomains <domain> - Discover subdomains using subfinder");
+    eprintln!("  balebos probe http <domain>   - Check HTTP status of a domain");
 }
 
 fn main() {
@@ -49,9 +54,10 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Error scanning domain: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
             }
         }
-        return;
+        process::exit(EXIT_SUCCESS);
     }
 
     // Check if we're handling a 'list' command
@@ -71,9 +77,10 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("Error listing domains: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
                 }
             }
-            return;
+            process::exit(EXIT_SUCCESS);
         }
         ListOptions::Unique => {
             // List unique domains from inventory
@@ -90,9 +97,10 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("Error listing domains: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
                 }
             }
-            return;
+            process::exit(EXIT_SUCCESS);
         }
         ListOptions::None => {}
     }
@@ -120,9 +128,10 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("Error getting domain statistics: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
                 }
             }
-            return;
+            process::exit(EXIT_SUCCESS);
         }
         StatsOptions::ByDomain => {
             // Get domain statistics with detailed counts
@@ -144,9 +153,10 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("Error getting domain statistics: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
                 }
             }
-            return;
+            process::exit(EXIT_SUCCESS);
         }
         StatsOptions::None => {}
     }
@@ -178,9 +188,10 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Error getting inventory diff: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
             }
         }
-        return;
+        process::exit(EXIT_SUCCESS);
     }
 
     // Check if we're handling a 'check' command
@@ -189,7 +200,7 @@ fn main() {
             Ok(issues) => {
                 if issues.is_empty() {
                     println!("No issues found in inventory.");
-                    return;
+                    process::exit(EXIT_SUCCESS);
                 }
 
                 // Count issues by severity
@@ -225,12 +236,20 @@ fn main() {
                         println!("- {}", issue.message);
                     }
                 }
+
+                // Return appropriate exit code based on severity
+                if critical_count > 0 {
+                    process::exit(EXIT_CRITICAL_ISSUES);
+                } else if warning_count > 0 {
+                    process::exit(EXIT_WARNING_ISSUES);
+                }
+                process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
                 eprintln!("Error checking inventory: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
             }
         }
-        return;
     }
 
     // Check if we're handling a 'report' command
@@ -288,16 +307,6 @@ fn main() {
                         }
                     );
                 }
-
-                if report.missing_domains > 0 {
-                    println!(
-                        "- {} missing domain{}",
-                        report.missing_domains,
-                        if report.missing_domains == 1 { "" } else { "s" }
-                    );
-                } else {
-                    println!("- no missing domains");
-                }
                 println!();
 
                 println!("Issues:");
@@ -353,6 +362,26 @@ fn main() {
                             }
                         );
                     }
+
+                    if report.http_errors > 0 {
+                        println!(
+                            "- {} HTTP status error{}",
+                            report.http_errors,
+                            if report.http_errors == 1 { "" } else { "s" }
+                        );
+                    }
+
+                    if report.missing_http_checks > 0 {
+                        println!(
+                            "- {} domain{} without recent HTTP checks",
+                            report.missing_http_checks,
+                            if report.missing_http_checks == 1 {
+                                ""
+                            } else {
+                                "s"
+                            }
+                        );
+                    }
                 }
                 println!();
 
@@ -367,12 +396,18 @@ fn main() {
                 println!("Run specific commands for details:");
                 println!("- 'balebos diff' for change details");
                 println!("- 'balebos check' for issue details");
+
+                // Return appropriate exit code based on needs_attention
+                if report.needs_attention {
+                    process::exit(EXIT_WARNING_ISSUES);
+                }
+                process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
                 eprintln!("Error generating report: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
             }
         }
-        return;
     }
 
     // Check if we're handling a 'probe' command
@@ -390,16 +425,40 @@ fn main() {
                         println!("\nAll subdomains added to inventory.");
                         println!("Run 'balebos diff' to see changes or 'balebos check' to detect anomalies.");
                     }
+                    process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
                     eprintln!("Error probing subdomains: {}", e);
                     eprintln!("\nMake sure subfinder is installed: https://github.com/projectdiscovery/subfinder");
+                    process::exit(EXIT_EXTERNAL_TOOL_ERROR);
                 }
             }
-            return;
+        } else if probe_type == "http" {
+            match http_check(&domain, &storage) {
+                Ok(observation) => {
+                    println!("HTTP check completed for {}", domain);
+                    println!("Status: {}", observation.status);
+                    println!("Response time: {}ms", observation.response_time_ms);
+                    println!("\nObservation added to inventory.");
+                    println!("Run 'balebos check' to detect anomalies or 'balebos report' for a status summary.");
+
+                    // Return appropriate exit code based on HTTP status
+                    if observation.status >= 500 {
+                        process::exit(EXIT_HTTP_SERVER_ERROR);
+                    } else if observation.status >= 400 {
+                        process::exit(EXIT_HTTP_CLIENT_ERROR);
+                    }
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error checking HTTP status: {}", e);
+                    process::exit(EXIT_HTTP_ERROR);
+                }
+            }
         }
     }
 
     // If we get here, no valid command was provided
     print_usage();
+    process::exit(EXIT_INVALID_ARGUMENT);
 }
