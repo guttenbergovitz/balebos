@@ -20,6 +20,7 @@ Cargo.lock
 
 # Application data
 /data/
+balebos.ignore
 
 # LLM
 AGENTS.md
