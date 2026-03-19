@@ -2,10 +2,12 @@ mod app;
 mod cli;
 mod domain;
 mod exit_codes;
+mod ignore;
 mod inventory;
 mod storage;
 
 use exit_codes::*;
+use ignore::load_ignore_patterns;
 use std::process;
 
 use app::{
@@ -37,6 +39,9 @@ fn print_usage() {
 fn main() {
     // Create storage with the inventory.jsonl file
     let storage = JsonlStorage::new("data/inventory.jsonl");
+
+    // Load ignore patterns from balebos.ignore (if present)
+    let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
     // Check if we're handling a 'scan' command
     if let Some(domain_name) = handle_scan_command() {
@@ -196,7 +201,7 @@ fn main() {
 
     // Check if we're handling a 'check' command
     if handle_check_command() {
-        match check_inventory(&storage) {
+        match check_inventory(&storage, &ignore_patterns) {
             Ok(issues) => {
                 if issues.is_empty() {
                     println!("No issues found in inventory.");
@@ -254,7 +259,7 @@ fn main() {
 
     // Check if we're handling a 'report' command
     if handle_report_command() {
-        match generate_report(&storage) {
+        match generate_report(&storage, &ignore_patterns) {
             Ok(report) => {
                 println!("Balebos Report (last 7 days)");
                 println!("----------------------------");

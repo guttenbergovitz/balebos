@@ -34,7 +34,10 @@ pub struct Report {
     pub needs_attention: bool,
 }
 
-pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
+pub fn generate_report(
+    storage: &JsonlStorage,
+    ignore_patterns: &[String],
+) -> Result<Report, io::Error> {
     // Get stats
     let stats = get_domain_stats(storage)?;
 
@@ -42,7 +45,7 @@ pub fn generate_report(storage: &JsonlStorage) -> Result<Report, io::Error> {
     let diff = get_inventory_diff(storage, None)?;
 
     // Get issues
-    let issues = check_inventory(storage)?;
+    let issues = check_inventory(storage, ignore_patterns)?;
 
     // Count issues by severity
     let critical_issues = issues

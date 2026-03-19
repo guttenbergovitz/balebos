@@ -237,7 +237,7 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
         .map(|item| item.name.clone())
         .collect();
 
-    // Wypisz informacje diagnostyczne
+    // Print diagnostic information
     println!("Found {} domains in inventory", domains.len());
     println!("Found {} HTTP observations", http_observations.len());
     for obs in http_observations.iter() {
@@ -271,11 +271,14 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
 }
 
 // Run all checks and collect issues
-pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> {
+pub fn check_inventory(
+    storage: &JsonlStorage,
+    ignore_patterns: &[String],
+) -> Result<Vec<Issue>, io::Error> {
     let items: Vec<InventoryItem> = storage.read_all()?;
 
-    // Odczytaj obserwacje HTTP - używamy bezpośredniego wczytywania pliku
-    // aby uniknąć problemów z typami serializacji
+    // Read HTTP observations - using direct file reading
+    // to avoid serialization type issues
     let file_path = storage.get_filepath();
     let mut http_observations = Vec::new();
 
@@ -297,15 +300,47 @@ pub fn check_inventory(storage: &JsonlStorage) -> Result<Vec<Issue>, io::Error> 
         return Ok(vec![Issue::warning("No items in inventory")]);
     }
 
+    // Filter out ignored items
+    let mut ignored_count = 0;
+
+    let filtered_items: Vec<InventoryItem> = items
+        .into_iter()
+        .filter(|item| {
+            let should_ignore = crate::ignore::is_ignored(&item.name, ignore_patterns);
+            if should_ignore {
+                ignored_count += 1;
+            }
+            !should_ignore
+        })
+        .collect();
+
+    // If we filtered out everything, special case
+    if !filtered_items.is_empty() {
+        println!(
+            "Ignoring {} items based on balebos.ignore patterns",
+            ignored_count
+        );
+    }
+
     let mut issues = Vec::new();
 
-    // Run each check
-    issues.extend(check_staleness(&items, 14)); // 14 days threshold
-    issues.extend(check_low_confidence(&items));
-    issues.extend(check_unknown_sources(&items));
-    issues.extend(check_invalid_data(&items));
-    issues.extend(check_subdomain_patterns(&items)); // Check for suspicious subdomains
-    issues.extend(check_http_status(&items, &http_observations)); // Check HTTP status issues
+    // Run each check using filtered items
+    issues.extend(check_staleness(&filtered_items, 14)); // 14 days threshold
+    issues.extend(check_low_confidence(&filtered_items));
+    issues.extend(check_unknown_sources(&filtered_items));
+    issues.extend(check_invalid_data(&filtered_items));
+    issues.extend(check_subdomain_patterns(&filtered_items)); // Check for suspicious subdomains
+
+    // Filter HTTP observations for ignored domains
+    let filtered_http_observations: Vec<HttpObservation> = http_observations
+        .into_iter()
+        .filter(|obs| !crate::ignore::is_ignored(&obs.target, ignore_patterns))
+        .collect();
+
+    issues.extend(check_http_status(
+        &filtered_items,
+        &filtered_http_observations,
+    )); // Check HTTP status issues
 
     Ok(issues)
 }
