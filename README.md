@@ -55,6 +55,9 @@ balebos scan example.com
 # Discover subdomains using subfinder
 balebos probe subdomains example.com
 
+# Check HTTP status of a domain
+balebos probe http example.com
+
 # List domains in inventory
 balebos list
 balebos list --unique
@@ -90,11 +93,13 @@ This approach ensures:
 2. **Normalization** - Assets are normalized for consistent storage and analysis
 3. **Anomaly detection** - Identification of suspicious patterns and deviations
 4. **Operational monitoring** - Regular reports highlighting changes requiring attention
+5. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
 
 ### Integration
 
 Balebos integrates with external tools to leverage proven solutions:
 - `subfinder` - For subdomain enumeration
+- HTTP checks - For web service monitoring
 
 ## Installation
 

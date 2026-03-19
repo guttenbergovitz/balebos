@@ -95,7 +95,7 @@ Balebos distinguishes between assets (inventory) and observations (checks, probe
 
 Examples:
 - domain → inventory
-- http_check → observation
+- http_check → observation (HTTP status, response time)
 - subdomain_scan → observation
 
 This separation ensures that the system can track both what should exist (the inventory)
@@ -157,19 +157,28 @@ Balebos uses Rust's `Result` type extensively to handle errors gracefully:
 
 Rather than reinventing the wheel, Balebos integrates with proven tools:
 - subfinder for subdomain enumeration
+- HTTP client for web service status checks
 - (future) other specialized tools for specific tasks
 
-Integration is done via subprocess execution and output parsing, following Unix philosophy.
+Integration is done via subprocess execution and output parsing for external tools, and via direct API calls for built-in tooling, following Unix philosophy.
 
 ### Exit Semantics
 
 Balebos uses exit codes to signal system state:
 
 - 0 → all systems normal
-- 1 → warnings present
-- 2 → critical issues detected
+- 1 → general error
+- 2 → invalid argument
+- 3 → storage error
+- 20 → critical issues detected
+- 21 → warning issues detected
+- 30 → HTTP error
+- 31 → HTTP client error (4xx)
+- 32 → HTTP server error (5xx)
+- 40 → probe error
+- 41 → external tool error
 
-This allows integration with automation and alerting systems.
+This allows integration with automation and alerting systems for specific response types.
 
 ## Extension Points
 
@@ -189,6 +198,11 @@ Balebos can be extended in several ways:
    - Add checks to the check_inventory function
    - Define new issue types and severity levels
    - Update reporting to highlight new issues
+
+4. **Custom Filtering**
+   - Define patterns in balebos.ignore
+   - Create specific ignore rules for your environment
+   - Filter noisy or irrelevant assets without modifying storage
 
 ## Design Decisions and Trade-offs
 

@@ -36,6 +36,18 @@ This command:
 - Adds each subdomain to the inventory
 - Marks the source as "subfinder"
 
+#### Checking HTTP Status
+
+```bash
+balebos probe http example.com
+```
+
+This command:
+- Attempts HTTPS connection with fallback to HTTP
+- Records HTTP status code and response time
+- Adds observation to inventory with timestamp
+- Returns exit code based on HTTP status (for automation)
+
 ### Querying Data
 
 #### Listing Domains
@@ -72,6 +84,8 @@ This command analyzes inventory data for:
 - Unknown data sources
 - Normalization issues
 - Suspicious subdomain patterns
+- HTTP status errors (4xx, 5xx)
+- Missing HTTP checks
 
 #### Tracking Changes
 
@@ -112,7 +126,12 @@ For effective use of Balebos, we recommend:
    balebos report | mail -s "Balebos Daily Report" your@email.com
    ```
 
-3. **Deep Analysis** (as needed):
+3. **HTTP Status Monitoring**:
+   ```bash
+   balebos probe http yourdomain.com
+   ```
+
+4. **Deep Analysis** (as needed):
    ```bash
    balebos check
    balebos diff
@@ -160,6 +179,46 @@ steps:
     command: balebos check
     condition: always()
 ```
+
+## Filtering with balebos.ignore
+
+Balebos supports non-destructive filtering of noisy or irrelevant assets without modifying stored data.
+
+### Creating an Ignore File
+
+Create a file named `balebos.ignore` in the root directory:
+
+```
+# Comment lines are ignored
+example-test.com
+*.staging.*
+dev-*
+```
+
+### Supported Pattern Types
+
+- **Exact matches**: Match the entire asset name exactly
+- **Glob patterns**: Use `*` as a wildcard to match any characters
+
+### Effect on Commands
+
+Assets matching the patterns in `balebos.ignore` will be:
+- Excluded from `check` and `report` commands
+- Not counted in statistics or anomaly detection
+- Still stored in the inventory (filtering happens only at read time)
+
+### Example
+
+If you have many test domains that trigger warnings but aren't important:
+
+```
+# balebos.ignore
+*.test.*
+*-temp.*
+staging-*
+```
+
+This will filter them from reports while maintaining the complete data store.
 
 ## Extending Balebos
 
