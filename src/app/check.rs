@@ -1,4 +1,4 @@
-use crate::app::probe_http::HttpObservation;
+use crate::app::probe_http::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
@@ -206,23 +206,56 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
         }
     }
 
-    // Check HTTP status codes
+    // Check HTTP status codes and errors
     for (domain, observation) in &domain_latest_http {
-        // Critical for 5xx errors
-        if observation.status >= 500 {
-            let message = format!(
-                "Domain {} returned HTTP status {} (server error)",
-                domain, observation.status
-            );
-            issues.push(Issue::critical(&message));
+        // If there was a network error
+        if let Some(error_kind) = &observation.error_kind {
+            match error_kind {
+                HttpErrorKind::DnsNotFound => {
+                    issues.push(Issue::critical(&format!(
+                        "Domain {} - DNS lookup failed",
+                        domain
+                    )));
+                }
+                HttpErrorKind::Timeout => {
+                    issues.push(Issue::warning(&format!(
+                        "Domain {} - HTTP check timed out",
+                        domain
+                    )));
+                }
+                HttpErrorKind::TlsError => {
+                    issues.push(Issue::warning(&format!(
+                        "Domain {} - TLS/certificate error",
+                        domain
+                    )));
+                }
+                HttpErrorKind::ConnectionError => {
+                    issues.push(Issue::warning(&format!(
+                        "Domain {} - Connection error",
+                        domain
+                    )));
+                }
+                HttpErrorKind::ProbeError => {
+                    issues.push(Issue::warning(&format!(
+                        "Domain {} - HTTP probe failed",
+                        domain
+                    )));
+                }
+            }
         }
-        // Warning for 4xx errors
-        else if observation.status >= 400 {
-            let message = format!(
-                "Domain {} returned HTTP status {} (client error)",
-                domain, observation.status
-            );
-            issues.push(Issue::warning(&message));
+        // If request succeeded, check HTTP status codes
+        else if let Some(status) = observation.status {
+            if status >= 500 {
+                issues.push(Issue::critical(&format!(
+                    "Domain {} returned HTTP status {} (server error)",
+                    domain, status
+                )));
+            } else if status >= 400 {
+                issues.push(Issue::warning(&format!(
+                    "Domain {} returned HTTP status {} (client error)",
+                    domain, status
+                )));
+            }
         }
     }
 
@@ -236,13 +269,6 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
         .filter(|item| item.item_type == "domain")
         .map(|item| item.name.clone())
         .collect();
-
-    // Print diagnostic information
-    println!("Found {} domains in inventory", domains.len());
-    println!("Found {} HTTP observations", http_observations.len());
-    for obs in http_observations.iter() {
-        println!("HTTP observation for {}: status {}", obs.target, obs.status);
-    }
 
     // Check which domains are missing HTTP observations
     for domain in domains {
