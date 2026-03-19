@@ -3,8 +3,68 @@ use crate::domain::normalize_domain;
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
 use std::io::{self, BufRead, BufReader};
+use std::path::Path;
+
+// Lightweight header to identify record type
+#[derive(Deserialize)]
+struct RecordHeader {
+    item_type: String,
+}
+
+// Read heterogeneous JSONL log and separate into typed records
+fn read_mixed_records(
+    storage: &JsonlStorage,
+) -> Result<(Vec<InventoryItem>, Vec<HttpObservation>), io::Error> {
+    let file_path = storage.get_filepath();
+    let path = Path::new(file_path);
+
+    let mut items = Vec::new();
+    let mut observations = Vec::new();
+
+    if !path.exists() {
+        return Ok((items, observations));
+    }
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+
+    for line_result in reader.lines() {
+        let line = line_result?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        // Check record type without full deserialization
+        let header = match serde_json::from_str::<RecordHeader>(&line) {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+
+        // Route to appropriate type based on item_type
+        match header.item_type.as_str() {
+            "domain" | "subdomain" => {
+                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
+                    items.push(item);
+                }
+            }
+            "http_check" => {
+                if let Ok(obs) = serde_json::from_str::<HttpObservation>(&line) {
+                    observations.push(obs);
+                }
+            }
+            _ => {
+                // Unknown record type, skip silently
+            }
+        }
+    }
+
+    Ok((items, observations))
+}
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,24 +361,8 @@ pub fn check_inventory(
     storage: &JsonlStorage,
     ignore_patterns: &[String],
 ) -> Result<Vec<Issue>, io::Error> {
-    let items: Vec<InventoryItem> = storage.read_all()?;
-
-    // Read HTTP observations - using direct file reading
-    // to avoid serialization type issues
-    let file_path = storage.get_filepath();
-    let mut http_observations = Vec::new();
-
-    if let Ok(file) = std::fs::File::open(file_path) {
-        let reader = BufReader::new(file);
-        for line_content in reader.lines().map_while(Result::ok) {
-            if line_content.contains("\"item_type\":\"http_check\"") {
-                match serde_json::from_str::<HttpObservation>(&line_content) {
-                    Ok(obs) => http_observations.push(obs),
-                    Err(e) => eprintln!("Error parsing HTTP observation: {}", e),
-                }
-            }
-        }
-    }
+    // Read all records from heterogeneous JSONL log
+    let (items, http_observations) = read_mixed_records(storage)?;
 
     if items.is_empty() {
         return Ok(vec![Issue::warning("No items in inventory")]);
