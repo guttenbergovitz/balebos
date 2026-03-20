@@ -181,6 +181,45 @@ This report helps identify:
 - Backend failures requiring attention (5xx errors)
 - Network connectivity problems
 
+#### Exporting Status Reports
+
+The status report can be exported to multiple formats for integration with other tools and for sharing with team members:
+
+**CSV Export** - For analysis in spreadsheet applications:
+```bash
+# Export to default file (domain-status-report.csv)
+balebos status --export csv
+
+# Export to custom file
+balebos status --export csv /path/to/report.csv
+```
+
+**Markdown Export** - For documentation and version control:
+```bash
+# Export to default file (domain-status-report.md)
+balebos status --export markdown
+
+# Export to custom file
+balebos status --export markdown /path/to/report.md
+```
+
+**HTML Export** - For viewing in web browsers with styled formatting:
+```bash
+# Export to default file (domain-status-report.html)
+balebos status --export html
+
+# Export to custom file
+balebos status --export html /path/to/report.html
+```
+
+**Export Features:**
+- All formats include timestamp of report generation
+- CSV: Tabular format with all asset details (target, status, HTTP code, response time, errors)
+- Markdown: Summary statistics table plus detailed sections for each status category
+- HTML: Styled report with color-coded status indicators, responsive layout, and sortable tables
+- Default output files use descriptive names in the current directory
+- All exports preserve complete data for later analysis
+
 ### Integration
 
 Balebos integrates with external tools to leverage proven solutions:
