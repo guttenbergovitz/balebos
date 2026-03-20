@@ -52,6 +52,7 @@ struct HttpCheck {
     response_time_ms: u32,
     checked_at: String,
     error_kind: Option<String>,
+    #[allow(dead_code)]
     error_message: Option<String>,
 }
 
