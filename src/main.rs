@@ -12,9 +12,9 @@ use std::process;
 
 use app::probe_http::HttpErrorKind;
 use app::{
-    batch_process, check_inventory, display_domain_status, display_domain_tree, generate_report,
-    get_domain_stats, get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain,
-    Severity,
+    batch_process, check_inventory, display_domain_status, display_domain_tree, export_status_csv,
+    export_status_html, export_status_markdown, generate_report, get_domain_stats,
+    get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
@@ -152,6 +152,59 @@ fn main() {
 
     // Check if we're handling a 'status' command
     if args.len() > 1 && args[1] == "status" {
+        // Check for export flags
+        if args.len() > 2 {
+            match args[2].as_str() {
+                "--export" | "-e" => {
+                    if args.len() < 4 {
+                        eprintln!("Usage: balebos status --export <format> [output_file]");
+                        eprintln!("Formats: csv, markdown, html");
+                        process::exit(EXIT_INVALID_ARGUMENT);
+                    }
+
+                    let format = &args[3];
+                    let output_file = if args.len() > 4 {
+                        args[4].clone()
+                    } else {
+                        format!(
+                            "domain-status-report.{}",
+                            match format.as_str() {
+                                "csv" => "csv",
+                                "markdown" | "md" => "md",
+                                "html" => "html",
+                                _ => {
+                                    eprintln!("Unknown format: {}", format);
+                                    process::exit(EXIT_INVALID_ARGUMENT);
+                                }
+                            }
+                        )
+                    };
+
+                    let result = match format.as_str() {
+                        "csv" => export_status_csv(&storage, &output_file),
+                        "markdown" | "md" => export_status_markdown(&storage, &output_file),
+                        "html" => export_status_html(&storage, &output_file),
+                        _ => {
+                            eprintln!("Unknown format: {}", format);
+                            process::exit(EXIT_INVALID_ARGUMENT);
+                        }
+                    };
+
+                    match result {
+                        Ok(_) => process::exit(EXIT_SUCCESS),
+                        Err(e) => {
+                            eprintln!("Error exporting status report: {}", e);
+                            process::exit(EXIT_GENERAL_ERROR);
+                        }
+                    }
+                }
+                _ => {
+                    // Unknown flag, continue with normal display
+                }
+            }
+        }
+
+        // Default: display to console
         match display_domain_status(&storage) {
             Ok(_) => {
                 process::exit(EXIT_SUCCESS);

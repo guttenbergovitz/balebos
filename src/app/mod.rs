@@ -19,5 +19,7 @@ pub use self::probe_http::http_check;
 pub use self::report::generate_report;
 pub use self::scan::scan_domain;
 pub use self::stats::get_domain_stats;
-pub use self::status::display_domain_status;
+pub use self::status::{
+    display_domain_status, export_status_csv, export_status_html, export_status_markdown,
+};
 pub use self::tree::display_domain_tree;
