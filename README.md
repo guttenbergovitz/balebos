@@ -62,6 +62,9 @@ balebos probe http example.com
 balebos list
 balebos list --unique
 
+# Display domain hierarchy with nested subdomains
+balebos tree
+
 # Show domain statistics
 balebos stats
 balebos stats --by-domain
@@ -94,6 +97,42 @@ This approach ensures:
 3. **Anomaly detection** - Identification of suspicious patterns and deviations
 4. **Operational monitoring** - Regular reports highlighting changes requiring attention
 5. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+
+### Domain Hierarchy Visualization
+
+The `balebos tree` command displays your domains in a hierarchical tree structure, showing the relationship between root domains and their discovered subdomains:
+
+```
+Domain Hierarchy (645)
+
+├── 🔵 farmchamps.pl
+│   ├── ◇ klub
+│   ├── ◇ search
+│   ├── ◇ stage
+│   │   ├── ◇ api
+│   │   │   └── ◇ klub
+│   │   └── ◇ klub
+│   └── ◇ www
+│
+├── 🔵 pethearts.de
+│   ├── ◇ stage
+│   │   └── ◇ wissenswiese
+│   ├── ◇ tracking
+│   │   └── ◇ news
+│   └── ◇ www
+│       └── ◇ stage
+│           └── ◇ wissenswiese
+```
+
+**Legend:**
+- 🔵 = Root domain (added to inventory via `balebos scan` or batch import)
+- ◇ = Subdomain (discovered via `balebos probe subdomains`)
+
+This view helps identify:
+- Which domains have complex subdomain structures
+- Multi-level nested subdomains (e.g., `api.stage.klub.farmchamps.pl`)
+- Organizational patterns in your infrastructure
+- Domains without discovered subdomains (leaves in the tree)
 
 ### Integration
 

@@ -1,3 +1,29 @@
+/// Tree visualization module for displaying domain hierarchies.
+///
+/// This module provides functionality to display domains and their discovered subdomains
+/// in a hierarchical tree format. It helps visualize the organizational structure of your
+/// infrastructure by showing which domains have nested subdomains.
+///
+/// # Features
+///
+/// - Displays root domains (marked with 🔵) at the top level
+/// - Shows subdomains (marked with ◇) nested under their parent domains
+/// - Supports multi-level nesting (subdomains of subdomains)
+/// - Preserves parent-child relationships from subdomain discovery
+///
+/// # Example
+///
+/// For a domain structure like:
+/// - `example.com` (root domain)
+///   - `api.example.com` (subdomain)
+///     - `dev.api.example.com` (nested subdomain)
+///
+/// The output would be:
+/// ```text
+/// ├── 🔵 example.com
+/// │   └── ◇ api
+/// │       └── ◇ dev
+/// ```
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use serde::Deserialize;
