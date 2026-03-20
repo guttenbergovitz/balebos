@@ -1,3 +1,38 @@
+/// Domain status report module for displaying HTTP probe results.
+///
+/// This module provides functionality to generate health reports of all assets in the
+/// inventory, showing their HTTP probe status grouped by category. It helps identify
+/// which domains are alive, have problems, or haven't been probed yet.
+///
+/// # Features
+///
+/// - Categorizes all assets by HTTP status (200, 3xx/4xx, 5xx, network errors)
+/// - Shows statistics (count and percentage) for each category
+/// - Displays latest probe result for each asset (deduplicates by most recent check)
+/// - Includes response times for successful connections
+/// - Shows detailed error information for failures
+///
+/// # Status Categories
+///
+/// - 🟢 **Alive (200)** - Working domains
+/// - 🟡 **Client Errors (3xx/4xx)** - Redirect/auth/notfound issues
+/// - 🔴 **Server Errors (5xx)** - Backend problems
+/// - ⚠️ **Network Errors** - DNS, timeout, TLS, connection failures
+/// - ⚪ **Unchecked** - Not yet probed
+///
+/// # Example Output
+///
+/// ```text
+/// Domain Status Report
+/// ====================
+/// Total assets: 1001
+///
+/// Status Summary:
+///   🟢 Alive (HTTP 200):         654 ( 65.3%)
+///   🟡 Client errors (4xx):      133 ( 13.3%)
+///   🔴 Server errors (5xx):       32 (  3.2%)
+///   ⚠️  Network errors:           182 ( 18.2%)
+/// ```
 use crate::storage::JsonlStorage;
 use serde::Deserialize;
 use std::collections::BTreeMap;

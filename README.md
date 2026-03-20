@@ -65,6 +65,9 @@ balebos list --unique
 # Display domain hierarchy with nested subdomains
 balebos tree
 
+# Show domain live status with HTTP codes
+balebos status
+
 # Show domain statistics
 balebos stats
 balebos stats --by-domain
@@ -133,6 +136,50 @@ This view helps identify:
 - Multi-level nested subdomains (e.g., `api.stage.klub.farmchamps.pl`)
 - Organizational patterns in your infrastructure
 - Domains without discovered subdomains (leaves in the tree)
+
+### Domain Live Status Report
+
+The `balebos status` command provides a comprehensive health report of all assets, showing HTTP probe results grouped by status:
+
+```
+Domain Status Report
+====================
+Total assets: 1001
+
+Status Summary:
+  🟢 Alive (HTTP 200):         654 ( 65.3%)
+  🟡 Client errors (4xx):      133 ( 13.3%)
+  🔴 Server errors (5xx):       32 (  3.2%)
+  ⚠️  Network errors:           182 ( 18.2%)
+  ⚪ Unchecked:                  0 (  0.0%)
+
+🟢 ALIVE (HTTP 200) - 654 assets
+...
+
+🔴 SERVER ERRORS (5xx) - 32 assets
+...
+
+🟡 CLIENT ERRORS (3xx/4xx) - 133 assets
+...
+
+⚠️  NETWORK ERRORS - 182 assets
+...
+```
+
+**Status Categories:**
+- **🟢 Alive** - Domains responding with HTTP 200 (working correctly)
+- **🟡 Client Errors** - HTTP 3xx/4xx responses (redirects, authentication, not found)
+- **🔴 Server Errors** - HTTP 5xx responses (backend failures)
+- **⚠️ Network Errors** - DNS failures, timeouts, TLS errors, connection errors
+- **⚪ Unchecked** - Assets not yet probed
+
+This report helps identify:
+- Overall portfolio health percentage
+- Which domains have infrastructure issues
+- DNS resolution problems
+- Services with configuration issues (4xx errors)
+- Backend failures requiring attention (5xx errors)
+- Network connectivity problems
 
 ### Integration
 
