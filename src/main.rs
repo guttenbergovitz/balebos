@@ -12,8 +12,9 @@ use std::process;
 
 use app::probe_http::HttpErrorKind;
 use app::{
-    batch_process, check_inventory, display_domain_tree, generate_report, get_domain_stats,
-    get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
+    batch_process, check_inventory, display_domain_status, display_domain_tree, generate_report,
+    get_domain_stats, get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain,
+    Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
@@ -32,6 +33,7 @@ fn print_usage() {
     eprintln!("  balebos list                       - List all domains in inventory");
     eprintln!("  balebos list --unique              - List unique domains in inventory");
     eprintln!("  balebos tree                       - Show domain hierarchy with subdomains");
+    eprintln!("  balebos status                     - Show domain live status with HTTP codes");
     eprintln!("  balebos stats                      - Show basic domain statistics");
     eprintln!("  balebos stats --by-domain          - Show detailed statistics per domain");
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
@@ -143,6 +145,19 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("Error displaying domain tree: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+    }
+
+    // Check if we're handling a 'status' command
+    if args.len() > 1 && args[1] == "status" {
+        match display_domain_status(&storage) {
+            Ok(_) => {
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error displaying domain status: {}", e);
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }
