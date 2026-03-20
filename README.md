@@ -62,6 +62,12 @@ balebos probe http example.com
 balebos list
 balebos list --unique
 
+# Display domain hierarchy with nested subdomains
+balebos tree
+
+# Show domain live status with HTTP codes
+balebos status
+
 # Show domain statistics
 balebos stats
 balebos stats --by-domain
@@ -94,6 +100,125 @@ This approach ensures:
 3. **Anomaly detection** - Identification of suspicious patterns and deviations
 4. **Operational monitoring** - Regular reports highlighting changes requiring attention
 5. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+
+### Domain Hierarchy Visualization
+
+The `balebos tree` command displays your domains in a hierarchical tree structure, showing the relationship between root domains and their discovered subdomains:
+
+```
+Domain Hierarchy (645)
+
+├── 🔵 farmchamps.pl
+│   ├── ◇ klub
+│   ├── ◇ search
+│   ├── ◇ stage
+│   │   ├── ◇ api
+│   │   │   └── ◇ klub
+│   │   └── ◇ klub
+│   └── ◇ www
+│
+├── 🔵 pethearts.de
+│   ├── ◇ stage
+│   │   └── ◇ wissenswiese
+│   ├── ◇ tracking
+│   │   └── ◇ news
+│   └── ◇ www
+│       └── ◇ stage
+│           └── ◇ wissenswiese
+```
+
+**Legend:**
+- 🔵 = Root domain (added to inventory via `balebos scan` or batch import)
+- ◇ = Subdomain (discovered via `balebos probe subdomains`)
+
+This view helps identify:
+- Which domains have complex subdomain structures
+- Multi-level nested subdomains (e.g., `api.stage.klub.farmchamps.pl`)
+- Organizational patterns in your infrastructure
+- Domains without discovered subdomains (leaves in the tree)
+
+### Domain Live Status Report
+
+The `balebos status` command provides a comprehensive health report of all assets, showing HTTP probe results grouped by status:
+
+```
+Domain Status Report
+====================
+Total assets: 1001
+
+Status Summary:
+  🟢 Alive (HTTP 200):         654 ( 65.3%)
+  🟡 Client errors (4xx):      133 ( 13.3%)
+  🔴 Server errors (5xx):       32 (  3.2%)
+  ⚠️  Network errors:           182 ( 18.2%)
+  ⚪ Unchecked:                  0 (  0.0%)
+
+🟢 ALIVE (HTTP 200) - 654 assets
+...
+
+🔴 SERVER ERRORS (5xx) - 32 assets
+...
+
+🟡 CLIENT ERRORS (3xx/4xx) - 133 assets
+...
+
+⚠️  NETWORK ERRORS - 182 assets
+...
+```
+
+**Status Categories:**
+- **🟢 Alive** - Domains responding with HTTP 200 (working correctly)
+- **🟡 Client Errors** - HTTP 3xx/4xx responses (redirects, authentication, not found)
+- **🔴 Server Errors** - HTTP 5xx responses (backend failures)
+- **⚠️ Network Errors** - DNS failures, timeouts, TLS errors, connection errors
+- **⚪ Unchecked** - Assets not yet probed
+
+This report helps identify:
+- Overall portfolio health percentage
+- Which domains have infrastructure issues
+- DNS resolution problems
+- Services with configuration issues (4xx errors)
+- Backend failures requiring attention (5xx errors)
+- Network connectivity problems
+
+#### Exporting Status Reports
+
+The status report can be exported to multiple formats for integration with other tools and for sharing with team members:
+
+**CSV Export** - For analysis in spreadsheet applications:
+```bash
+# Export to default file (domain-status-report.csv)
+balebos status --export csv
+
+# Export to custom file
+balebos status --export csv /path/to/report.csv
+```
+
+**Markdown Export** - For documentation and version control:
+```bash
+# Export to default file (domain-status-report.md)
+balebos status --export markdown
+
+# Export to custom file
+balebos status --export markdown /path/to/report.md
+```
+
+**HTML Export** - For viewing in web browsers with styled formatting:
+```bash
+# Export to default file (domain-status-report.html)
+balebos status --export html
+
+# Export to custom file
+balebos status --export html /path/to/report.html
+```
+
+**Export Features:**
+- All formats include timestamp of report generation
+- CSV: Tabular format with all asset details (target, status, HTTP code, response time, errors)
+- Markdown: Summary statistics table plus detailed sections for each status category
+- HTML: Styled report with color-coded status indicators, responsive layout, and sortable tables
+- Default output files use descriptive names in the current directory
+- All exports preserve complete data for later analysis
 
 ### Integration
 

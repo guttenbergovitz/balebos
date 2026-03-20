@@ -12,8 +12,9 @@ use std::process;
 
 use app::probe_http::HttpErrorKind;
 use app::{
-    check_inventory, generate_report, get_domain_stats, get_inventory_diff, http_check,
-    list_domains, probe_subdomains, scan_domain, Severity,
+    batch_process, check_inventory, display_domain_status, display_domain_tree, export_status_csv,
+    export_status_html, export_status_markdown, generate_report, get_domain_stats,
+    get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
 use cli::list::ListOptions;
 use cli::stats::StatsOptions;
@@ -25,16 +26,21 @@ use storage::JsonlStorage;
 
 fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  balebos scan <domain>         - Scan a domain and add to inventory");
-    eprintln!("  balebos list                  - List all domains in inventory");
-    eprintln!("  balebos list --unique         - List unique domains in inventory");
-    eprintln!("  balebos stats                 - Show basic domain statistics");
-    eprintln!("  balebos stats --by-domain     - Show detailed statistics per domain");
-    eprintln!("  balebos diff                  - Show domain changes (last 7 days)");
-    eprintln!("  balebos check                 - Check for inventory issues and anomalies");
-    eprintln!("  balebos report                - Generate consolidated status report");
-    eprintln!("  balebos probe subdomains <domain> - Discover subdomains using subfinder");
-    eprintln!("  balebos probe http <domain>   - Check HTTP status of a domain");
+    eprintln!("  balebos scan <domain>              - Scan a domain and add to inventory");
+    eprintln!(
+        "  balebos batch <file>               - Batch process domains from file (full recon)"
+    );
+    eprintln!("  balebos list                       - List all domains in inventory");
+    eprintln!("  balebos list --unique              - List unique domains in inventory");
+    eprintln!("  balebos tree                       - Show domain hierarchy with subdomains");
+    eprintln!("  balebos status                     - Show domain live status with HTTP codes");
+    eprintln!("  balebos stats                      - Show basic domain statistics");
+    eprintln!("  balebos stats --by-domain          - Show detailed statistics per domain");
+    eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
+    eprintln!("  balebos check                      - Check for inventory issues and anomalies");
+    eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
+    eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
 }
 
 fn main() {
@@ -64,6 +70,25 @@ fn main() {
             }
         }
         process::exit(EXIT_SUCCESS);
+    }
+
+    // Check if we're handling a 'batch' command
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && args[1] == "batch" {
+        if args.len() < 3 {
+            eprintln!("Usage: balebos batch <file>");
+            process::exit(EXIT_INVALID_ARGUMENT);
+        }
+
+        match batch_process(&args[2], &storage, &ignore_patterns) {
+            Ok(_stats) => {
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error during batch processing: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        }
     }
 
     // Check if we're handling a 'list' command
@@ -109,6 +134,86 @@ fn main() {
             process::exit(EXIT_SUCCESS);
         }
         ListOptions::None => {}
+    }
+
+    // Check if we're handling a 'tree' command
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && args[1] == "tree" {
+        match display_domain_tree(&storage) {
+            Ok(_) => {
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error displaying domain tree: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+    }
+
+    // Check if we're handling a 'status' command
+    if args.len() > 1 && args[1] == "status" {
+        // Check for export flags
+        if args.len() > 2 {
+            match args[2].as_str() {
+                "--export" | "-e" => {
+                    if args.len() < 4 {
+                        eprintln!("Usage: balebos status --export <format> [output_file]");
+                        eprintln!("Formats: csv, markdown, html");
+                        process::exit(EXIT_INVALID_ARGUMENT);
+                    }
+
+                    let format = &args[3];
+                    let output_file = if args.len() > 4 {
+                        args[4].clone()
+                    } else {
+                        format!(
+                            "domain-status-report.{}",
+                            match format.as_str() {
+                                "csv" => "csv",
+                                "markdown" | "md" => "md",
+                                "html" => "html",
+                                _ => {
+                                    eprintln!("Unknown format: {}", format);
+                                    process::exit(EXIT_INVALID_ARGUMENT);
+                                }
+                            }
+                        )
+                    };
+
+                    let result = match format.as_str() {
+                        "csv" => export_status_csv(&storage, &output_file),
+                        "markdown" | "md" => export_status_markdown(&storage, &output_file),
+                        "html" => export_status_html(&storage, &output_file),
+                        _ => {
+                            eprintln!("Unknown format: {}", format);
+                            process::exit(EXIT_INVALID_ARGUMENT);
+                        }
+                    };
+
+                    match result {
+                        Ok(_) => process::exit(EXIT_SUCCESS),
+                        Err(e) => {
+                            eprintln!("Error exporting status report: {}", e);
+                            process::exit(EXIT_GENERAL_ERROR);
+                        }
+                    }
+                }
+                _ => {
+                    // Unknown flag, continue with normal display
+                }
+            }
+        }
+
+        // Default: display to console
+        match display_domain_status(&storage) {
+            Ok(_) => {
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error displaying domain status: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
     }
 
     // Check if we're handling a 'stats' command
