@@ -10,6 +10,7 @@ pub const EXIT_INVALID_ARGUMENT: i32 = 2;
 pub const EXIT_STORAGE_ERROR: i32 = 3;
 
 // Domain-related errors
+#[allow(dead_code)]
 pub const EXIT_DOMAIN_ERROR: i32 = 10;
 pub const EXIT_DOMAIN_NOT_FOUND: i32 = 11;
 

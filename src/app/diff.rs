@@ -1,9 +1,18 @@
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use std::collections::HashSet;
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
+
+// Lightweight header to identify record type
+#[derive(Deserialize)]
+struct RecordHeader {
+    item_type: String,
+}
 
 pub struct InventoryDiff {
     // Domains
@@ -38,7 +47,36 @@ pub fn get_inventory_diff(
     storage: &JsonlStorage,
     days_ago: Option<&str>,
 ) -> Result<InventoryDiff, io::Error> {
-    let items: Vec<InventoryItem> = storage.read_all()?;
+    let file_path = storage.get_filepath();
+    let path = Path::new(file_path);
+
+    let mut items = Vec::new();
+
+    if path.exists() {
+        let file = File::open(file_path)?;
+        let reader = BufReader::new(file);
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            // Check record type without full deserialization
+            let header = match serde_json::from_str::<RecordHeader>(&line) {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
+
+            // Only process domain and subdomain records
+            if header.item_type == "domain" || header.item_type == "subdomain" {
+                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
+                    items.push(item);
+                }
+            }
+        }
+    }
 
     // Threshold time for recent vs past
     let threshold = get_time_threshold(days_ago);

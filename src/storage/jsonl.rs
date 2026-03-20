@@ -57,6 +57,7 @@ impl JsonlStorage {
     // Read all items from storage and deserialize them
     // Returns a Result with a Vec of deserialized items, or an error
     // Generic type T must implement Deserialize
+    #[allow(dead_code)]
     pub fn read_all<T: for<'de> Deserialize<'de>>(&self) -> Result<Vec<T>, io::Error> {
         let path = Path::new(&self.filepath);
 

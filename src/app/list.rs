@@ -1,36 +1,65 @@
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
-use std::collections::HashSet;
-use std::io;
+use serde::Deserialize;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
+
+// Lightweight header to identify record type without full deserialization
+#[derive(Deserialize)]
+struct RecordHeader {
+    item_type: String,
+}
 
 // List all domains in the inventory
 // This function:
-// 1. Reads all inventory items from storage
-// 2. Filters out only domain items
-// 3. Returns a Result with a vector of domain names
+// 1. Reads heterogeneous JSONL log (domains, observations, etc.)
+// 2. Filters for only "domain" item_type records
+// 3. Deserializes and extracts domain names
 // 4. Optionally deduplicates the domains
 pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>, io::Error> {
-    // Read all inventory items
-    let inventory_items: Vec<InventoryItem> = storage.read_all()?;
+    let file_path = storage.get_filepath();
+    let path = Path::new(file_path);
 
-    // Filter for domain items
-    let domains: Vec<String> = inventory_items
-        .iter()
-        .filter_map(|item| {
-            if item.item_type == "domain" {
-                Some(item.name.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // If unique flag is set, deduplicate domains using a HashSet
-    if unique {
-        // Convert to HashSet to remove duplicates and back to Vec
-        let unique_domains: HashSet<String> = domains.into_iter().collect();
-        Ok(unique_domains.into_iter().collect())
-    } else {
-        Ok(domains)
+    // If file doesn't exist, return empty list
+    if !path.exists() {
+        return Ok(vec![]);
     }
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    let mut domains = Vec::new();
+
+    // Read line by line and filter for domain items
+    for line_result in reader.lines() {
+        let line = line_result?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        // First pass: check record type without full deserialization
+        let header = match serde_json::from_str::<RecordHeader>(&line) {
+            Ok(h) => h,
+            Err(_) => continue, // Skip malformed records
+        };
+
+        // Only process domain records
+        if header.item_type != "domain" {
+            continue;
+        }
+
+        // Second pass: deserialize the full domain record
+        if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
+            domains.push(item.name);
+        }
+    }
+
+    // If unique flag is set, deduplicate while preserving order
+    if unique {
+        domains.sort();
+        domains.dedup();
+    }
+
+    Ok(domains)
 }
