@@ -37,6 +37,18 @@ This command:
 - Adds each subdomain to the inventory
 - Marks the source as "subfinder"
 
+#### Resolving DNS Records
+
+```bash
+balebos probe dns example.com
+```
+
+This command:
+- Uses `dnsx` to resolve DNS records
+- Captures `A` (IPv4), `AAAA` (IPv6), and `CNAME` records
+- Adds observations to the inventory with a timestamp
+- Helps identify if domains are active at the network level
+
 #### Checking HTTP Status
 
 ```bash

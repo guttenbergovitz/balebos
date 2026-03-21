@@ -16,6 +16,7 @@ Balebos is designed so that system state does not depend on constant human atten
 ## What it does
 
 - discovers assets (domains, subdomains, repos)
+- resolves DNS records (A, AAAA, CNAME) via dnsx
 - tracks HTTP redirect chains (http -> https, non-www -> www, external redirects)
 - stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
 - tracks changes over time
@@ -55,6 +56,9 @@ balebos scan example.com
 
 # Discover subdomains using subfinder
 balebos probe subdomains example.com
+
+# Resolve DNS records using dnsx
+balebos probe dns example.com
 
 # Check HTTP status of a domain
 balebos probe http example.com
