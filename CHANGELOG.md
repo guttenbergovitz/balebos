@@ -5,6 +5,21 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-21
+
+### Added
+
+- **Advanced HTTP Probing** - Integrated `httpx` (ProjectDiscovery) for robust web analysis
+  - Collects technology stacks (`tech`), page titles (`title`), and web server fingerprints (`webserver`)
+  - Maps `httpx` JSON output into enriched `HttpObservation` models
+  - Protects against incorrectly aliased Python `httpx` package with guided error messages
+- **CLI Outputs** - Detailed web server, title, and technology stacks shown natively during `probe http`
+
+### Changed
+
+- **Removed `reqwest` & `url` Dependencies** - Delegated HTTP probing entirely to `httpx` binary for better performance and alignment with Balebos architecture
+- **HTTP Model Expansion** - The `HttpObservation` schema now safely incorporates `tech`, `webserver`, `title`, `cdn_name`, and `favicon_hash` fields (with backward compatibility)
+
 ## [0.5.0] - 2026-03-21
 
 ### Added

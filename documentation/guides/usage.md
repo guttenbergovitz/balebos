@@ -71,6 +71,11 @@ Status: 200
 Redirect chain (1 hops):
   1. https://google.com (301) -> https://www.google.com/
   Final URL: https://www.google.com/
+
+Details:
+  Title: Google
+  Server: gws
+  Tech: Google Web Server, HSTS, HTTP/3
 Response time: 534ms
 ```
 

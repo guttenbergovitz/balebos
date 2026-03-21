@@ -417,6 +417,17 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
                     }
                 }
 
+                println!("\nDetails:");
+                if let Some(title) = &observation.title {
+                    println!("  Title: {}", title);
+                }
+                if let Some(server) = &observation.webserver {
+                    println!("  Server: {}", server);
+                }
+                if !observation.tech.is_empty() {
+                    println!("  Tech: {}", observation.tech.join(", "));
+                }
+
                 println!("Response time: {}ms", observation.response_time_ms);
 
                 println!("\nObservation added to inventory.");
