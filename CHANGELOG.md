@@ -5,6 +5,25 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-21
+
+### Added
+
+- **HTTP Redirect Chain Tracking** - Manual following of HTTP redirects (up to 10 hops)
+  - Captures full redirect history: status codes (301, 302, etc.) and intermediate URLs
+  - Resolves relative redirect locations to absolute URLs
+  - Records the final destination URL in observations
+  - Detects and reports "Too many redirects" as an anomaly
+
+- **Enhanced Status Reports** - Redirect information included in all report formats
+  - CLI: `balebos status` shows `(via 301)` for redirected alive assets
+  - CSV/Markdown/HTML: New columns and detailed redirect statistics included in exports
+
+### Changed
+
+- **HTTP Probe Engine** - Switched from automatic to manual redirect handling for better visibility
+- **Dependencies** - Added `url` crate for robust URL parsing and relative path resolution
+
 ## [0.3.0] - 2026-03-21
 
 ### Added

@@ -44,6 +44,8 @@ struct HttpCheck {
     response_time_ms: u64,
     checked_at: String,
     error_kind: Option<String>,
+    redirect_count: usize,
+    first_redirect_status: Option<u16>,
 }
 
 /// Internal structure to hold categorized status data
@@ -64,12 +66,17 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Err
     let mut status_map: BTreeMap<String, HttpCheck> = BTreeMap::new();
 
     for obs in observations {
+        let redirect_count = obs.redirect_chain.len();
+        let first_redirect_status = obs.redirect_chain.first().map(|h| h.status);
+        
         let check = HttpCheck {
             target: obs.target,
             status: obs.status,
             response_time_ms: obs.response_time_ms,
             checked_at: obs.checked_at.to_rfc3339(),
             error_kind: obs.error_kind.map(|k| format!("{:?}", k)),
+            redirect_count,
+            first_redirect_status,
         };
         status_map.insert(check.target.clone(), check);
     }
@@ -158,7 +165,14 @@ pub fn display_domain_status(storage: &JsonlStorage) -> Result<(), io::Error> {
         println!("🟢 ALIVE (HTTP 200) - {} assets", report.alive.len());
         println!("─────────────────────────────────");
         for check in report.alive.iter().take(50) {
-            println!("  {} ({} ms)", check.target, check.response_time_ms);
+            let redirect_info = match check.first_redirect_status {
+                Some(code) => format!(" (via {})", code),
+                None => "".to_string(),
+            };
+            println!(
+                "  {} ({} ms){}",
+                check.target, check.response_time_ms, redirect_info
+            );
         }
         if report.alive.len() > 50 {
             println!("  ... and {} more", report.alive.len() - 50);
@@ -225,7 +239,7 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
     let report = collect_status_report(storage)?;
 
     let mut csv_lines =
-        vec!["target,status,http_code,response_time_ms,error_kind,checked_at".to_string()];
+        vec!["target,status,http_code,response_time_ms,redirects,error_kind,checked_at".to_string()];
 
     // Collect all checks
     let mut all_checks = Vec::new();
@@ -242,13 +256,23 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
                 .clone()
                 .unwrap_or_else(|| "N/A".to_string())
         });
+        let redirects = if check.redirect_count > 0 {
+            format!(
+                "{} (via {})",
+                check.redirect_count,
+                check.first_redirect_status.unwrap_or(0)
+            )
+        } else {
+            "0".to_string()
+        };
         let error_kind = check.error_kind.clone().unwrap_or_else(|| "".to_string());
         csv_lines.push(format!(
-            "\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\"",
+            "\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",\"{}\"",
             check.target,
             status_label,
             http_code,
             check.response_time_ms,
+            redirects,
             error_kind,
             check.checked_at
         ));
@@ -305,12 +329,17 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             "## 🟢 Alive (HTTP 200) - {} assets\n\n",
             report.alive.len()
         ));
-        md.push_str("| Domain | Response Time (ms) |\n");
-        md.push_str("|--------|-------------------|\n");
+        md.push_str("| Domain | Response Time (ms) | Redirects |\n");
+        md.push_str("|--------|-------------------|-----------|\n");
         for check in &report.alive {
+            let redirects = if check.redirect_count > 0 {
+                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+            } else {
+                "-".to_string()
+            };
             md.push_str(&format!(
-                "| {} | {} |\n",
-                check.target, check.response_time_ms
+                "| {} | {} | {} |\n",
+                check.target, check.response_time_ms, redirects
             ));
         }
         md.push('\n');
@@ -448,11 +477,16 @@ pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<(
             report.alive.len()
         ));
         html.push_str("    <table>\n");
-        html.push_str("      <tr><th>Domain</th><th>Response Time (ms)</th></tr>\n");
+        html.push_str("      <tr><th>Domain</th><th>Response Time (ms)</th><th>Redirects</th></tr>\n");
         for check in &report.alive {
+            let redirects = if check.redirect_count > 0 {
+                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+            } else {
+                "-".to_string()
+            };
             html.push_str(&format!(
-                "      <tr><td>{}</td><td>{}</td></tr>\n",
-                check.target, check.response_time_ms
+                "      <tr><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                check.target, check.response_time_ms, redirects
             ));
         }
         html.push_str("    </table>\n");

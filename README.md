@@ -16,6 +16,7 @@ Balebos is designed so that system state does not depend on constant human atten
 ## What it does
 
 - discovers assets (domains, subdomains, repos)
+- tracks HTTP redirect chains (http -> https, non-www -> www, external redirects)
 - stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
 - tracks changes over time
 - exposes system state via API / queries
