@@ -27,6 +27,16 @@ pub struct RedirectHop {
     pub redirect_to: String,
 }
 
+// TLS certificate information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsObservation {
+    pub subject_dn: String,
+    pub issuer_dn: String,
+    pub not_before: chrono::DateTime<Utc>,
+    pub not_after: chrono::DateTime<Utc>,
+    pub fingerprint_sha256: String,
+}
+
 // HTTP observation - always describes what happened (success or failure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpObservation {
@@ -44,6 +54,10 @@ pub struct HttpObservation {
     pub final_url: Option<String>,
     #[serde(default)]
     pub redirect_chain: Vec<RedirectHop>,
+
+    // TLS information
+    #[serde(default)]
+    pub tls: Option<TlsObservation>,
 
     // Fingerprinting and tech details
     #[serde(default)]
@@ -83,6 +97,20 @@ struct HttpxChainItem {
 }
 
 #[derive(Deserialize, Debug)]
+struct HttpxTls {
+    #[serde(rename = "subject_dn")]
+    subject_dn: Option<String>,
+    #[serde(rename = "issuer_dn")]
+    issuer_dn: Option<String>,
+    #[serde(rename = "not_before")]
+    not_before: Option<chrono::DateTime<Utc>>,
+    #[serde(rename = "not_after")]
+    not_after: Option<chrono::DateTime<Utc>>,
+    #[serde(rename = "fingerprint_sha256")]
+    fingerprint_sha256: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
 #[allow(dead_code)]
 struct HttpxOutput {
     input: String,
@@ -97,6 +125,9 @@ struct HttpxOutput {
     title: Option<String>,
     cdn_name: Option<String>,
     favicon: Option<String>,
+    
+    #[serde(rename = "tls-grab")]
+    tls_grab: Option<HttpxTls>,
     
     chain_status_codes: Option<Vec<u16>>,
     chain: Option<Vec<HttpxChainItem>>,
@@ -193,6 +224,23 @@ fn map_httpx_to_observation(parsed: HttpxOutput) -> HttpObservation {
         }
     }
 
+    let tls = if let Some(grab) = parsed.tls_grab {
+        if let (Some(subj), Some(issuer), Some(before), Some(after), Some(fp)) = 
+            (grab.subject_dn, grab.issuer_dn, grab.not_before, grab.not_after, grab.fingerprint_sha256) {
+            Some(TlsObservation {
+                subject_dn: subj,
+                issuer_dn: issuer,
+                not_before: before,
+                not_after: after,
+                fingerprint_sha256: fp,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let is_failed = parsed.failed.unwrap_or(false);
 
     let obs = if is_failed || parsed.status_code.is_none() {
@@ -208,6 +256,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput) -> HttpObservation {
             response_time_ms: duration_ms,
             final_url: None,
             redirect_chain: Vec::new(),
+            tls,
             tech: Vec::new(),
             webserver: None,
             title: None,
@@ -228,6 +277,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput) -> HttpObservation {
             response_time_ms: duration_ms,
             final_url: parsed.url,
             redirect_chain,
+            tls,
             tech: parsed.tech.unwrap_or_default(),
             webserver: parsed.webserver,
             title: parsed.title,
@@ -263,6 +313,7 @@ pub fn probe_http_batch(
             "-server",   // Web server
             "-cdn",      // CDN name
             "-favicon",  // Favicon hash
+            "-tls-probe", // TLS certificate details
             "-fc", "301,302,307,308", // Filter out just pure redirects without following
             "-fr",       // Follow redirects
             "-include-chain", // Include the redirect chain in JSON
@@ -313,15 +364,7 @@ pub fn probe_http_batch(
         }
     }
 
-    let status = child.wait()?;
-
-    if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("httpx batch process failed with status: {}", status),
-        ));
-    }
-
+    let _ = child.wait()?;
     Ok(observations)
 }
 

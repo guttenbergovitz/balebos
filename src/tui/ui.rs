@@ -5,6 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
+use chrono::Utc;
 use crate::tui::app::{App, VisibleItem, InputMode};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -225,6 +226,33 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
                 for (i, hop) in http.redirect_chain.iter().enumerate() {
                     text.push(Line::from(format!("    {}. {} ({})", i + 1, hop.url, hop.status)));
                 }
+            }
+
+            // TLS Details
+            if let Some(tls) = &http.tls {
+                text.push(Line::from(""));
+                text.push(Line::from(Span::styled("  TLS Certificate:", Style::default().add_modifier(Modifier::ITALIC))));
+                text.push(Line::from(format!("    Issuer:  {}", tls.issuer_dn)));
+                
+                let now = Utc::now();
+                let days_left = tls.not_after.signed_duration_since(now).num_days();
+                let expiry_style = if days_left < 0 {
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                } else if days_left < 14 {
+                    Style::default().fg(Color::Red)
+                } else if days_left < 30 {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::Green)
+                };
+
+                text.push(Line::from(vec![
+                    Span::raw("    Expires: "),
+                    Span::styled(
+                        format!("{} ({} days left)", tls.not_after.format("%Y-%m-%d"), days_left),
+                        expiry_style
+                    ),
+                ]));
             }
         } else {
             text.push(Line::from("  Not probed"));

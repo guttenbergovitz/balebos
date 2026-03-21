@@ -5,6 +5,24 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-21
+
+### Added
+
+- **TLS Certificate Probing** - Integrated `httpx`'s `-tls-probe` to capture certificate details
+  - Records Issuer DN, Subject DN, Expiration Dates, and Fingerprints
+  - Stores certificate state in `TlsObservation` events
+- **Certificate Monitoring & Alerts** - `balebos check` now monitors TLS health
+  - Generates critical alerts for expired certificates
+  - Warns about certificates expiring within 14 and 30 days
+- **TUI Certificate Inspector**
+  - New "TLS Certificate" section in the details panel
+  - Visual urgency indicators: Red for <14 days, Yellow for <30 days, Green for healthy certs
+
+### Changed
+
+- **Version 1.1 Milestone** - Enhanced infrastructure observability with proactive security monitoring
+
 ## [1.0.0] - 2026-03-21
 
 ### Added
