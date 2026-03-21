@@ -115,9 +115,9 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Err
     for (_, check) in status_map.iter() {
         match check.status {
             Some(200) => alive.push(check.clone()),
-            Some(code) if code >= 300 && code < 400 => client_errors.push(check.clone()),
-            Some(code) if code >= 400 && code < 500 => client_errors.push(check.clone()),
-            Some(code) if code >= 500 && code < 600 => server_errors.push(check.clone()),
+            Some(code) if (300..400).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (400..500).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (500..600).contains(&code) => server_errors.push(check.clone()),
             Some(_) => unchecked.push(check.clone()),
             None => {
                 if check.error_kind.is_some() {
@@ -302,8 +302,8 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     ));
     md.push_str("## Summary\n\n");
-    md.push_str(&format!("| Status | Count | Percentage |\n"));
-    md.push_str(&format!("|--------|-------|------------|\n"));
+    md.push_str("| Status | Count | Percentage |\n");
+    md.push_str("|--------|-------|------------|\n");
     md.push_str(&format!(
         "| 🟢 Alive (200) | {} | {:.1}% |\n",
         report.alive.len(),
@@ -344,7 +344,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
                 check.target, check.response_time_ms
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Server errors section
@@ -359,7 +359,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Client errors section
@@ -374,7 +374,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Network errors section
@@ -392,7 +392,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
                 check.target, error, check.response_time_ms
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     std::fs::write(output_file, md)?;

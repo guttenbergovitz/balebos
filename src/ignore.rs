@@ -13,28 +13,21 @@ pub fn load_ignore_patterns(filepath: &str) -> Vec<String> {
     }
 
     // Attempt to open the file
-    match File::open(&path) {
+    match File::open(path) {
         Ok(file) => {
             let reader = BufReader::new(file);
             let mut patterns = Vec::new();
 
-            // Process each line in the file
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    // Skip empty lines and comments
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                        patterns.push(trimmed.to_string());
-                    }
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    patterns.push(trimmed.to_string());
                 }
             }
 
             patterns
         }
-        Err(_) => {
-            // Failed to open the file, return empty patterns
-            Vec::new()
-        }
+        Err(_) => Vec::new(),
     }
 }
 

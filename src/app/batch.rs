@@ -84,7 +84,7 @@ pub fn batch_process(
             continue;
         }
 
-        match crate::app::scan::scan_domain(domain, &storage) {
+        match crate::app::scan::scan_domain(domain, storage) {
             Ok(_) => {
                 println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
                 stats.domains_added += 1;
@@ -111,7 +111,7 @@ pub fn batch_process(
         }
 
         print!("  ⟳ [{}/{}] {} ... ", idx + 1, domains.len(), domain);
-        match probe::probe_subdomains(domain, &storage) {
+        match probe::probe_subdomains(domain, storage) {
             Ok(subdomains) => {
                 println!("found {} subdomains", subdomains.len());
                 stats.subdomains_found += subdomains.len();
@@ -127,7 +127,7 @@ pub fn batch_process(
     println!("🌐 Step 3/3: Checking HTTP status...");
 
     // Get all current domains and subdomains
-    let all_assets = get_all_assets(&storage)?;
+    let all_assets = get_all_assets(storage)?;
     let mut completed = 0;
     let total = all_assets.len();
 
@@ -138,7 +138,7 @@ pub fn batch_process(
 
         print!("  ⟳ [{}/{}] {} ", completed + 1, total, asset);
 
-        match probe_http::http_check(&asset, &storage) {
+        match probe_http::http_check(&asset, storage) {
             Ok(obs) => {
                 if let Some(status) = obs.status {
                     print!("→ {}", status);

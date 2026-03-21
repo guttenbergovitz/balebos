@@ -14,10 +14,7 @@ fn run_subfinder(domain: &str) -> Result<String, io::Error> {
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("subfinder failed: {}", error),
-        ));
+        return Err(io::Error::other(format!("subfinder failed: {}", error)));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
