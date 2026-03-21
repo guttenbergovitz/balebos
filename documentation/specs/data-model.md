@@ -52,11 +52,25 @@ Captured facts about network-level resolution via `dnsx`.
 - **`a`**: Array of IPv4 addresses
 - **`aaaa`**: Array of IPv6 addresses
 - **`cname`**: Array of CNAME aliases
+- **`mx`**: Array of Mail Exchange servers
+- **`ns`**: Array of Name Servers
+- **`txt`**: Array of TXT records (verification, SPF, etc.)
+- **`soa`**: Array of SOA record strings
 - **`checked_at`**: RFC3339 Timestamp
 
 **Example:**
 ```json
-{"item_type":"dns_record","target":"example.com","a":["93.184.216.34"],"aaaa":[],"cname":[],"checked_at":"2026-03-21T10:05:00Z"}
+{
+  "item_type": "dns_record",
+  "target": "example.com",
+  "a": ["93.184.216.34"],
+  "aaaa": [],
+  "mx": ["mail.example.com"],
+  "ns": ["ns1.example.com"],
+  "txt": ["v=spf1 include:_spf.google.com ~all"],
+  "soa": ["ns:ns1.example.com mailbox:admin.example.com"],
+  "checked_at": "2026-03-21T10:05:00Z"
+}
 ```
 
 ---
@@ -74,7 +88,15 @@ Deep probe results including tech stack and redirect history via `httpx`.
 - **`tech`**: Array of detected technologies (e.g., `"Nginx"`, `"HSTS"`)
 - **`title`**: HTML `<title>` of the page
 - **`webserver`**: `Server` header value
+- **`tls`**: Optional `TlsObservation` object
 - **`error_kind`**: Network error category (if any)
+
+### TlsObservation Object
+- **`subject_dn`**: Distinguished Name of the subject
+- **`issuer_dn`**: Distinguished Name of the issuer
+- **`not_before`**: Validity start timestamp
+- **`not_after`**: Validity end timestamp
+- **`fingerprint_sha256`**: SHA256 certificate fingerprint
 
 ### RedirectHop Object
 - **`url`**: Source URL of the hop
@@ -92,6 +114,13 @@ Deep probe results including tech stack and redirect history via `httpx`.
   "redirect_chain": [
     {"url": "http://example.com", "status": 301, "redirect_to": "https://example.com/"}
   ],
+  "tls": {
+    "subject_dn": "CN=example.com",
+    "issuer_dn": "CN=Let's Encrypt Authority X3",
+    "not_before": "2026-01-01T00:00:00Z",
+    "not_after": "2026-04-01T00:00:00Z",
+    "fingerprint_sha256": "..."
+  },
   "tech": ["HSTS", "Varnish"],
   "title": "Example Domain",
   "checked_at": "2026-03-21T10:10:00Z"

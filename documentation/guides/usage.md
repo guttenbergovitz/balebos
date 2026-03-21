@@ -100,8 +100,11 @@ balebos ui
 Balebos includes a Terminal User Interface (TUI) for interactive inventory exploration:
 - **Navigation**: Use arrow keys or `j`/`k` to browse assets.
 - **Hierarchical View**: Subdomains are grouped under root domains. Use **Space** or **Enter** to expand/collapse groups.
-- **Live Filtering**: Press `/` or `f` to search for specific root domains. The list updates instantly as you type.
-- **Detailed Inspector**: View tech stacks, full DNS records (MX, TXT, etc.), and redirect chains in the details panel.
+- **Smart Status**: The status column highlights external redirects (e.g., `EXT -> target.com`) vs internal/direct `200 OK` responses.
+- **Live Filtering**: 
+    - Press `/` or `f` to search for specific root domains.
+    - Press `x` to toggle the visibility of external redirects (hide domains that are just "jumpers").
+- **Detailed Inspector**: View tech stacks, full DNS records (MX, TXT, NS, SOA), TLS certificates (Issuer, Expiry), and redirect chains.
 - **Live Actions**:
     - Press `a` to add and scan a new domain in the background.
     - Press `s` to trigger a re-scan of the selected asset.

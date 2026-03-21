@@ -18,7 +18,8 @@ Balebos is designed so that system state does not depend on constant human atten
 - discovers assets (domains, subdomains, repos)
 - resolves DNS records (A, AAAA, CNAME) via dnsx
 - performs deep HTTP probing (tech stack, title, web server) via httpx
-- tracks HTTP redirect chains (http -> https, non-www -> www, external redirects)
+- tracks HTTP redirect chains (internal vs external redirects)
+- monitors TLS certificate expiration and issuer details
 - stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
 - tracks changes over time
 - exposes system state via API / queries
