@@ -33,27 +33,19 @@
 ///   🔴 Server errors (5xx):       32 (  3.2%)
 ///   ⚠️  Network errors:           182 ( 18.2%)
 /// ```
-use crate::storage::JsonlStorage;
-use serde::Deserialize;
+use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
+use std::io;
 
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
-
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct HttpCheck {
     target: String,
     status: Option<u16>,
-    response_time_ms: u32,
+    response_time_ms: u64,
     checked_at: String,
     error_kind: Option<String>,
-    #[allow(dead_code)]
-    error_message: Option<String>,
+    redirect_count: usize,
+    first_redirect_status: Option<u16>,
 }
 
 /// Internal structure to hold categorized status data
@@ -68,41 +60,25 @@ struct StatusReport {
 
 /// Collect and categorize HTTP check results from storage
 fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Inventory file not found",
-        ));
-    }
-
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
+    let observations = read_records(storage)?.http_observations;
 
     // Collect latest HTTP check for each target (dedup by most recent)
     let mut status_map: BTreeMap<String, HttpCheck> = BTreeMap::new();
 
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
+    for obs in observations {
+        let redirect_count = obs.redirect_chain.len();
+        let first_redirect_status = obs.redirect_chain.first().map(|h| h.status);
+        
+        let check = HttpCheck {
+            target: obs.target,
+            status: obs.status,
+            response_time_ms: obs.response_time_ms,
+            checked_at: obs.checked_at.to_rfc3339(),
+            error_kind: obs.error_kind.map(|k| format!("{:?}", k)),
+            redirect_count,
+            first_redirect_status,
         };
-
-        if header.item_type != "http_check" {
-            continue;
-        }
-
-        if let Ok(check) = serde_json::from_str::<HttpCheck>(&line) {
-            status_map.insert(check.target.clone(), check);
-        }
+        status_map.insert(check.target.clone(), check);
     }
 
     // Categorize by status
@@ -115,9 +91,9 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Err
     for (_, check) in status_map.iter() {
         match check.status {
             Some(200) => alive.push(check.clone()),
-            Some(code) if code >= 300 && code < 400 => client_errors.push(check.clone()),
-            Some(code) if code >= 400 && code < 500 => client_errors.push(check.clone()),
-            Some(code) if code >= 500 && code < 600 => server_errors.push(check.clone()),
+            Some(code) if (300..400).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (400..500).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (500..600).contains(&code) => server_errors.push(check.clone()),
             Some(_) => unchecked.push(check.clone()),
             None => {
                 if check.error_kind.is_some() {
@@ -189,7 +165,14 @@ pub fn display_domain_status(storage: &JsonlStorage) -> Result<(), io::Error> {
         println!("🟢 ALIVE (HTTP 200) - {} assets", report.alive.len());
         println!("─────────────────────────────────");
         for check in report.alive.iter().take(50) {
-            println!("  {} ({} ms)", check.target, check.response_time_ms);
+            let redirect_info = match check.first_redirect_status {
+                Some(code) => format!(" (via {})", code),
+                None => "".to_string(),
+            };
+            println!(
+                "  {} ({} ms){}",
+                check.target, check.response_time_ms, redirect_info
+            );
         }
         if report.alive.len() > 50 {
             println!("  ... and {} more", report.alive.len() - 50);
@@ -256,7 +239,7 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
     let report = collect_status_report(storage)?;
 
     let mut csv_lines =
-        vec!["target,status,http_code,response_time_ms,error_kind,checked_at".to_string()];
+        vec!["target,status,http_code,response_time_ms,redirects,error_kind,checked_at".to_string()];
 
     // Collect all checks
     let mut all_checks = Vec::new();
@@ -273,13 +256,23 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
                 .clone()
                 .unwrap_or_else(|| "N/A".to_string())
         });
+        let redirects = if check.redirect_count > 0 {
+            format!(
+                "{} (via {})",
+                check.redirect_count,
+                check.first_redirect_status.unwrap_or(0)
+            )
+        } else {
+            "0".to_string()
+        };
         let error_kind = check.error_kind.clone().unwrap_or_else(|| "".to_string());
         csv_lines.push(format!(
-            "\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\"",
+            "\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",\"{}\"",
             check.target,
             status_label,
             http_code,
             check.response_time_ms,
+            redirects,
             error_kind,
             check.checked_at
         ));
@@ -302,8 +295,8 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     ));
     md.push_str("## Summary\n\n");
-    md.push_str(&format!("| Status | Count | Percentage |\n"));
-    md.push_str(&format!("|--------|-------|------------|\n"));
+    md.push_str("| Status | Count | Percentage |\n");
+    md.push_str("|--------|-------|------------|\n");
     md.push_str(&format!(
         "| 🟢 Alive (200) | {} | {:.1}% |\n",
         report.alive.len(),
@@ -336,15 +329,20 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             "## 🟢 Alive (HTTP 200) - {} assets\n\n",
             report.alive.len()
         ));
-        md.push_str("| Domain | Response Time (ms) |\n");
-        md.push_str("|--------|-------------------|\n");
+        md.push_str("| Domain | Response Time (ms) | Redirects |\n");
+        md.push_str("|--------|-------------------|-----------|\n");
         for check in &report.alive {
+            let redirects = if check.redirect_count > 0 {
+                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+            } else {
+                "-".to_string()
+            };
             md.push_str(&format!(
-                "| {} | {} |\n",
-                check.target, check.response_time_ms
+                "| {} | {} | {} |\n",
+                check.target, check.response_time_ms, redirects
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Server errors section
@@ -359,7 +357,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Client errors section
@@ -374,7 +372,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Network errors section
@@ -392,7 +390,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
                 check.target, error, check.response_time_ms
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     std::fs::write(output_file, md)?;
@@ -479,11 +477,16 @@ pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<(
             report.alive.len()
         ));
         html.push_str("    <table>\n");
-        html.push_str("      <tr><th>Domain</th><th>Response Time (ms)</th></tr>\n");
+        html.push_str("      <tr><th>Domain</th><th>Response Time (ms)</th><th>Redirects</th></tr>\n");
         for check in &report.alive {
+            let redirects = if check.redirect_count > 0 {
+                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+            } else {
+                "-".to_string()
+            };
             html.push_str(&format!(
-                "      <tr><td>{}</td><td>{}</td></tr>\n",
-                check.target, check.response_time_ms
+                "      <tr><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                check.target, check.response_time_ms, redirects
             ));
         }
         html.push_str("    </table>\n");

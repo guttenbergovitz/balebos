@@ -16,6 +16,9 @@ Balebos is designed so that system state does not depend on constant human atten
 ## What it does
 
 - discovers assets (domains, subdomains, repos)
+- resolves DNS records (A, AAAA, CNAME) via dnsx
+- performs deep HTTP probing (tech stack, title, web server) via httpx
+- tracks HTTP redirect chains (http -> https, non-www -> www, external redirects)
 - stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
 - tracks changes over time
 - exposes system state via API / queries
@@ -54,6 +57,9 @@ balebos scan example.com
 
 # Discover subdomains using subfinder
 balebos probe subdomains example.com
+
+# Resolve DNS records using dnsx
+balebos probe dns example.com
 
 # Check HTTP status of a domain
 balebos probe http example.com
@@ -96,10 +102,11 @@ This approach ensures:
 ### Core Concepts
 
 1. **Inventory** - Centralized registry of all infrastructure assets
-2. **Normalization** - Assets are normalized for consistent storage and analysis
-3. **Anomaly detection** - Identification of suspicious patterns and deviations
-4. **Operational monitoring** - Regular reports highlighting changes requiring attention
-5. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+2. **Validation** - Structural checks ensure only valid domain names enter the system
+3. **Normalization** - Assets are normalized for consistent storage and analysis
+4. **Anomaly detection** - Identification of suspicious patterns and deviations
+5. **Operational monitoring** - Regular reports highlighting changes requiring attention
+6. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
 
 ### Domain Hierarchy Visualization
 
@@ -224,7 +231,8 @@ balebos status --export html /path/to/report.html
 
 Balebos integrates with external tools to leverage proven solutions:
 - `subfinder` - For subdomain enumeration
-- HTTP checks - For web service monitoring
+- `dnsx` - For fast DNS resolution
+- `httpx` - For deep HTTP probing, fingerprinting, and redirect tracking
 
 ## Installation
 
@@ -243,4 +251,7 @@ cargo build --release
 ### Dependencies
 
 - Rust 2021 edition or newer
-- For subdomain scanning: [subfinder](https://github.com/projectdiscovery/subfinder)
+- ProjectDiscovery ecosystem tools (required for probes):
+  - [subfinder](https://github.com/projectdiscovery/subfinder)
+  - [dnsx](https://github.com/projectdiscovery/dnsx)
+  - [httpx](https://github.com/projectdiscovery/httpx)

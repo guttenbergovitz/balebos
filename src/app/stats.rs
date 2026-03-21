@@ -1,16 +1,6 @@
-use crate::inventory::InventoryItem;
-use crate::storage::JsonlStorage;
-use serde::Deserialize;
+use crate::storage::{read_records, JsonlStorage};
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
-
-// Lightweight header to identify record type
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
+use std::io;
 
 pub struct DomainStats {
     pub total_entries: usize,
@@ -21,36 +11,7 @@ pub struct DomainStats {
 }
 
 pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats, io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    let mut items = Vec::new();
-
-    if path.exists() {
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
-
-        for line_result in reader.lines() {
-            let line = line_result?;
-
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            // Check record type without full deserialization
-            let header = match serde_json::from_str::<RecordHeader>(&line) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
-
-            // Only process domain and subdomain records
-            if header.item_type == "domain" || header.item_type == "subdomain" {
-                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                    items.push(item);
-                }
-            }
-        }
-    }
+    let items = read_records(storage)?.items;
 
     // Total count of domain entries (items already filtered to domain/subdomain)
     let total_entries = items.len();

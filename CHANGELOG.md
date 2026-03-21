@@ -5,6 +5,69 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-21
+
+### Added
+
+- **Advanced HTTP Probing** - Integrated `httpx` (ProjectDiscovery) for robust web analysis
+  - Collects technology stacks (`tech`), page titles (`title`), and web server fingerprints (`webserver`)
+  - Maps `httpx` JSON output into enriched `HttpObservation` models
+  - Protects against incorrectly aliased Python `httpx` package with guided error messages
+- **CLI Outputs** - Detailed web server, title, and technology stacks shown natively during `probe http`
+
+### Changed
+
+- **Removed `reqwest` & `url` Dependencies** - Delegated HTTP probing entirely to `httpx` binary for better performance and alignment with Balebos architecture
+- **HTTP Model Expansion** - The `HttpObservation` schema now safely incorporates `tech`, `webserver`, `title`, `cdn_name`, and `favicon_hash` fields (with backward compatibility)
+
+## [0.5.0] - 2026-03-21
+
+### Added
+
+- **DNS Record Probing** - Integration with `dnsx` for resolving domains and capturing records
+  - Captures A, AAAA, and CNAME records in `DnsObservation` events
+  - New `balebos probe dns <domain>` command
+  - Integrated into `batch` process as Step 3/4 (Discovery -> DNS -> HTTP)
+
+### Changed
+
+- **Batch Workflow** - Expanded to 4 steps to include DNS resolution before HTTP checks
+- **Storage Reader** - Added support for parsing `dns_record` entries from JSONL logs
+
+## [0.4.0] - 2026-03-21
+
+### Added
+
+- **HTTP Redirect Chain Tracking** - Manual following of HTTP redirects (up to 10 hops)
+  - Captures full redirect history: status codes (301, 302, etc.) and intermediate URLs
+  - Resolves relative redirect locations to absolute URLs
+  - Records the final destination URL in observations
+  - Detects and reports "Too many redirects" as an anomaly
+
+- **Enhanced Status Reports** - Redirect information included in all report formats
+  - CLI: `balebos status` shows `(via 301)` for redirected alive assets
+  - CSV/Markdown/HTML: New columns and detailed redirect statistics included in exports
+
+### Changed
+
+- **HTTP Probe Engine** - Switched from automatic to manual redirect handling for better visibility
+- **Dependencies** - Added `url` crate for robust URL parsing and relative path resolution
+
+## [0.3.0] - 2026-03-21
+
+### Added
+
+- **Domain Validation** - New structural check for domain names before scanning
+  - Ensures presence of TLD (missing dot)
+  - Validates characters (alphanumeric and hyphens)
+  - Prevents adding invalid domains to the inventory
+
+### Changed
+
+- **CLI Architecture** - Replaced cascading CLI dispatch with a clean `Command` enum and `match` pattern
+- **Internal Storage Reader** - Extracted shared JSONL reader logic, eliminating multiple duplicate implementations of `RecordHeader` handling
+- **Code Quality** - Removed dead code, no-op branches, and resolved all clippy warnings for idiomatic Rust
+
 ## [0.2.0] - 2026-03-20
 
 ### Added

@@ -21,6 +21,7 @@ balebos scan example.com
 ```
 
 This command:
+- Validates the domain name (structural check for TLD and valid characters)
 - Normalizes the domain name (lowercase, removes www, etc.)
 - Creates a domain entity with UUID and timestamp
 - Stores it in the inventory
@@ -36,6 +37,18 @@ This command:
 - Adds each subdomain to the inventory
 - Marks the source as "subfinder"
 
+#### Resolving DNS Records
+
+```bash
+balebos probe dns example.com
+```
+
+This command:
+- Uses `dnsx` to resolve DNS records
+- Captures `A` (IPv4), `AAAA` (IPv6), and `CNAME` records
+- Adds observations to the inventory with a timestamp
+- Helps identify if domains are active at the network level
+
 #### Checking HTTP Status
 
 ```bash
@@ -44,10 +57,27 @@ balebos probe http example.com
 
 This command:
 - Attempts HTTPS connection with fallback to HTTP
+- **Automatically follows and records redirect chains** (up to 10 hops)
 - Records HTTP status code and response time
 - Captures network errors (DNS failures, timeouts, TLS errors, etc.) as observations
 - Adds observation to inventory with timestamp
 - Returns exit code based on HTTP status (for automation)
+
+If a redirect is detected, the output shows the full chain:
+```text
+HTTP check completed for google.com
+Status: 200
+
+Redirect chain (1 hops):
+  1. https://google.com (301) -> https://www.google.com/
+  Final URL: https://www.google.com/
+
+Details:
+  Title: Google
+  Server: gws
+  Tech: Google Web Server, HSTS, HTTP/3
+Response time: 534ms
+```
 
 #### Full Reconnaissance Batch
 

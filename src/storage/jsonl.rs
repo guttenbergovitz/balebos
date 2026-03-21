@@ -1,8 +1,8 @@
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 // Our storage system for inventory items
 // We're using a simple JSONL (JSON Lines) file format
@@ -52,52 +52,5 @@ impl JsonlStorage {
         writeln!(writer, "{}", json)?;
 
         Ok(())
-    }
-
-    // Read all items from storage and deserialize them
-    // Returns a Result with a Vec of deserialized items, or an error
-    // Generic type T must implement Deserialize
-    #[allow(dead_code)]
-    pub fn read_all<T: for<'de> Deserialize<'de>>(&self) -> Result<Vec<T>, io::Error> {
-        let path = Path::new(&self.filepath);
-
-        // Check if file exists, return empty Vec if not
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-
-        // Open the file
-        let file = File::open(&self.filepath)?;
-        let reader = BufReader::new(file);
-        let mut items = Vec::new();
-
-        // Process each line
-        for line in reader.lines() {
-            match line {
-                Ok(line_content) => {
-                    // Skip empty lines
-                    if line_content.trim().is_empty() {
-                        continue;
-                    }
-
-                    // Try to deserialize the JSON line
-                    match serde_json::from_str::<T>(&line_content) {
-                        Ok(item) => items.push(item),
-                        Err(e) => {
-                            // Log the error but continue processing other lines
-                            // This gives us better resilience - one bad record doesn't break everything
-                            eprintln!("Error deserializing line: {}", e);
-                            // We don't panic! - that would crash the entire program
-                        }
-                    }
-                }
-                Err(e) => {
-                    // If we can't read a line, report it but continue
-                    eprintln!("Error reading line: {}", e);
-                }
-            }
-        }
-
-        Ok(items)
     }
 }

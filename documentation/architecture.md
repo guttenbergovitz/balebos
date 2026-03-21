@@ -60,6 +60,16 @@ The central registry of all infrastructure assets. Unlike traditional asset data
 - It separates raw data from interpretation
 - It prioritizes completeness over cleanliness
 
+### Validation
+
+Balebos performs structural validation on domains before they are added to the inventory:
+- **Non-empty** - The domain cannot be an empty string after normalization.
+- **Top-Level Domain (TLD)** - Must contain at least one dot separating labels.
+- **Label Structure** - Labels must be alphanumeric (plus hyphens) and cannot start or end with a hyphen.
+- **TLD Length** - The TLD part must be at least 2 characters long.
+
+Validation is purely structural and does not require active DNS lookups.
+
 ### Normalization
 
 Balebos stores both raw and normalized data:
@@ -146,16 +156,17 @@ Balebos compresses information into actionable insights:
 
 Data is stored as newline-delimited JSON (JSONL) with support for multiple record types:
 
-```
+```json
 {"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
 {"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
-{"item_type":"http_check","target":"example.com","status":200,"response_time_ms":156,"checked_at":"timestamp","error_kind":null,"error_message":null}
+{"item_type":"dns_record","target":"google.com","a":["142.250.181.238"],"aaaa":["2a00:1450:4025:804::65"],"cname":[]}
+{"item_type":"http_check","target":"google.com","status":200,"final_url":"https://www.google.com/","redirect_chain":[{"url":"https://google.com","status":301,"redirect_to":"https://www.google.com/"}],"tech":["Google Web Server","HTTP/3"],"webserver":"gws","title":"Google"}
 ```
 
 **Record Types:**
 - `domain` - Root domains
 - `subdomain` - Discovered subdomains
-- `http_check` - HTTP probe results and network observations
+- `http_check` - HTTP probe results and network observations (including tech stack, server fingerprints, and redirect chains via `httpx`)
 
 This format offers:
 - Human-readability for debugging

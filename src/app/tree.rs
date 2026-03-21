@@ -24,19 +24,9 @@
 /// │   └── ◇ api
 /// │       └── ◇ dev
 /// ```
-use crate::inventory::InventoryItem;
-use crate::storage::JsonlStorage;
-use serde::Deserialize;
+use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
-
-// Lightweight header to identify record type without full deserialization
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
+use std::io;
 
 // Tree node representing a domain or subdomain with its children
 #[derive(Debug, Clone)]
@@ -59,65 +49,19 @@ impl TreeNode {
 /// Build a hierarchical tree of domains and subdomains
 /// Returns root nodes (base domains) with their subdomain hierarchy
 fn build_domain_tree(storage: &JsonlStorage) -> Result<Vec<TreeNode>, io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
+    let items = read_records(storage)?.items;
 
-    if !path.exists() {
-        return Ok(vec![]);
-    }
+    let domain_records: Vec<String> = items
+        .iter()
+        .filter(|item| item.item_type == "domain")
+        .map(|item| item.name.clone())
+        .collect();
 
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
-    let mut domain_records: Vec<String> = Vec::new();
-    let mut all_items: Vec<(String, String)> = Vec::new(); // (fqdn, item_type)
+    let mut all_items: Vec<(String, String)> = items
+        .into_iter()
+        .map(|item| (item.name, item.item_type))
+        .collect();
 
-    // First pass: collect all domain records
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
-
-        if header.item_type == "domain" {
-            if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                domain_records.push(item.name);
-            }
-        }
-    }
-
-    // Second pass: collect all items (domains and subdomains)
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
-
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
-
-        // Process both domains and subdomains
-        if header.item_type != "domain" && header.item_type != "subdomain" {
-            continue;
-        }
-
-        if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-            all_items.push((item.name, header.item_type));
-        }
-    }
-
-    // Sort by name to ensure consistent ordering
     all_items.sort_by(|a, b| a.0.cmp(&b.0));
     all_items.dedup_by(|a, b| a.0 == b.0);
 
