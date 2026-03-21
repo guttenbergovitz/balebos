@@ -5,6 +5,21 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-21
+
+### Added
+
+- **High-Performance Streaming Architecture** - Completely refactored `batch` processing to use streaming pipes
+  - Integrated `dnsx` and `httpx` using a single-process, bulk-input approach
+  - Implemented background threading for non-blocking stdin feeding
+  - Real-time JSON output parsing for immediate inventory updates
+  - Massive performance boost for large-scale domain discovery and probing
+
+### Changed
+
+- **Batch Workflow** - DNS and HTTP steps now process the entire asset list in one pass instead of looping per-domain
+- **Documentation** - Updated architecture and pipeline guides to reflect the new concurrency model
+
 ## [0.6.0] - 2026-03-21
 
 ### Added

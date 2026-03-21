@@ -2,8 +2,9 @@ use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::thread;
 use uuid::Uuid;
 
 // HTTP probe error types
@@ -117,15 +118,8 @@ fn categorize_httpx_error(error_msg: &str) -> HttpErrorKind {
     }
 }
 
-// Perform HTTP probe using external httpx binary
-pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation, io::Error> {
-    let clean_domain = domain
-        .trim()
-        .replace("http://", "")
-        .replace("https://", "")
-        .replace("www.", "");
-
-    // Verify httpx is the ProjectDiscovery version, not the Python package
+/// Helper function to check if httpx is correctly installed from ProjectDiscovery.
+fn check_httpx_installation() -> Result<(), io::Error> {
     let version_check = Command::new("httpx")
         .arg("-version")
         .output()
@@ -140,96 +134,38 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
             }
         })?;
 
-    if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery") && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery") {
+    if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery") 
+        && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery") {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx (often installed in ~/go/bin/) takes precedence in your PATH or alias it appropriately.",
+            "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.",
         ));
     }
+    
+    Ok(())
+}
 
-    let start = std::time::Instant::now();
+/// Mapper to map Httpx JSON data into HttpObservation
+fn map_httpx_to_observation(parsed: HttpxOutput) -> HttpObservation {
+    let target = parsed.input.clone();
+    
+    // Convert duration strings like "108.04ms" or "1.5s" to ms
+    let duration_ms = if let Some(t) = &parsed.time {
+        if t.ends_with("ms") {
+            t.trim_end_matches("ms").parse::<f64>().unwrap_or(0.0) as u64
+        } else if t.ends_with("s") {
+            (t.trim_end_matches("s").parse::<f64>().unwrap_or(0.0) * 1000.0) as u64
+        } else {
+            0
+        }
+    } else {
+        0
+    };
 
-    let mut child = Command::new("httpx")
-        .args([
-            "-json", 
-            "-td",       // Tech detect
-            "-title",    // Page title
-            "-server",   // Web server
-            "-cdn",      // CDN name
-            "-favicon",  // Favicon hash
-            "-fc", "301,302,307,308", // HTTP status codes to filter when following
-            "-fr",       // Follow redirects
-            "-include-chain", // Include the redirect chain in JSON
-            "-silent"
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(format!("{}\n", clean_domain).as_bytes())?;
-    }
-
-    let output = child.wait_with_output()?;
-
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    // Check if process failed execution
-    if !output.status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "httpx failed with status: {}. Error: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
-    }
-
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout_str.trim();
-
-    // If httpx returns empty string, it silently failed to connect or found nothing
-    if trimmed.is_empty() {
-        let obs = HttpObservation {
-            item_type: "http_check".to_string(),
-            id: Uuid::new_v4().to_string(),
-            asset_type: "domain".to_string(),
-            target: clean_domain.to_string(),
-            status: None,
-            response_time_ms: duration_ms,
-            final_url: None,
-            redirect_chain: Vec::new(),
-            tech: Vec::new(),
-            webserver: None,
-            title: None,
-            cdn_name: None,
-            favicon_hash: None,
-            checked_at: Utc::now(),
-            source: "httpx".to_string(),
-            error_kind: Some(HttpErrorKind::ProbeError),
-            error_message: Some("No output from httpx (unreachable)".to_string()),
-        };
-        obs.validate_invariant();
-        storage.save(&obs)?;
-        return Ok(obs);
-    }
-
-    // Parse httpx output
-    let parsed: HttpxOutput = serde_json::from_str(trimmed).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse httpx JSON output: {}", e),
-        )
-    })?;
-
-    // Map chain to our RedirectHop structure. httpx chain items are raw HTTP requests sometimes.
     let mut redirect_chain = Vec::new();
     if let (Some(codes), Some(chain)) = (&parsed.chain_status_codes, &parsed.chain) {
         for (i, code) in codes.iter().enumerate() {
             if i < chain.len() {
-                // Extract URL from raw HTTP request if present, or fallback
                 let raw_req = chain[i].request.clone().unwrap_or_default();
                 let url = if let Some(host_line) = raw_req.lines().find(|l| l.starts_with("Host: ")) {
                     format!("https://{}", host_line.replace("Host: ", "").trim())
@@ -259,7 +195,7 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
 
     let is_failed = parsed.failed.unwrap_or(false);
 
-    let observation = if is_failed || parsed.status_code.is_none() {
+    let obs = if is_failed || parsed.status_code.is_none() {
         let error_msg = parsed.error.unwrap_or_else(|| "Unknown error".to_string());
         let error_kind = categorize_httpx_error(&error_msg);
 
@@ -267,7 +203,7 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
             item_type: "http_check".to_string(),
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
-            target: clean_domain.to_string(),
+            target,
             status: None,
             response_time_ms: duration_ms,
             final_url: None,
@@ -287,7 +223,7 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
             item_type: "http_check".to_string(),
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
-            target: clean_domain.to_string(),
+            target,
             status: parsed.status_code,
             response_time_ms: duration_ms,
             final_url: parsed.url,
@@ -304,8 +240,102 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
         }
     };
 
-    observation.validate_invariant();
-    storage.save(&observation)?;
+    obs.validate_invariant();
+    obs
+}
 
-    Ok(observation)
+/// Run a batch HTTP probe using a single httpx process for maximum concurrency.
+pub fn probe_http_batch(
+    targets: &[String],
+    storage: &JsonlStorage,
+) -> Result<Vec<HttpObservation>, io::Error> {
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    check_httpx_installation()?;
+
+    let mut child = Command::new("httpx")
+        .args([
+            "-json", 
+            "-td",       // Tech detect
+            "-title",    // Page title
+            "-server",   // Web server
+            "-cdn",      // CDN name
+            "-favicon",  // Favicon hash
+            "-fc", "301,302,307,308", // Filter out just pure redirects without following
+            "-fr",       // Follow redirects
+            "-include-chain", // Include the redirect chain in JSON
+            "-silent"
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Send targets to the standard input via a separate thread
+    let mut stdin = child.stdin.take().expect("Failed to open stdin");
+    let mut clean_targets = Vec::new();
+    for target in targets {
+        let clean = target
+            .trim()
+            .replace("http://", "")
+            .replace("https://", "")
+            .replace("www.", "");
+        clean_targets.push(clean);
+    }
+    
+    let targets_string = clean_targets.join("\n") + "\n";
+    
+    thread::spawn(move || {
+        let _ = stdin.write_all(targets_string.as_bytes());
+    });
+
+    let stdout = child.stdout.take().expect("Failed to open stdout");
+    let reader = BufReader::new(stdout);
+    let mut observations = Vec::new();
+
+    // Stream and process results on the fly
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
+            let obs = map_httpx_to_observation(parsed);
+            storage.save(&obs)?;
+            observations.push(obs);
+            
+            // Print a progress indicator
+            print!(".");
+            let _ = io::stdout().flush();
+        }
+    }
+
+    let status = child.wait()?;
+
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("httpx batch process failed with status: {}", status),
+        ));
+    }
+
+    Ok(observations)
+}
+
+// Perform HTTP probe (single domain wrapper around batch)
+pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation, io::Error> {
+    let targets = vec![domain.to_string()];
+    let mut results = probe_http_batch(&targets, storage)?;
+    
+    if let Some(obs) = results.pop() {
+        Ok(obs)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "No output from httpx (unreachable)".to_string(),
+        ))
+    }
 }
