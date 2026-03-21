@@ -95,11 +95,22 @@ Balebos distinguishes between assets (inventory) and observations (checks, probe
 
 Examples:
 - domain → inventory
-- http_check → observation (HTTP status, response time)
-- subdomain_scan → observation
+- subdomain → inventory (discovered via probes)
+- http_check → observation (HTTP status, response time, network errors)
 
 This separation ensures that the system can track both what should exist (the inventory)
 and actual observations over time, providing a foundation for detecting drift and anomalies.
+
+### Network Error Capture
+
+HTTP checks capture detailed network error information:
+
+- **DNS Errors** - dns_not_found, dns_timeout
+- **TLS Errors** - certificate_error, tls_handshake_failed
+- **Connection Errors** - connection_refused, connection_timeout
+- **Protocol Errors** - http_error, invalid_response
+
+Each error includes detailed error messages for debugging and reporting.
 
 ### Invariants
 
@@ -133,17 +144,25 @@ Balebos compresses information into actionable insights:
 
 ### Storage Format
 
-Data is stored as newline-delimited JSON (JSONL):
+Data is stored as newline-delimited JSON (JSONL) with support for multiple record types:
+
 ```
 {"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
 {"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
+{"item_type":"http_check","target":"example.com","status":200,"response_time_ms":156,"checked_at":"timestamp","error_kind":null,"error_message":null}
 ```
+
+**Record Types:**
+- `domain` - Root domains
+- `subdomain` - Discovered subdomains
+- `http_check` - HTTP probe results and network observations
 
 This format offers:
 - Human-readability for debugging
 - Easy processing with standard tools (grep, jq, etc.)
 - Schema flexibility for extension
 - Simple append operations
+- Support for heterogeneous data (multiple record types in single file)
 
 ### Error Handling
 
@@ -179,6 +198,38 @@ Balebos uses exit codes to signal system state:
 - 41 → external tool error
 
 This allows integration with automation and alerting systems for specific response types.
+
+## v0.2.0 Features
+
+### Domain Hierarchy Visualization
+
+The `tree` command provides a hierarchical view of your infrastructure:
+- Displays root domains and discovered subdomains in a tree structure
+- Shows multi-level nesting relationships
+- Helps identify complex subdomain organizations
+- Useful for understanding infrastructure topology
+
+### Domain Status Reporting
+
+The `status` command analyzes HTTP probe results across all assets:
+- Categorizes domains by health status (alive, client errors, server errors, network errors)
+- Shows statistics (count and percentage) for each category
+- Displays response times and error details
+- Identifies portfolio health at a glance
+
+**Export Capabilities:**
+- CSV export for spreadsheet analysis
+- Markdown export for documentation and version control
+- HTML export with styled formatting for web viewing
+- All formats include comprehensive data and timestamps
+
+### Batch Processing
+
+The `batch` command combines multiple operations for efficiency:
+- Scans domain and adds to inventory
+- Discovers subdomains using subfinder
+- Performs HTTP checks on all discovered domains
+- Single command for complete reconnaissance
 
 ## Extension Points
 
