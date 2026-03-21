@@ -10,6 +10,7 @@ use std::thread;
 pub enum InputMode {
     Normal,
     Editing,
+    Filtering,
 }
 
 pub enum VisibleItem {
@@ -27,6 +28,7 @@ pub struct App {
     
     // Interactive Scan
     pub input: String,
+    pub filter: String,
     pub input_mode: InputMode,
     pub is_scanning: Arc<Mutex<bool>>,
 }
@@ -42,6 +44,7 @@ impl App {
             should_quit: false,
             storage,
             input: String::new(),
+            filter: String::new(),
             input_mode: InputMode::Normal,
             is_scanning: Arc::new(Mutex::new(false)),
         };
@@ -61,11 +64,16 @@ impl App {
 
     pub fn update_visible_items(&mut self) {
         let mut items = Vec::new();
+        let filter_lower = self.filter.to_lowercase();
+        
         for group in &self.model.groups {
-            items.push(VisibleItem::Root(group.root.name.clone()));
-            if self.expanded_roots.contains(&group.root.name) {
-                for sub in &group.subdomains {
-                    items.push(VisibleItem::Subdomain(group.root.name.clone(), sub.name.clone()));
+            // Apply filter only to root domains
+            if filter_lower.is_empty() || group.root.name.to_lowercase().contains(&filter_lower) {
+                items.push(VisibleItem::Root(group.root.name.clone()));
+                if self.expanded_roots.contains(&group.root.name) {
+                    for sub in &group.subdomains {
+                        items.push(VisibleItem::Subdomain(group.root.name.clone(), sub.name.clone()));
+                    }
                 }
             }
         }
@@ -106,27 +114,21 @@ impl App {
     }
 
     pub fn next(&mut self) {
+        if self.visible_items.is_empty() { return; }
         let i = match self.table_state.selected() {
-            Some(i) => {
-                if i >= self.visible_items.len() - 1 { 0 } else { i + 1 }
-            }
+            Some(i) => if i >= self.visible_items.len() - 1 { 0 } else { i + 1 },
             None => 0,
         };
-        if !self.visible_items.is_empty() {
-            self.table_state.select(Some(i));
-        }
+        self.table_state.select(Some(i));
     }
 
     pub fn previous(&mut self) {
+        if self.visible_items.is_empty() { return; }
         let i = match self.table_state.selected() {
-            Some(i) => {
-                if i == 0 { self.visible_items.len() - 1 } else { i - 1 }
-            }
+            Some(i) => if i == 0 { self.visible_items.len() - 1 } else { i - 1 },
             None => 0,
         };
-        if !self.visible_items.is_empty() {
-            self.table_state.select(Some(i));
-        }
+        self.table_state.select(Some(i));
     }
 
     pub fn selected_asset(&self) -> Option<&AssetState> {
@@ -168,10 +170,6 @@ impl App {
         }
 
         thread::spawn(move || {
-            // Check if it's a root domain or subdomain
-            // For root domains we might want full discovery, for subdomains just probing.
-            // For simplicity, we run a focused scan on this target.
-            
             let _ = crate::app::probe_dns::probe_dns(&target, &storage);
             let _ = crate::app::probe_http::http_check(&target, &storage);
 

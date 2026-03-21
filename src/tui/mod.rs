@@ -57,6 +57,9 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                         KeyCode::Char('a') => {
                             app.input_mode = InputMode::Editing;
                         }
+                        KeyCode::Char('/') | KeyCode::Char('f') => {
+                            app.input_mode = InputMode::Filtering;
+                        }
                         KeyCode::Char('s') => {
                             app.start_rescan();
                         }
@@ -80,14 +83,26 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                         }
                         _ => {}
                     },
+                    InputMode::Filtering => match key.code {
+                        KeyCode::Enter | KeyCode::Esc => {
+                            app.input_mode = InputMode::Normal;
+                        }
+                        KeyCode::Char(c) => {
+                            app.filter.push(c);
+                            app.update_visible_items();
+                        }
+                        KeyCode::Backspace => {
+                            app.filter.pop();
+                            app.update_visible_items();
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
 
         // Periodic refresh if scanning finished in background
         if !*app.is_scanning.lock().unwrap() && app.input_mode == InputMode::Normal {
-            // Only refresh if we were scanning or just want to keep it fresh
-            // For now, a simple check to see if we should refresh
             let _ = app.refresh();
         }
 

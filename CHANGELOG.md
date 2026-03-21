@@ -5,6 +5,23 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-03-21
+
+### Added
+
+- **Live TUI Filtering** - Press `/` or `f` to filter domains
+  - Instant searching across all root domains in the inventory
+  - Filter state persists until cleared, with a dedicated filter status bar
+  - Keyboard-friendly workflow: `Esc` or `Enter` to return to navigation
+- **UX Enhancements**
+  - Added dedicated Filter Bar in the dashboard
+  - Updated footer with new keybindings for discoverability
+  - Improved details panel layout for better readability of rich DNS records
+
+### Changed
+
+- **Version 1.0 Milestone** - Balebos is now a stable, high-performance orchestrator for infrastructure visibility
+
 ## [0.9.0] - 2026-03-21
 
 ### Added

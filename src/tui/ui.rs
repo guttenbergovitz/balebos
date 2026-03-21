@@ -12,14 +12,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header/Stats
+            Constraint::Length(if app.input_mode == InputMode::Filtering || !app.filter.is_empty() { 3 } else { 0 }), // Filter Bar
             Constraint::Min(10),   // Main View
             Constraint::Length(3), // Footer/Help/Input
         ])
         .split(f.area());
 
     draw_header(f, app, chunks[0]);
-    draw_main(f, app, chunks[1]);
-    draw_footer(f, app, chunks[2]);
+    if chunks[1].height > 0 {
+        draw_filter_bar(f, app, chunks[1]);
+    }
+    draw_main(f, app, chunks[2]);
+    draw_footer(f, app, chunks[3]);
     
     if app.input_mode == InputMode::Editing {
         draw_input_modal(f, app);
@@ -49,6 +53,25 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let header = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title(" Overview "));
     f.render_widget(header, area);
+}
+
+fn draw_filter_bar(f: &mut Frame, app: &App, area: Rect) {
+    let style = if app.input_mode == InputMode::Filtering {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let filter_text = if app.filter.is_empty() && app.input_mode == InputMode::Filtering {
+        "Type to filter domains...".to_string()
+    } else {
+        app.filter.clone()
+    };
+
+    let p = Paragraph::new(format!(" / {}", filter_text))
+        .style(style)
+        .block(Block::default().borders(Borders::ALL).title(" Filter (Root domains) "));
+    f.render_widget(p, area);
 }
 
 fn draw_main(f: &mut Frame, app: &mut App, area: Rect) {
@@ -216,7 +239,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_footer(f: &mut Frame, _app: &App, area: Rect) {
-    let footer = Paragraph::new(" q: Quit | r: Refresh | a: Add Domain | s: Scan | Space: Toggle | k/↑: Up | j/↓: Down ")
+    let footer = Paragraph::new(" q: Quit | /: Filter | a: Add | s: Scan | Space: Toggle | k/↑: Up | j/↓: Down ")
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(footer, area);
 }
@@ -230,7 +253,6 @@ fn draw_input_modal(f: &mut Frame, app: &App) {
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(input, area);
     
-    // Set cursor position for input
     f.set_cursor_position(ratatui::layout::Position::new(
         area.x + app.input.len() as u16 + 1,
         area.y + 1,
