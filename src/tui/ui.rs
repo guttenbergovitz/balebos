@@ -13,7 +13,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header/Stats
-            Constraint::Length(if app.input_mode == InputMode::Filtering || !app.filter.is_empty() { 3 } else { 0 }), // Filter Bar
+            Constraint::Length(if app.input_mode == InputMode::Filtering || !app.filter.is_empty() || app.hide_external_redirects { 3 } else { 0 }), // Filter Bar
             Constraint::Min(10),   // Main View
             Constraint::Length(3), // Footer/Help/Input
         ])
@@ -57,21 +57,30 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_filter_bar(f: &mut Frame, app: &App, area: Rect) {
-    let style = if app.input_mode == InputMode::Filtering {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let mut spans = Vec::new();
+    
+    if !app.filter.is_empty() || app.input_mode == InputMode::Filtering {
+        let style = if app.input_mode == InputMode::Filtering {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
 
-    let filter_text = if app.filter.is_empty() && app.input_mode == InputMode::Filtering {
-        "Type to filter domains...".to_string()
-    } else {
-        app.filter.clone()
-    };
+        let filter_text = if app.filter.is_empty() && app.input_mode == InputMode::Filtering {
+            "Type to filter...".to_string()
+        } else {
+            app.filter.clone()
+        };
+        
+        spans.push(Span::styled(format!(" SEARCH: /{} ", filter_text), style));
+    }
 
-    let p = Paragraph::new(format!(" / {}", filter_text))
-        .style(style)
-        .block(Block::default().borders(Borders::ALL).title(" Filter (Root domains) "));
+    if app.hide_external_redirects {
+        spans.push(Span::styled(" [EXT REDIRECTS HIDDEN] ", Style::default().fg(Color::Indexed(208)).add_modifier(Modifier::BOLD)));
+    }
+
+    let p = Paragraph::new(Line::from(spans))
+        .block(Block::default().borders(Borders::ALL).title(" Active Filters "));
     f.render_widget(p, area);
 }
 
@@ -125,17 +134,28 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(asset.name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         };
 
-        let status = match &asset.latest_http {
-            Some(http) => match http.status {
-                Some(200) => Cell::from("200 OK").style(Style::default().fg(Color::Green)),
-                Some(code) => Cell::from(code.to_string()).style(Style::default().fg(Color::Yellow)),
-                None => match &http.error_kind {
-                    Some(kind) => Cell::from(format!("{:?}", kind)).style(Style::default().fg(Color::Red)),
-                    None => Cell::from("-"),
-                },
-            },
-            None => Cell::from("-"),
-        };
+        let mut status_style = Style::default();
+        let mut status_text = "-".to_string();
+
+        if let Some(http) = &asset.latest_http {
+            if let Some(code) = http.status {
+                if code == 200 {
+                    if let Some(ext_target) = asset.external_redirect() {
+                        status_text = format!("EXT -> {}", ext_target);
+                        status_style = status_style.fg(Color::Yellow);
+                    } else {
+                        status_text = "200 OK".to_string();
+                        status_style = status_style.fg(Color::Green);
+                    }
+                } else {
+                    status_text = code.to_string();
+                    status_style = status_style.fg(Color::Yellow);
+                }
+            } else if let Some(kind) = &http.error_kind {
+                status_text = format!("{:?}", kind);
+                status_style = status_style.fg(Color::Red);
+            }
+        }
 
         let tech = match &asset.latest_http {
             Some(http) => {
@@ -151,15 +171,15 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
 
         Row::new(vec![
             Cell::from(Line::from(vec![Span::raw(prefix), name_span])),
-            status,
+            Cell::from(status_text).style(status_style),
             Cell::from(tech),
         ])
     });
 
     let t = Table::new(rows, [
-        Constraint::Percentage(50),
-        Constraint::Percentage(15),
-        Constraint::Percentage(35),
+        Constraint::Percentage(45),
+        Constraint::Percentage(25),
+        Constraint::Percentage(30),
     ])
     .header(header)
     .block(Block::default().borders(Borders::ALL).title(" Inventory (Space to toggle) "))
@@ -180,7 +200,16 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
             Line::from(""),
         ];
 
-        // DNS Details - ENHANCED
+        // Redirect Status
+        if let Some(ext_target) = asset.external_redirect() {
+            text.push(Line::from(vec![
+                Span::styled("Redirect: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("EXTERNAL -> {}", ext_target), Style::default().fg(Color::Yellow)),
+            ]));
+            text.push(Line::from(""));
+        }
+
+        // DNS Details
         let dns_header = match &asset.latest_dns {
             Some(dns) => format!("DNS Records (Last check: {}):", dns.checked_at.format("%Y-%m-%d %H:%M:%S")),
             None => "DNS Records:".to_string(),
@@ -267,7 +296,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_footer(f: &mut Frame, _app: &App, area: Rect) {
-    let footer = Paragraph::new(" q: Quit | /: Filter | a: Add | s: Scan | Space: Toggle | k/↑: Up | j/↓: Down ")
+    let footer = Paragraph::new(" q: Quit | /: Filter | x: Toggle Ext | a: Add | s: Scan | Space: Toggle | k/↑: Up | j/↓: Down ")
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(footer, area);
 }

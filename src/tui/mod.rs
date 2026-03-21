@@ -45,6 +45,8 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> io::Result<()> {
+    let mut last_scan_state = false;
+
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
@@ -59,6 +61,9 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                         }
                         KeyCode::Char('/') | KeyCode::Char('f') => {
                             app.input_mode = InputMode::Filtering;
+                        }
+                        KeyCode::Char('x') => {
+                            app.toggle_external_filter();
                         }
                         KeyCode::Char('s') => {
                             app.start_rescan();
@@ -101,10 +106,13 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
             }
         }
 
-        // Periodic refresh if scanning finished in background
-        if !*app.is_scanning.lock().unwrap() && app.input_mode == InputMode::Normal {
+        // Detect transition from scanning to finished
+        let is_scanning = *app.is_scanning.lock().unwrap();
+        if last_scan_state && !is_scanning {
+            // Scan just finished, auto-refresh
             let _ = app.refresh();
         }
+        last_scan_state = is_scanning;
 
         if app.should_quit {
             return Ok(());

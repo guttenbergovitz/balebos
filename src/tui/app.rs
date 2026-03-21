@@ -31,6 +31,9 @@ pub struct App {
     pub filter: String,
     pub input_mode: InputMode,
     pub is_scanning: Arc<Mutex<bool>>,
+
+    // Toggles
+    pub hide_external_redirects: bool,
 }
 
 impl App {
@@ -47,6 +50,7 @@ impl App {
             filter: String::new(),
             input_mode: InputMode::Normal,
             is_scanning: Arc::new(Mutex::new(false)),
+            hide_external_redirects: false,
         };
         app.update_visible_items();
         if !app.visible_items.is_empty() {
@@ -67,7 +71,10 @@ impl App {
         let filter_lower = self.filter.to_lowercase();
         
         for group in &self.model.groups {
-            // Apply filter only to root domains
+            if self.hide_external_redirects && group.root.external_redirect().is_some() {
+                continue;
+            }
+
             if filter_lower.is_empty() || group.root.name.to_lowercase().contains(&filter_lower) {
                 items.push(VisibleItem::Root(group.root.name.clone()));
                 if self.expanded_roots.contains(&group.root.name) {
@@ -78,6 +85,12 @@ impl App {
             }
         }
         self.visible_items = items;
+    }
+
+    pub fn toggle_external_filter(&mut self) {
+        self.hide_external_redirects = !self.hide_external_redirects;
+        self.update_visible_items();
+        self.fix_selection();
     }
 
     pub fn toggle_expand(&mut self) {
@@ -150,17 +163,7 @@ impl App {
         if domain.is_empty() { return; }
         
         self.input_mode = InputMode::Normal;
-        self.run_background_recon(domain);
-    }
-
-    pub fn start_rescan(&mut self) {
-        if let Some(asset) = self.selected_asset() {
-            let name = asset.name.clone();
-            self.run_background_recon(name);
-        }
-    }
-
-    fn run_background_recon(&self, target: String) {
+        
         let storage = self.storage.clone();
         let is_scanning = Arc::clone(&self.is_scanning);
         
@@ -170,11 +173,48 @@ impl App {
         }
 
         thread::spawn(move || {
-            let _ = crate::app::probe_dns::probe_dns(&target, &storage);
-            let _ = crate::app::probe_http::http_check(&target, &storage);
+            // Full discovery for new root domain
+            let _ = crate::app::scan::scan_domain(&domain, &storage);
+            let _ = crate::app::probe::probe_subdomains(&domain, &storage);
+            
+            // Collect all unique targets found
+            if let Ok(records) = crate::storage::read_records(&storage) {
+                let mut targets = std::collections::HashSet::new();
+                for item in records.items {
+                    if item.name == domain || item.name.ends_with(&format!(".{}", domain)) {
+                        targets.insert(item.name);
+                    }
+                }
+                let target_list: Vec<String> = targets.into_iter().collect();
+                let _ = crate::app::probe_dns::probe_dns_batch(&target_list, &storage);
+                let _ = crate::app::probe_http::probe_http_batch(&target_list, &storage);
+            }
 
             let mut scanning = is_scanning.lock().unwrap();
             *scanning = false;
         });
+    }
+
+    pub fn start_rescan(&mut self) {
+        if let Some(asset) = self.selected_asset() {
+            let target = asset.name.clone();
+            
+            let storage = self.storage.clone();
+            let is_scanning = Arc::clone(&self.is_scanning);
+            
+            {
+                let mut scanning = is_scanning.lock().unwrap();
+                *scanning = true;
+            }
+
+            thread::spawn(move || {
+                // For existing assets, just update facts
+                let _ = crate::app::probe_dns::probe_dns(&target, &storage);
+                let _ = crate::app::probe_http::http_check(&target, &storage);
+
+                let mut scanning = is_scanning.lock().unwrap();
+                *scanning = false;
+            });
+        }
     }
 }

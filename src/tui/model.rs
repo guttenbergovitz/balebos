@@ -12,6 +12,37 @@ pub struct AssetState {
     pub latest_http: Option<HttpObservation>,
 }
 
+impl AssetState {
+    /// Detects if the asset has an external redirect.
+    /// Returns Some(target_domain) if it's external, None otherwise.
+    pub fn external_redirect(&self) -> Option<String> {
+        let http = self.latest_http.as_ref()?;
+        let final_url = http.final_url.as_ref()?;
+        
+        // 1. Clean up the current asset name (the intended target)
+        let current_base = self.name.to_lowercase()
+            .replace("www.", "")
+            .trim_matches('.')
+            .to_string();
+
+        // 2. Extract and clean the domain from final_url
+        let final_domain = final_url.to_lowercase()
+            .replace("https://", "")
+            .replace("http://", "")
+            .split('/')
+            .next()?
+            .replace("www.", "")
+            .trim_matches('.')
+            .to_string();
+            
+        if !final_domain.is_empty() && final_domain != current_base {
+            Some(final_domain)
+        } else {
+            None
+        }
+    }
+}
+
 /// A group of subdomains under a root domain
 #[derive(Debug, Clone)]
 pub struct DomainGroup {
@@ -74,14 +105,11 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     // 2. Group subdomains under root domains
     let mut groups: BTreeMap<String, DomainGroup> = BTreeMap::new();
     
-    // Sort assets by name length to process potential roots (shorter names) first
     let mut all_assets: Vec<AssetState> = assets_map.into_values().collect();
     all_assets.sort_by(|a, b| a.name.len().cmp(&b.name.len()));
 
     for asset in all_assets {
         let mut found_parent = false;
-        // Simple heuristic: check if asset name ends with ".<existing_root>"
-        // In a more robust version, we could use TLD libraries or proper domain parsing.
         for root_name in groups.keys().cloned().collect::<Vec<_>>() {
             if asset.name.ends_with(&format!(".{}", root_name)) {
                 groups.get_mut(&root_name).unwrap().subdomains.push(asset.clone());
