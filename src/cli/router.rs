@@ -15,6 +15,7 @@ pub enum Command {
 pub enum ProbeKind {
     Subdomains,
     Http,
+    Dns,
 }
 
 pub struct ExportArgs {
@@ -73,6 +74,7 @@ pub fn parse_command() -> Option<Command> {
             let kind = match kind_str.as_str() {
                 "subdomains" => ProbeKind::Subdomains,
                 "http" => ProbeKind::Http,
+                "dns" => ProbeKind::Dns,
                 _ => return None,
             };
             Some(Command::Probe { kind, target })

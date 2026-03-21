@@ -3,6 +3,7 @@ pub mod check;
 pub mod diff;
 pub mod list;
 pub mod probe;
+pub mod probe_dns;
 pub mod probe_http;
 pub mod report;
 pub mod scan;

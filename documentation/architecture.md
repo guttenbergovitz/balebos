@@ -159,13 +159,14 @@ Data is stored as newline-delimited JSON (JSONL) with support for multiple recor
 ```json
 {"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
 {"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
-{"item_type":"http_check","target":"google.com","status":200,"final_url":"https://www.google.com/","redirect_chain":[{"url":"https://google.com","status":301,"redirect_to":"https://www.google.com/"}]}
+{"item_type":"dns_record","target":"google.com","a":["142.250.181.238"],"aaaa":["2a00:1450:4025:804::65"],"cname":[]}
+{"item_type":"http_check","target":"google.com","status":200,"final_url":"https://www.google.com/","redirect_chain":[{"url":"https://google.com","status":301,"redirect_to":"https://www.google.com/"}],"tech":["Google Web Server","HTTP/3"],"webserver":"gws","title":"Google"}
 ```
 
 **Record Types:**
 - `domain` - Root domains
 - `subdomain` - Discovered subdomains
-- `http_check` - HTTP probe results and network observations
+- `http_check` - HTTP probe results and network observations (including tech stack, server fingerprints, and redirect chains via `httpx`)
 
 This format offers:
 - Human-readability for debugging

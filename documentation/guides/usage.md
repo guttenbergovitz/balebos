@@ -37,6 +37,18 @@ This command:
 - Adds each subdomain to the inventory
 - Marks the source as "subfinder"
 
+#### Resolving DNS Records
+
+```bash
+balebos probe dns example.com
+```
+
+This command:
+- Uses `dnsx` to resolve DNS records
+- Captures `A` (IPv4), `AAAA` (IPv6), and `CNAME` records
+- Adds observations to the inventory with a timestamp
+- Helps identify if domains are active at the network level
+
 #### Checking HTTP Status
 
 ```bash
@@ -59,6 +71,11 @@ Status: 200
 Redirect chain (1 hops):
   1. https://google.com (301) -> https://www.google.com/
   Final URL: https://www.google.com/
+
+Details:
+  Title: Google
+  Server: gws
+  Tech: Google Web Server, HSTS, HTTP/3
 Response time: 534ms
 ```
 

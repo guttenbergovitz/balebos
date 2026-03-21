@@ -1,4 +1,5 @@
 use crate::app::probe;
+use crate::app::probe_dns;
 use crate::app::probe_http;
 use crate::domain::normalize_domain;
 use crate::storage::JsonlStorage;
@@ -13,6 +14,7 @@ pub struct BatchStats {
     pub domains_added: usize,
     pub domains_failed: usize,
     pub subdomains_found: usize,
+    pub dns_checks_completed: usize,
     pub http_checks_completed: usize,
     pub http_errors: usize,
     pub total_runtime_secs: u64,
@@ -70,13 +72,14 @@ pub fn batch_process(
         domains_added: 0,
         domains_failed: 0,
         subdomains_found: 0,
+        dns_checks_completed: 0,
         http_checks_completed: 0,
         http_errors: 0,
         total_runtime_secs: 0,
     };
 
     // Step 1: Scan all domains
-    println!("🔍 Step 1/3: Scanning domains...");
+    println!("🔍 Step 1/4: Scanning domains...");
     for (idx, domain) in domains.iter().enumerate() {
         if crate::ignore::is_ignored(domain, ignore_patterns) {
             println!("  ⊘ [{}/{}] {} (ignored)", idx + 1, domains.len(), domain);
@@ -103,7 +106,7 @@ pub fn batch_process(
     println!();
 
     // Step 2: Probe subdomains for each domain
-    println!("🕷️  Step 2/3: Discovering subdomains...");
+    println!("🕷️  Step 2/4: Discovering subdomains...");
     for (idx, domain) in domains.iter().enumerate() {
         if crate::ignore::is_ignored(domain, ignore_patterns) {
             continue;
@@ -122,22 +125,50 @@ pub fn batch_process(
     }
     println!();
 
-    // Step 3: Probe HTTP for all domains and subdomains
-    println!("🌐 Step 3/3: Checking HTTP status...");
-
     // Get all current domains and subdomains
     let all_assets = get_all_assets(storage)?;
-    let mut completed = 0;
     let total = all_assets.len();
 
-    for asset in all_assets {
-        if crate::ignore::is_ignored(&asset, ignore_patterns) {
+    // Step 3: Probe DNS for all domains and subdomains
+    println!("📡 Step 3/4: Resolving DNS records...");
+    let mut completed_dns = 0;
+    
+    for asset in &all_assets {
+        if crate::ignore::is_ignored(asset, ignore_patterns) {
             continue;
         }
 
-        print!("  ⟳ [{}/{}] {} ", completed + 1, total, asset);
+        print!("  ⟳ [{}/{}] {} ", completed_dns + 1, total, asset);
+        match probe_dns::probe_dns(asset, storage) {
+            Ok(obs) => {
+                let count = obs.a.len() + obs.aaaa.len() + obs.cname.len();
+                if count > 0 {
+                    println!("→ {} records", count);
+                } else {
+                    println!("→ no records");
+                }
+                stats.dns_checks_completed += 1;
+            }
+            Err(e) => {
+                println!("✗ (error: {})", e);
+            }
+        }
+        completed_dns += 1;
+    }
+    println!();
 
-        match probe_http::http_check(&asset, storage) {
+    // Step 4: Probe HTTP for all domains and subdomains
+    println!("🌐 Step 4/4: Checking HTTP status...");
+    let mut completed_http = 0;
+
+    for asset in &all_assets {
+        if crate::ignore::is_ignored(asset, ignore_patterns) {
+            continue;
+        }
+
+        print!("  ⟳ [{}/{}] {} ", completed_http + 1, total, asset);
+
+        match probe_http::http_check(asset, storage) {
             Ok(obs) => {
                 if let Some(status) = obs.status {
                     print!("→ {}", status);
@@ -160,7 +191,7 @@ pub fn batch_process(
             }
         }
 
-        completed += 1;
+        completed_http += 1;
     }
     println!();
 
@@ -203,6 +234,7 @@ fn print_summary(stats: &BatchStats, domains: &[String]) {
     println!("║ Successfully scanned: {:>22} ║", stats.domains_added);
     println!("║ Failed to scan:       {:>22} ║", stats.domains_failed);
     println!("║ Subdomains found:     {:>22} ║", stats.subdomains_found);
+    println!("║ DNS checks:           {:>22} ║", stats.dns_checks_completed);
     println!(
         "║ HTTP checks:          {:>22} ║",
         stats.http_checks_completed

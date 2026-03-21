@@ -417,6 +417,17 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
                     }
                 }
 
+                println!("\nDetails:");
+                if let Some(title) = &observation.title {
+                    println!("  Title: {}", title);
+                }
+                if let Some(server) = &observation.webserver {
+                    println!("  Server: {}", server);
+                }
+                if !observation.tech.is_empty() {
+                    println!("  Tech: {}", observation.tech.join(", "));
+                }
+
                 println!("Response time: {}ms", observation.response_time_ms);
 
                 println!("\nObservation added to inventory.");
@@ -441,6 +452,32 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
             Err(e) => {
                 eprintln!("Error checking HTTP status: {}", e);
                 process::exit(EXIT_HTTP_ERROR);
+            }
+        },
+        ProbeKind::Dns => match crate::app::probe_dns::probe_dns(target, storage) {
+            Ok(obs) => {
+                println!("DNS check completed for {}", obs.target);
+                
+                if !obs.a.is_empty() {
+                    println!("A: {}", obs.a.join(", "));
+                }
+                if !obs.aaaa.is_empty() {
+                    println!("AAAA: {}", obs.aaaa.join(", "));
+                }
+                if !obs.cname.is_empty() {
+                    println!("CNAME: {}", obs.cname.join(", "));
+                }
+                
+                if obs.a.is_empty() && obs.aaaa.is_empty() && obs.cname.is_empty() {
+                    println!("No DNS records found.");
+                }
+
+                println!("\nObservation added to inventory.");
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error checking DNS records: {}", e);
+                process::exit(EXIT_EXTERNAL_TOOL_ERROR);
             }
         },
     }
