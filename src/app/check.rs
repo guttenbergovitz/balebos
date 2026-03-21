@@ -136,15 +136,6 @@ fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
             issues.push(Issue::warning(&message));
         }
 
-        // Check if original domain contains http:// or www.
-        if let Some(ref original) = item.original_input {
-            if original.contains("http://")
-                || original.contains("https://")
-                || original.starts_with("www.")
-            {
-                // This is actually expected behavior, not an issue, so we don't report it
-            }
-        }
     }
 
     issues
