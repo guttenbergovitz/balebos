@@ -226,6 +226,12 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
                         domain
                     )));
                 }
+                HttpErrorKind::TooManyRedirects => {
+                    issues.push(Issue::warning(&format!(
+                        "Domain {} - Too many redirects",
+                        domain
+                    )));
+                }
                 HttpErrorKind::ProbeError => {
                     issues.push(Issue::warning(&format!(
                         "Domain {} - HTTP probe failed",

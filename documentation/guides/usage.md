@@ -45,10 +45,22 @@ balebos probe http example.com
 
 This command:
 - Attempts HTTPS connection with fallback to HTTP
+- **Automatically follows and records redirect chains** (up to 10 hops)
 - Records HTTP status code and response time
 - Captures network errors (DNS failures, timeouts, TLS errors, etc.) as observations
 - Adds observation to inventory with timestamp
 - Returns exit code based on HTTP status (for automation)
+
+If a redirect is detected, the output shows the full chain:
+```text
+HTTP check completed for google.com
+Status: 200
+
+Redirect chain (1 hops):
+  1. https://google.com (301) -> https://www.google.com/
+  Final URL: https://www.google.com/
+Response time: 534ms
+```
 
 #### Full Reconnaissance Batch
 

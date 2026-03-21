@@ -3,6 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::time::{Duration, Instant};
+use url::Url;
 use uuid::Uuid;
 
 // HTTP probe error types
@@ -14,6 +15,15 @@ pub enum HttpErrorKind {
     ConnectionError,
     TlsError,
     ProbeError,
+    TooManyRedirects,
+}
+
+// Represents a single hop in a redirect chain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedirectHop {
+    pub url: String,
+    pub status: u16,
+    pub redirect_to: String,
 }
 
 // HTTP observation - always describes what happened (success or failure)
@@ -27,6 +37,12 @@ pub struct HttpObservation {
     // Result - XOR: either status or error, never both
     pub status: Option<u16>,
     pub response_time_ms: u64,
+
+    // Redirect information
+    #[serde(default)]
+    pub final_url: Option<String>,
+    #[serde(default)]
+    pub redirect_chain: Vec<RedirectHop>,
 
     // Metadata
     pub checked_at: chrono::DateTime<Utc>,
@@ -91,58 +107,122 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none()) // We handle redirects manually
         .build()
         .map_err(|e| io::Error::other(e.to_string()))?;
 
     let start = Instant::now();
 
-    // Try HTTPS first, fallback to HTTP
-    let response_result = match client.get(&https_url).send() {
-        Ok(resp) => Ok(resp),
-        Err(_https_err) => {
-            // HTTPS failed, don't log here - it will be in the observation
-            match client.get(&http_url).send() {
-                Ok(resp) => Ok(resp),
-                Err(http_err) => Err(http_err),
+    let mut current_url = https_url.clone();
+    let mut redirect_chain = Vec::new();
+    let mut final_status = None;
+    let mut error_result = None;
+    let max_redirects = 10;
+    
+    // First, try HTTPS. If it fails on the very first request (e.g. connection refused), fallback to HTTP.
+    let mut tried_http_fallback = false;
+
+    for _ in 0..max_redirects {
+        let response_result = client.get(&current_url).send();
+
+        match response_result {
+            Ok(response) => {
+                let status = response.status().as_u16();
+
+                if status >= 300 && status < 400 {
+                    if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
+                        if let Ok(loc_str) = location.to_str() {
+                            // Resolve relative URLs using the current URL as a base
+                            let next_url = if let Ok(base) = Url::parse(&current_url) {
+                                if let Ok(joined) = base.join(loc_str) {
+                                    joined.to_string()
+                                } else {
+                                    loc_str.to_string()
+                                }
+                            } else {
+                                loc_str.to_string()
+                            };
+
+                            redirect_chain.push(RedirectHop {
+                                url: current_url.clone(),
+                                status,
+                                redirect_to: next_url.clone(),
+                            });
+
+                            current_url = next_url;
+                            continue;
+                        }
+                    }
+                }
+
+                // If we get here, it's not a redirect or it's a redirect missing a Location header
+                final_status = Some(status);
+                break;
+            }
+            Err(error) => {
+                if !tried_http_fallback && redirect_chain.is_empty() {
+                    // Try HTTP fallback only if this is the very first request and HTTPS failed
+                    tried_http_fallback = true;
+                    current_url = http_url.clone();
+                    // Don't break, continue loop to try HTTP
+                } else {
+                    // It failed during a redirect chain or after HTTP fallback
+                    error_result = Some(error);
+                    break;
+                }
             }
         }
-    };
+    }
 
     let duration = start.elapsed().as_millis() as u64;
 
-    // Create observation - always Ok(observation), never Err for network issues
-    let observation = match response_result {
-        Ok(response) => {
-            let status = response.status().as_u16();
-            HttpObservation {
-                item_type: "http_check".to_string(),
-                id: Uuid::new_v4().to_string(),
-                asset_type: "domain".to_string(),
-                target: clean_domain.to_string(),
-                status: Some(status),
-                response_time_ms: duration,
-                checked_at: Utc::now(),
-                source: "probe_http".to_string(),
-                error_kind: None,
-                error_message: None,
-            }
+    let observation = if error_result.is_none() && final_status.is_none() {
+        HttpObservation {
+            item_type: "http_check".to_string(),
+            id: Uuid::new_v4().to_string(),
+            asset_type: "domain".to_string(),
+            target: clean_domain.to_string(),
+            status: None,
+            response_time_ms: duration,
+            final_url: Some(current_url),
+            redirect_chain,
+            checked_at: Utc::now(),
+            source: "probe_http".to_string(),
+            error_kind: Some(HttpErrorKind::TooManyRedirects),
+            error_message: Some("Too many redirects".to_string()),
         }
-        Err(error) => {
-            let error_kind = categorize_request_error(&error);
-            let error_message = error.to_string();
+    } else if let Some(error) = error_result {
+        let error_kind = categorize_request_error(&error);
+        let error_message = error.to_string();
 
-            HttpObservation {
-                item_type: "http_check".to_string(),
-                id: Uuid::new_v4().to_string(),
-                asset_type: "domain".to_string(),
-                target: clean_domain.to_string(),
-                status: None,
-                response_time_ms: duration,
-                checked_at: Utc::now(),
-                source: "probe_http".to_string(),
-                error_kind: Some(error_kind),
-                error_message: Some(error_message),
-            }
+        HttpObservation {
+            item_type: "http_check".to_string(),
+            id: Uuid::new_v4().to_string(),
+            asset_type: "domain".to_string(),
+            target: clean_domain.to_string(),
+            status: None,
+            response_time_ms: duration,
+            final_url: Some(current_url),
+            redirect_chain,
+            checked_at: Utc::now(),
+            source: "probe_http".to_string(),
+            error_kind: Some(error_kind),
+            error_message: Some(error_message),
+        }
+    } else {
+        HttpObservation {
+            item_type: "http_check".to_string(),
+            id: Uuid::new_v4().to_string(),
+            asset_type: "domain".to_string(),
+            target: clean_domain.to_string(),
+            status: final_status,
+            response_time_ms: duration,
+            final_url: Some(current_url),
+            redirect_chain,
+            checked_at: Utc::now(),
+            source: "probe_http".to_string(),
+            error_kind: None,
+            error_message: None,
         }
     };
 

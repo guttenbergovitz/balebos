@@ -399,15 +399,25 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
 
                 if let Some(status) = observation.status {
                     println!("Status: {}", status);
-                    println!("Response time: {}ms", observation.response_time_ms);
                 } else if let Some(error_kind) = observation.error_kind {
                     println!("Probe failed: {:?}", error_kind);
                     println!(
                         "Error: {}",
                         observation.error_message.as_deref().unwrap_or("unknown")
                     );
-                    println!("Response time: {}ms", observation.response_time_ms);
                 }
+
+                if !observation.redirect_chain.is_empty() {
+                    println!("\nRedirect chain ({} hops):", observation.redirect_chain.len());
+                    for (i, hop) in observation.redirect_chain.iter().enumerate() {
+                        println!("  {}. {} ({}) -> {}", i + 1, hop.url, hop.status, hop.redirect_to);
+                    }
+                    if let Some(final_url) = &observation.final_url {
+                        println!("  Final URL: {}", final_url);
+                    }
+                }
+
+                println!("Response time: {}ms", observation.response_time_ms);
 
                 println!("\nObservation added to inventory.");
                 println!(

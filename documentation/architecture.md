@@ -156,10 +156,10 @@ Balebos compresses information into actionable insights:
 
 Data is stored as newline-delimited JSON (JSONL) with support for multiple record types:
 
-```
+```json
 {"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
 {"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
-{"item_type":"http_check","target":"example.com","status":200,"response_time_ms":156,"checked_at":"timestamp","error_kind":null,"error_message":null}
+{"item_type":"http_check","target":"google.com","status":200,"final_url":"https://www.google.com/","redirect_chain":[{"url":"https://google.com","status":301,"redirect_to":"https://www.google.com/"}]}
 ```
 
 **Record Types:**
