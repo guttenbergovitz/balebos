@@ -5,6 +5,27 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-21
+
+### Added
+
+- **Interactive TUI Dashboard** - Launch with `balebos ui`
+  - Real-time inventory browser using Ratatui
+  - Hierarchical domain grouping with Expand/Collapse support
+  - Detailed asset inspector showing full tech stack and redirect history
+  - Background scanning: Add and probe domains without leaving the UI
+- **Rich DNS Data Collection**
+  - Now captures and displays: `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, and `SOA` records
+  - Timestamps for last successful DNS and HTTP checks shown in the UI inspector
+- **Concurrency & UI Polish**
+  - Integrated asynchronous background thread for non-blocking recon tasks
+  - Live status indicator `[SCANNING...]` in the dashboard header
+
+### Changed
+
+- **Storage Model** - Expanded `DnsObservation` to support rich record types
+- **Internal API** - `JsonlStorage` now implements `Clone` for easier multi-threaded access
+
 ## [0.7.0] - 2026-03-21
 
 ### Added

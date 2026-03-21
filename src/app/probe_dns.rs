@@ -20,6 +20,14 @@ pub struct DnsObservation {
     pub aaaa: Vec<String>,
     #[serde(default)]
     pub cname: Vec<String>,
+    #[serde(default)]
+    pub mx: Vec<String>,
+    #[serde(default)]
+    pub ns: Vec<String>,
+    #[serde(default)]
+    pub txt: Vec<String>,
+    #[serde(default)]
+    pub soa: Vec<String>,
 
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,
@@ -34,6 +42,14 @@ struct DnsxOutput {
     aaaa: Vec<String>,
     #[serde(default)]
     cname: Vec<String>,
+    #[serde(default)]
+    mx: Vec<String>,
+    #[serde(default)]
+    ns: Vec<String>,
+    #[serde(default)]
+    txt: Vec<String>,
+    #[serde(default)]
+    soa: Vec<String>,
 }
 
 /// Helper function to check if dnsx is correctly installed.
@@ -66,14 +82,12 @@ pub fn probe_dns_batch(
     check_dnsx_installation()?;
 
     let mut child = Command::new("dnsx")
-        .args(["-json", "-a", "-aaaa", "-cname", "-silent"])
+        .args(["-json", "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", "-silent"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
 
-    // Send all targets to the standard input of dnsx via a separate thread
-    // to avoid blocking if the list is extremely large (though OS buffers often handle it).
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let targets_string = targets.join("\n") + "\n";
     
@@ -85,7 +99,6 @@ pub fn probe_dns_batch(
     let reader = BufReader::new(stdout);
     let mut observations = Vec::new();
 
-    // Stream results as they arrive
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -102,36 +115,27 @@ pub fn probe_dns_batch(
                     a: parsed.a,
                     aaaa: parsed.aaaa,
                     cname: parsed.cname,
+                    mx: parsed.mx,
+                    ns: parsed.ns,
+                    txt: parsed.txt,
+                    soa: parsed.soa,
                     checked_at: Utc::now(),
                     source: "dnsx".to_string(),
                 };
                 storage.save(&obs)?;
                 observations.push(obs);
                 
-                // Print a progress indicator
                 print!(".");
                 let _ = io::stdout().flush();
             }
-            Err(_) => {
-                // Ignore parse errors on silent stdout for batch reliability
-                continue;
-            }
+            Err(_) => continue,
         }
     }
 
-    let status = child.wait()?;
-
-    if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("dnsx batch process failed with status: {}", status),
-        ));
-    }
-
+    let _ = child.wait()?;
     Ok(observations)
 }
 
-/// Maintain compatibility with single probes by wrapping the batch implementation.
 pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
     let targets = vec![target.to_string()];
     let mut results = probe_dns_batch(&targets, storage)?;
@@ -139,7 +143,6 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
     if let Some(obs) = results.pop() {
         Ok(obs)
     } else {
-        // If dnsx returns nothing, the host probably has no records. Return empty observation.
         let obs = DnsObservation {
             item_type: "dns_record".to_string(),
             id: Uuid::new_v4().to_string(),
@@ -148,6 +151,10 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
             a: Vec::new(),
             aaaa: Vec::new(),
             cname: Vec::new(),
+            mx: Vec::new(),
+            ns: Vec::new(),
+            txt: Vec::new(),
+            soa: Vec::new(),
             checked_at: Utc::now(),
             source: "dnsx".to_string(),
         };
