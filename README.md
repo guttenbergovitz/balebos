@@ -96,10 +96,11 @@ This approach ensures:
 ### Core Concepts
 
 1. **Inventory** - Centralized registry of all infrastructure assets
-2. **Normalization** - Assets are normalized for consistent storage and analysis
-3. **Anomaly detection** - Identification of suspicious patterns and deviations
-4. **Operational monitoring** - Regular reports highlighting changes requiring attention
-5. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+2. **Validation** - Structural checks ensure only valid domain names enter the system
+3. **Normalization** - Assets are normalized for consistent storage and analysis
+4. **Anomaly detection** - Identification of suspicious patterns and deviations
+5. **Operational monitoring** - Regular reports highlighting changes requiring attention
+6. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
 
 ### Domain Hierarchy Visualization
 
