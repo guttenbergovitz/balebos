@@ -24,6 +24,16 @@ Balebos is designed so that system state does not depend on constant human atten
 - exposes system state via API / queries
 - highlights drift and unknowns
 
+## Documentation
+
+- **Guides**
+  - [Getting Started](documentation/guides/getting-started.md) - Installation and first steps
+  - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
+  - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
+- **Technical Specs**
+  - [Architecture Overview](documentation/architecture.md) - Design principles and layers
+  - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
+
 ## Why
 
 Most systems don’t fail loudly.
@@ -113,25 +123,25 @@ This approach ensures:
 The `balebos tree` command displays your domains in a hierarchical tree structure, showing the relationship between root domains and their discovered subdomains:
 
 ```
-Domain Hierarchy (645)
+Domain Hierarchy (15)
 
-├── 🔵 farmchamps.pl
-│   ├── ◇ klub
-│   ├── ◇ search
-│   ├── ◇ stage
+├── 🔵 example.com
+│   ├── ◇ api
+│   ├── ◇ blog
+│   ├── ◇ dev
 │   │   ├── ◇ api
-│   │   │   └── ◇ klub
-│   │   └── ◇ klub
+│   │   │   └── ◇ auth
+│   │   └── ◇ web
 │   └── ◇ www
 │
-├── 🔵 pethearts.de
-│   ├── ◇ stage
-│   │   └── ◇ wissenswiese
+├── 🔵 acme.test
+│   ├── ◇ staging
+│   │   └── ◇ portal
 │   ├── ◇ tracking
-│   │   └── ◇ news
+│   │   └── ◇ analytics
 │   └── ◇ www
-│       └── ◇ stage
-│           └── ◇ wissenswiese
+│       └── ◇ staging
+│           └── ◇ portal
 ```
 
 **Legend:**
@@ -140,7 +150,7 @@ Domain Hierarchy (645)
 
 This view helps identify:
 - Which domains have complex subdomain structures
-- Multi-level nested subdomains (e.g., `api.stage.klub.farmchamps.pl`)
+- Multi-level nested subdomains (e.g., `auth.api.dev.example.com`)
 - Organizational patterns in your infrastructure
 - Domains without discovered subdomains (leaves in the tree)
 
