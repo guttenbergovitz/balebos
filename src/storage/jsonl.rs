@@ -6,6 +6,7 @@ use serde::Serialize;
 
 // Our storage system for inventory items
 // We're using a simple JSONL (JSON Lines) file format
+#[derive(Clone)]
 pub struct JsonlStorage {
     filepath: String,
 }

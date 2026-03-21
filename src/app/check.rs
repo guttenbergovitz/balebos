@@ -254,6 +254,30 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
                 )));
             }
         }
+
+        // Check TLS expiration
+        if let Some(tls) = &observation.tls {
+            let now = Utc::now();
+            let time_until_expiry = tls.not_after.signed_duration_since(now);
+            let days_until_expiry = time_until_expiry.num_days();
+
+            if days_until_expiry < 0 {
+                issues.push(Issue::critical(&format!(
+                    "Domain {} - TLS certificate EXPIRED on {}",
+                    domain, tls.not_after.format("%Y-%m-%d")
+                )));
+            } else if days_until_expiry < 14 {
+                issues.push(Issue::critical(&format!(
+                    "Domain {} - TLS certificate expires in {} days ({})",
+                    domain, days_until_expiry, tls.not_after.format("%Y-%m-%d")
+                )));
+            } else if days_until_expiry < 30 {
+                issues.push(Issue::warning(&format!(
+                    "Domain {} - TLS certificate expires in {} days ({})",
+                    domain, days_until_expiry, tls.not_after.format("%Y-%m-%d")
+                )));
+            }
+        }
     }
 
     // Check for domains without HTTP checks in the last 24 hours

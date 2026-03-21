@@ -82,13 +82,34 @@ Response time: 534ms
 #### Full Reconnaissance Batch
 
 ```bash
-balebos batch example.com
+balebos batch domains.txt
 ```
 
 This command combines scanning, subdomain discovery, and HTTP checking in a single operation:
 - Scans the domain and adds it to inventory
-- Discovers subdomains using subfinder
-- Performs HTTP checks on all discovered domains
+- Discovers subdomains via `subfinder`
+- Resolves DNS records via `dnsx`
+- Probes HTTP status via `httpx`
+
+### Interactive TUI Dashboard
+
+```bash
+balebos ui
+```
+
+Balebos includes a Terminal User Interface (TUI) for interactive inventory exploration:
+- **Navigation**: Use arrow keys or `j`/`k` to browse assets.
+- **Hierarchical View**: Subdomains are grouped under root domains. Use **Space** or **Enter** to expand/collapse groups.
+- **Smart Status**: The status column highlights external redirects (e.g., `EXT -> target.com`) vs internal/direct `200 OK` responses.
+- **Live Filtering**: 
+    - Press `/` or `f` to search for specific root domains.
+    - Press `x` to toggle the visibility of external redirects (hide domains that are just "jumpers").
+- **Detailed Inspector**: View tech stacks, full DNS records (MX, TXT, NS, SOA), TLS certificates (Issuer, Expiry), and redirect chains.
+- **Live Actions**:
+    - Press `a` to add and scan a new domain in the background.
+    - Press `s` to trigger a re-scan of the selected asset.
+    - Press `r` to refresh the view from the inventory file.
+    - Press `q` to quit.
 - Adds all observations to inventory with timestamps
 
 ### Querying Data

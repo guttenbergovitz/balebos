@@ -1,10 +1,10 @@
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
-use std::thread;
+use std::io::{BufRead, BufReader};
+use std::process::Command;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,12 +20,26 @@ pub struct DnsObservation {
     pub aaaa: Vec<String>,
     #[serde(default)]
     pub cname: Vec<String>,
+    #[serde(default)]
+    pub mx: Vec<String>,
+    #[serde(default)]
+    pub ns: Vec<String>,
+    #[serde(default)]
+    pub txt: Vec<String>,
+    #[serde(default)]
+    pub soa: Vec<String>,
 
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+struct SoaRecord {
+    ns: Option<String>,
+    mailbox: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
 struct DnsxOutput {
     host: String,
     #[serde(default)]
@@ -34,6 +48,14 @@ struct DnsxOutput {
     aaaa: Vec<String>,
     #[serde(default)]
     cname: Vec<String>,
+    #[serde(default)]
+    mx: Vec<String>,
+    #[serde(default)]
+    ns: Vec<String>,
+    #[serde(default)]
+    txt: Vec<String>,
+    #[serde(default)]
+    soa: Option<Vec<SoaRecord>>,
 }
 
 /// Helper function to check if dnsx is correctly installed.
@@ -65,27 +87,33 @@ pub fn probe_dns_batch(
 
     check_dnsx_installation()?;
 
-    let mut child = Command::new("dnsx")
-        .args(["-json", "-a", "-aaaa", "-cname", "-silent"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    // Use a temporary file for targets to avoid pipe issues
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
+    fs::write(&temp_file, targets.join("\n"))?;
 
-    // Send all targets to the standard input of dnsx via a separate thread
-    // to avoid blocking if the list is extremely large (though OS buffers often handle it).
-    let mut stdin = child.stdin.take().expect("Failed to open stdin");
-    let targets_string = targets.join("\n") + "\n";
-    
-    thread::spawn(move || {
-        let _ = stdin.write_all(targets_string.as_bytes());
-    });
+    let output = Command::new("dnsx")
+        .args([
+            "-l", temp_file.to_str().unwrap(),
+            "-json", 
+            "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
+            "-silent"
+        ])
+        .output()?;
 
-    let stdout = child.stdout.take().expect("Failed to open stdout");
-    let reader = BufReader::new(stdout);
+    // Cleanup temp file
+    let _ = fs::remove_file(&temp_file);
+
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("dnsx failed with status: {}", output.status),
+        ));
+    }
+
     let mut observations = Vec::new();
+    let reader = BufReader::new(&output.stdout[..]);
 
-    // Stream results as they arrive
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -94,6 +122,10 @@ pub fn probe_dns_batch(
 
         match serde_json::from_str::<DnsxOutput>(&line) {
             Ok(parsed) => {
+                let soa_strings = parsed.soa.unwrap_or_default().into_iter()
+                    .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
+                    .collect();
+
                 let obs = DnsObservation {
                     item_type: "dns_record".to_string(),
                     id: Uuid::new_v4().to_string(),
@@ -102,36 +134,25 @@ pub fn probe_dns_batch(
                     a: parsed.a,
                     aaaa: parsed.aaaa,
                     cname: parsed.cname,
+                    mx: parsed.mx,
+                    ns: parsed.ns,
+                    txt: parsed.txt,
+                    soa: soa_strings,
                     checked_at: Utc::now(),
                     source: "dnsx".to_string(),
                 };
                 storage.save(&obs)?;
                 observations.push(obs);
-                
-                // Print a progress indicator
-                print!(".");
-                let _ = io::stdout().flush();
             }
-            Err(_) => {
-                // Ignore parse errors on silent stdout for batch reliability
-                continue;
+            Err(e) => {
+                eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
             }
         }
-    }
-
-    let status = child.wait()?;
-
-    if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("dnsx batch process failed with status: {}", status),
-        ));
     }
 
     Ok(observations)
 }
 
-/// Maintain compatibility with single probes by wrapping the batch implementation.
 pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
     let targets = vec![target.to_string()];
     let mut results = probe_dns_batch(&targets, storage)?;
@@ -139,7 +160,6 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
     if let Some(obs) = results.pop() {
         Ok(obs)
     } else {
-        // If dnsx returns nothing, the host probably has no records. Return empty observation.
         let obs = DnsObservation {
             item_type: "dns_record".to_string(),
             id: Uuid::new_v4().to_string(),
@@ -148,6 +168,10 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
             a: Vec::new(),
             aaaa: Vec::new(),
             cname: Vec::new(),
+            mx: Vec::new(),
+            ns: Vec::new(),
+            txt: Vec::new(),
+            soa: Vec::new(),
             checked_at: Utc::now(),
             source: "dnsx".to_string(),
         };

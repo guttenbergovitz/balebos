@@ -10,6 +10,7 @@ pub enum Command {
     Check,
     Report,
     Probe { kind: ProbeKind, target: String },
+    Ui,
 }
 
 pub enum ProbeKind {
@@ -68,6 +69,7 @@ pub fn parse_command() -> Option<Command> {
         "diff" => Some(Command::Diff),
         "check" => Some(Command::Check),
         "report" => Some(Command::Report),
+        "ui" => Some(Command::Ui),
         "probe" => {
             let kind_str = args.get(2)?;
             let target = args.get(3)?.clone();
