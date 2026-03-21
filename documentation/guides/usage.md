@@ -21,6 +21,7 @@ balebos scan example.com
 ```
 
 This command:
+- Validates the domain name (structural check for TLD and valid characters)
 - Normalizes the domain name (lowercase, removes www, etc.)
 - Creates a domain entity with UUID and timestamp
 - Stores it in the inventory

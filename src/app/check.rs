@@ -1,70 +1,10 @@
 use crate::app::probe_http::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::inventory::InventoryItem;
-use crate::storage::JsonlStorage;
+use crate::storage::{read_records, JsonlStorage};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
-
-// Lightweight header to identify record type
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
-
-// Read heterogeneous JSONL log and separate into typed records
-fn read_mixed_records(
-    storage: &JsonlStorage,
-) -> Result<(Vec<InventoryItem>, Vec<HttpObservation>), io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    let mut items = Vec::new();
-    let mut observations = Vec::new();
-
-    if !path.exists() {
-        return Ok((items, observations));
-    }
-
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
-
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        // Check record type without full deserialization
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
-
-        // Route to appropriate type based on item_type
-        match header.item_type.as_str() {
-            "domain" | "subdomain" => {
-                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                    items.push(item);
-                }
-            }
-            "http_check" => {
-                if let Ok(obs) = serde_json::from_str::<HttpObservation>(&line) {
-                    observations.push(obs);
-                }
-            }
-            _ => {
-                // Unknown record type, skip silently
-            }
-        }
-    }
-
-    Ok((items, observations))
-}
+use std::io;
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,15 +136,6 @@ fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
             issues.push(Issue::warning(&message));
         }
 
-        // Check if original domain contains http:// or www.
-        if let Some(ref original) = item.original_input {
-            if original.contains("http://")
-                || original.contains("https://")
-                || original.starts_with("www.")
-            {
-                // This is actually expected behavior, not an issue, so we don't report it
-            }
-        }
     }
 
     issues
@@ -361,8 +292,9 @@ pub fn check_inventory(
     storage: &JsonlStorage,
     ignore_patterns: &[String],
 ) -> Result<Vec<Issue>, io::Error> {
-    // Read all records from heterogeneous JSONL log
-    let (items, http_observations) = read_mixed_records(storage)?;
+    let records = read_records(storage)?;
+    let items = records.items;
+    let http_observations = records.http_observations;
 
     if items.is_empty() {
         return Ok(vec![Issue::warning("No items in inventory")]);
@@ -411,4 +343,99 @@ pub fn check_inventory(
     )); // Check HTTP status issues
 
     Ok(issues)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn make_item(name: &str, item_type: &str, source: &str, age_days: i64) -> InventoryItem {
+        InventoryItem {
+            item_type: item_type.to_string(),
+            id: format!("test-{}", name),
+            name: name.to_string(),
+            discovered_at: Utc::now() - Duration::days(age_days),
+            source: source.to_string(),
+            original_input: None,
+        }
+    }
+
+    fn make_domain(name: &str, age_days: i64) -> InventoryItem {
+        make_item(name, "domain", "cli", age_days)
+    }
+
+    #[test]
+    fn test_staleness_fresh_domain() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_staleness(&items, 14);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_staleness_stale_domain() {
+        let items = vec![make_domain("example.com", 20)];
+        let issues = check_staleness(&items, 14);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("last seen"));
+    }
+
+    #[test]
+    fn test_low_confidence_single_observation() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_low_confidence(&items);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("seen only once"));
+    }
+
+    #[test]
+    fn test_low_confidence_multiple_observations() {
+        let items = vec![make_domain("example.com", 1), make_domain("example.com", 5)];
+        let issues = check_low_confidence(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_source_cli_is_known() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_unknown_sources(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_source_detected() {
+        let items = vec![make_item("example.com", "domain", "mystery", 1)];
+        let issues = check_unknown_sources(&items);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_invalid_data_uppercase() {
+        let items = vec![make_item("Example.COM", "domain", "cli", 1)];
+        let issues = check_invalid_data(&items);
+        assert!(issues.iter().any(|i| i.message.contains("uppercase")));
+    }
+
+    #[test]
+    fn test_invalid_data_normalized() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_invalid_data(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_suspicious_subdomain() {
+        let items = vec![make_item("xyzrandom.example.com", "subdomain", "subfinder", 1)];
+        let issues = check_subdomain_patterns(&items);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("Suspicious"));
+    }
+
+    #[test]
+    fn test_allowed_subdomain_pattern() {
+        let items = vec![make_item("api.example.com", "subdomain", "subfinder", 1)];
+        let issues = check_subdomain_patterns(&items);
+        assert!(issues.is_empty());
+    }
 }

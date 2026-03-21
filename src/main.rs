@@ -16,12 +16,7 @@ use app::{
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
-use cli::list::ListOptions;
-use cli::stats::StatsOptions;
-use cli::{
-    handle_check_command, handle_diff_command, handle_list_command, handle_probe_command,
-    handle_report_command, handle_scan_command, handle_stats_command,
-};
+use cli::{parse_command, Command, ProbeKind};
 use storage::JsonlStorage;
 
 fn print_usage() {
@@ -44,558 +39,417 @@ fn print_usage() {
 }
 
 fn main() {
-    // Create storage with the inventory.jsonl file
     let storage = JsonlStorage::new("data/inventory.jsonl");
-
-    // Load ignore patterns from balebos.ignore (if present)
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
-    // Check if we're handling a 'scan' command
-    if let Some(domain_name) = handle_scan_command() {
-        // Execute domain scan and save to inventory
-        match scan_domain(&domain_name, &storage) {
-            Ok(domain) => {
-                println!("Domain scanned successfully: {}", domain.name);
-                println!("Domain ID: {:?}", domain.id);
-                println!("Discovered at: {}", domain.discovered_at);
-
-                // If the domain was normalized, show the original input
-                if domain_name != domain.name {
-                    println!("Normalized from: {}", domain_name);
-                }
-            }
-            Err(e) => {
-                eprintln!("Error scanning domain: {}", e);
-                process::exit(EXIT_GENERAL_ERROR);
-            }
-        }
-        process::exit(EXIT_SUCCESS);
-    }
-
-    // Check if we're handling a 'batch' command
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() > 1 && args[1] == "batch" {
-        if args.len() < 3 {
-            eprintln!("Usage: balebos batch <file>");
+    let command = match parse_command() {
+        Some(cmd) => cmd,
+        None => {
+            print_usage();
             process::exit(EXIT_INVALID_ARGUMENT);
         }
+    };
 
-        match batch_process(&args[2], &storage, &ignore_patterns) {
-            Ok(_stats) => {
-                process::exit(EXIT_SUCCESS);
+    match command {
+        Command::Scan { domain } => cmd_scan(&domain, &storage),
+        Command::Batch { file } => cmd_batch(&file, &storage, &ignore_patterns),
+        Command::List { unique } => cmd_list(unique, &storage),
+        Command::Tree => cmd_tree(&storage),
+        Command::Status { export } => cmd_status(export, &storage),
+        Command::Stats { by_domain } => cmd_stats(by_domain, &storage),
+        Command::Diff => cmd_diff(&storage),
+        Command::Check => cmd_check(&storage, &ignore_patterns),
+        Command::Report => cmd_report(&storage, &ignore_patterns),
+        Command::Probe { kind, target } => cmd_probe(kind, &target, &storage),
+    }
+}
+
+fn cmd_scan(domain_name: &str, storage: &JsonlStorage) {
+    match scan_domain(domain_name, storage) {
+        Ok(domain) => {
+            println!("Domain scanned successfully: {}", domain.name);
+            println!("Domain ID: {:?}", domain.id);
+            println!("Discovered at: {}", domain.discovered_at);
+
+            if domain_name != domain.name {
+                println!("Normalized from: {}", domain_name);
             }
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error scanning domain: {}", e);
+            process::exit(EXIT_GENERAL_ERROR);
+        }
+    }
+}
+
+fn cmd_batch(file: &str, storage: &JsonlStorage, ignore_patterns: &[String]) {
+    match batch_process(file, storage, ignore_patterns) {
+        Ok(_) => process::exit(EXIT_SUCCESS),
+        Err(e) => {
+            eprintln!("Error during batch processing: {}", e);
+            process::exit(EXIT_GENERAL_ERROR);
+        }
+    }
+}
+
+fn cmd_list(unique: bool, storage: &JsonlStorage) {
+    match list_domains(storage, unique) {
+        Ok(domains) => {
+            if domains.is_empty() {
+                println!("No domains found in inventory.");
+            } else {
+                let label = if unique { "Unique" } else { "All" };
+                println!("{} domains in inventory ({}):", label, domains.len());
+                for domain in domains {
+                    println!("- {}", domain);
+                }
+            }
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error listing domains: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_tree(storage: &JsonlStorage) {
+    match display_domain_tree(storage) {
+        Ok(()) => process::exit(EXIT_SUCCESS),
+        Err(e) => {
+            eprintln!("Error displaying domain tree: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_status(export: Option<cli::ExportArgs>, storage: &JsonlStorage) {
+    if let Some(export_args) = export {
+        let output_file = export_args.output_file.unwrap_or_else(|| {
+            let ext = match export_args.format.as_str() {
+                "csv" => "csv",
+                "markdown" | "md" => "md",
+                "html" => "html",
+                _ => {
+                    eprintln!("Unknown format: {}", export_args.format);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            format!("domain-status-report.{}", ext)
+        });
+
+        let result = match export_args.format.as_str() {
+            "csv" => export_status_csv(storage, &output_file),
+            "markdown" | "md" => export_status_markdown(storage, &output_file),
+            "html" => export_status_html(storage, &output_file),
+            _ => {
+                eprintln!("Unknown format: {}", export_args.format);
+                process::exit(EXIT_INVALID_ARGUMENT);
+            }
+        };
+
+        match result {
+            Ok(()) => process::exit(EXIT_SUCCESS),
             Err(e) => {
-                eprintln!("Error during batch processing: {}", e);
+                eprintln!("Error exporting status report: {}", e);
                 process::exit(EXIT_GENERAL_ERROR);
             }
         }
     }
 
-    // Check if we're handling a 'list' command
-    match handle_list_command() {
-        ListOptions::All => {
-            // List all domains from inventory
-            match list_domains(&storage, false) {
-                Ok(domains) => {
-                    if domains.is_empty() {
-                        println!("No domains found in inventory.");
-                    } else {
-                        println!("All domains in inventory ({}):", domains.len());
-                        for domain in domains {
-                            println!("- {}", domain);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error listing domains: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
-            }
-            process::exit(EXIT_SUCCESS);
-        }
-        ListOptions::Unique => {
-            // List unique domains from inventory
-            match list_domains(&storage, true) {
-                Ok(domains) => {
-                    if domains.is_empty() {
-                        println!("No domains found in inventory.");
-                    } else {
-                        println!("Unique domains in inventory ({}):", domains.len());
-                        for domain in domains {
-                            println!("- {}", domain);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error listing domains: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
-            }
-            process::exit(EXIT_SUCCESS);
-        }
-        ListOptions::None => {}
-    }
-
-    // Check if we're handling a 'tree' command
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() > 1 && args[1] == "tree" {
-        match display_domain_tree(&storage) {
-            Ok(_) => {
-                process::exit(EXIT_SUCCESS);
-            }
-            Err(e) => {
-                eprintln!("Error displaying domain tree: {}", e);
-                process::exit(EXIT_STORAGE_ERROR);
-            }
+    match display_domain_status(storage) {
+        Ok(()) => process::exit(EXIT_SUCCESS),
+        Err(e) => {
+            eprintln!("Error displaying domain status: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
         }
     }
+}
 
-    // Check if we're handling a 'status' command
-    if args.len() > 1 && args[1] == "status" {
-        // Check for export flags
-        if args.len() > 2 {
-            match args[2].as_str() {
-                "--export" | "-e" => {
-                    if args.len() < 4 {
-                        eprintln!("Usage: balebos status --export <format> [output_file]");
-                        eprintln!("Formats: csv, markdown, html");
-                        process::exit(EXIT_INVALID_ARGUMENT);
-                    }
-
-                    let format = &args[3];
-                    let output_file = if args.len() > 4 {
-                        args[4].clone()
-                    } else {
-                        format!(
-                            "domain-status-report.{}",
-                            match format.as_str() {
-                                "csv" => "csv",
-                                "markdown" | "md" => "md",
-                                "html" => "html",
-                                _ => {
-                                    eprintln!("Unknown format: {}", format);
-                                    process::exit(EXIT_INVALID_ARGUMENT);
-                                }
-                            }
-                        )
-                    };
-
-                    let result = match format.as_str() {
-                        "csv" => export_status_csv(&storage, &output_file),
-                        "markdown" | "md" => export_status_markdown(&storage, &output_file),
-                        "html" => export_status_html(&storage, &output_file),
-                        _ => {
-                            eprintln!("Unknown format: {}", format);
-                            process::exit(EXIT_INVALID_ARGUMENT);
-                        }
-                    };
-
-                    match result {
-                        Ok(_) => process::exit(EXIT_SUCCESS),
-                        Err(e) => {
-                            eprintln!("Error exporting status report: {}", e);
-                            process::exit(EXIT_GENERAL_ERROR);
-                        }
-                    }
-                }
-                _ => {
-                    // Unknown flag, continue with normal display
-                }
-            }
-        }
-
-        // Default: display to console
-        match display_domain_status(&storage) {
-            Ok(_) => {
-                process::exit(EXIT_SUCCESS);
-            }
-            Err(e) => {
-                eprintln!("Error displaying domain status: {}", e);
-                process::exit(EXIT_STORAGE_ERROR);
-            }
-        }
-    }
-
-    // Check if we're handling a 'stats' command
-    match handle_stats_command() {
-        StatsOptions::Basic => {
-            // Get domain statistics from inventory
-            match get_domain_stats(&storage) {
-                Ok(stats) => {
-                    println!("Domain Statistics");
-                    println!("----------------");
-                    println!("Total domain entries: {}", stats.total_entries);
-                    println!("Unique domains: {}", stats.unique_domains);
-
-                    if let Some(latest) = stats.latest_domain {
-                        println!("Latest domain: {}", latest);
-
-                        if let Some(timestamp) = stats.latest_timestamp {
-                            println!("Added on: {}", timestamp);
-                        }
-                    } else {
-                        println!("No domains found in inventory.");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error getting domain statistics: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
-            }
-            process::exit(EXIT_SUCCESS);
-        }
-        StatsOptions::ByDomain => {
-            // Get domain statistics with detailed counts
-            match get_domain_stats(&storage) {
-                Ok(stats) => {
-                    println!("Domain Statistics By Domain");
-                    println!("---------------------------");
-                    println!("Total domain entries: {}", stats.total_entries);
-                    println!("Unique domains: {}", stats.unique_domains);
-
-                    if !stats.top_domains.is_empty() {
-                        println!("\nTop Domains:");
-                        for (domain, count) in stats.top_domains {
-                            println!("- {} ({} entries)", domain, count);
-                        }
-                    } else {
-                        println!("\nNo domains found in inventory.");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error getting domain statistics: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
-            }
-            process::exit(EXIT_SUCCESS);
-        }
-        StatsOptions::None => {}
-    }
-
-    // Check if we're handling a 'diff' command
-    if handle_diff_command() {
-        match get_inventory_diff(&storage, None) {
-            Ok(diff) => {
-                println!("Domain Changes (last 7 days)");
+fn cmd_stats(by_domain: bool, storage: &JsonlStorage) {
+    match get_domain_stats(storage) {
+        Ok(stats) => {
+            if by_domain {
+                println!("Domain Statistics By Domain");
                 println!("---------------------------");
+            } else {
+                println!("Domain Statistics");
+                println!("----------------");
+            }
 
-                if !diff.new_domains.is_empty() {
-                    println!("\nNew domains:");
-                    for domain in &diff.new_domains {
-                        println!("+ {}", domain);
+            println!("Total domain entries: {}", stats.total_entries);
+            println!("Unique domains: {}", stats.unique_domains);
+
+            if by_domain {
+                if !stats.top_domains.is_empty() {
+                    println!("\nTop Domains:");
+                    for (domain, count) in stats.top_domains {
+                        println!("- {} ({} entries)", domain, count);
                     }
+                } else {
+                    println!("\nNo domains found in inventory.");
                 }
+            } else if let Some(latest) = stats.latest_domain {
+                println!("Latest domain: {}", latest);
+                if let Some(timestamp) = stats.latest_timestamp {
+                    println!("Added on: {}", timestamp);
+                }
+            } else {
+                println!("No domains found in inventory.");
+            }
 
-                if !diff.missing_domains.is_empty() {
-                    println!("\nMissing domains (not seen recently):");
-                    for domain in &diff.missing_domains {
-                        println!("- {}", domain);
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error getting domain statistics: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_diff(storage: &JsonlStorage) {
+    match get_inventory_diff(storage, None) {
+        Ok(diff) => {
+            println!("Domain Changes (last 7 days)");
+            println!("---------------------------");
+
+            if !diff.new_domains.is_empty() {
+                println!("\nNew domains:");
+                for domain in &diff.new_domains {
+                    println!("+ {}", domain);
+                }
+            }
+
+            if !diff.missing_domains.is_empty() {
+                println!("\nMissing domains (not seen recently):");
+                for domain in &diff.missing_domains {
+                    println!("- {}", domain);
+                }
+            }
+
+            if diff.new_domains.is_empty() && diff.missing_domains.is_empty() {
+                println!("No changes detected.");
+            }
+
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error getting inventory diff: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_check(storage: &JsonlStorage, ignore_patterns: &[String]) {
+    match check_inventory(storage, ignore_patterns) {
+        Ok(issues) => {
+            if issues.is_empty() {
+                println!("No issues found in inventory.");
+                process::exit(EXIT_SUCCESS);
+            }
+
+            let critical_count = issues
+                .iter()
+                .filter(|i| i.severity == Severity::Critical)
+                .count();
+            let warning_count = issues
+                .iter()
+                .filter(|i| i.severity == Severity::Warning)
+                .count();
+
+            println!("Inventory Check Results");
+            println!("----------------------");
+            println!(
+                "Found {} issues ({} critical, {} warnings)",
+                issues.len(),
+                critical_count,
+                warning_count
+            );
+
+            if critical_count > 0 {
+                println!("\nCRITICAL ISSUES:");
+                for issue in issues.iter().filter(|i| i.severity == Severity::Critical) {
+                    println!("! {}", issue.message);
+                }
+            }
+
+            if warning_count > 0 {
+                println!("\nWARNINGS:");
+                for issue in issues.iter().filter(|i| i.severity == Severity::Warning) {
+                    println!("- {}", issue.message);
+                }
+            }
+
+            if critical_count > 0 {
+                process::exit(EXIT_CRITICAL_ISSUES);
+            } else if warning_count > 0 {
+                process::exit(EXIT_WARNING_ISSUES);
+            }
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error checking inventory: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_report(storage: &JsonlStorage, ignore_patterns: &[String]) {
+    match generate_report(storage, ignore_patterns) {
+        Ok(report) => {
+            println!("Balebos Report (last 7 days)");
+            println!("----------------------------");
+            println!();
+
+            println!("Inventory:");
+            println!("- total domains: {}", report.total_domains);
+            println!("- unique domains: {}", report.unique_domains);
+            println!();
+
+            println!("Changes:");
+            print_count_line("+", "new domain", report.new_domains);
+            print_count_line("-", "missing domain", report.missing_domains);
+
+            if report.new_subdomains > 0 {
+                print_count_line("+", "new subdomain", report.new_subdomains);
+            }
+            if report.missing_subdomains > 0 {
+                print_count_line("-", "missing subdomain", report.missing_subdomains);
+            }
+            println!();
+
+            println!("Issues:");
+            let total_issues = report.critical_issues + report.warning_issues;
+
+            if total_issues == 0 {
+                println!("- no issues detected");
+            } else {
+                print_issue_line("stale domain", report.stale_domains, " (>14 days)");
+                print_issue_line("low confidence domain", report.low_confidence_domains, "");
+                print_issue_line("unknown source", report.unknown_sources, "");
+                print_issue_line("normalization issue", report.invalid_data, "");
+                print_issue_line(
+                    "suspicious subdomain pattern",
+                    report.suspicious_subdomains,
+                    "",
+                );
+                print_issue_line("HTTP status error", report.http_errors, "");
+                print_issue_line(
+                    "domain without recent HTTP checks",
+                    report.missing_http_checks,
+                    "",
+                );
+            }
+            println!();
+
+            println!("Summary:");
+            if report.needs_attention {
+                println!("⚠️ attention required");
+            } else {
+                println!("✅ all systems normal");
+            }
+            println!();
+
+            println!("Run specific commands for details:");
+            println!("- 'balebos diff' for change details");
+            println!("- 'balebos check' for issue details");
+
+            if report.needs_attention {
+                process::exit(EXIT_WARNING_ISSUES);
+            }
+            process::exit(EXIT_SUCCESS);
+        }
+        Err(e) => {
+            eprintln!("Error generating report: {}", e);
+            process::exit(EXIT_STORAGE_ERROR);
+        }
+    }
+}
+
+fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
+    match kind {
+        ProbeKind::Subdomains => match probe_subdomains(target, storage) {
+            Ok(subdomains) => {
+                if subdomains.is_empty() {
+                    println!("No subdomains found for {}", target);
+                } else {
+                    println!("Found {} subdomains for {}:", subdomains.len(), target);
+                    for subdomain in &subdomains {
+                        println!("- {}", subdomain);
                     }
+                    println!("\nAll subdomains added to inventory.");
+                    println!(
+                        "Run 'balebos diff' to see changes or 'balebos check' to detect anomalies."
+                    );
                 }
-
-                if diff.new_domains.is_empty() && diff.missing_domains.is_empty() {
-                    println!("No changes detected.");
-                }
+                process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
-                eprintln!("Error getting inventory diff: {}", e);
-                process::exit(EXIT_STORAGE_ERROR);
+                eprintln!("Error probing subdomains: {}", e);
+                eprintln!(
+                    "\nMake sure subfinder is installed: https://github.com/projectdiscovery/subfinder"
+                );
+                process::exit(EXIT_EXTERNAL_TOOL_ERROR);
             }
-        }
-        process::exit(EXIT_SUCCESS);
-    }
+        },
+        ProbeKind::Http => match http_check(target, storage) {
+            Ok(observation) => {
+                println!("HTTP check completed for {}", target);
 
-    // Check if we're handling a 'check' command
-    if handle_check_command() {
-        match check_inventory(&storage, &ignore_patterns) {
-            Ok(issues) => {
-                if issues.is_empty() {
-                    println!("No issues found in inventory.");
-                    process::exit(EXIT_SUCCESS);
+                if let Some(status) = observation.status {
+                    println!("Status: {}", status);
+                    println!("Response time: {}ms", observation.response_time_ms);
+                } else if let Some(error_kind) = observation.error_kind {
+                    println!("Probe failed: {:?}", error_kind);
+                    println!(
+                        "Error: {}",
+                        observation.error_message.as_deref().unwrap_or("unknown")
+                    );
+                    println!("Response time: {}ms", observation.response_time_ms);
                 }
 
-                // Count issues by severity
-                let critical_count = issues
-                    .iter()
-                    .filter(|i| i.severity == Severity::Critical)
-                    .count();
-                let warning_count = issues
-                    .iter()
-                    .filter(|i| i.severity == Severity::Warning)
-                    .count();
-
-                println!("Inventory Check Results");
-                println!("----------------------");
+                println!("\nObservation added to inventory.");
                 println!(
-                    "Found {} issues ({} critical, {} warnings)",
-                    issues.len(),
-                    critical_count,
-                    warning_count
+                    "Run 'balebos check' to detect anomalies or 'balebos report' for a status summary."
                 );
 
-                // Group and display by severity
-                if critical_count > 0 {
-                    println!("\nCRITICAL ISSUES:");
-                    for issue in issues.iter().filter(|i| i.severity == Severity::Critical) {
-                        println!("! {}", issue.message);
+                if let Some(error_kind) = observation.error_kind {
+                    match error_kind {
+                        HttpErrorKind::DnsNotFound => process::exit(EXIT_DOMAIN_NOT_FOUND),
+                        _ => process::exit(EXIT_PROBE_ERROR),
                     }
-                }
-
-                if warning_count > 0 {
-                    println!("\nWARNINGS:");
-                    for issue in issues.iter().filter(|i| i.severity == Severity::Warning) {
-                        println!("- {}", issue.message);
+                } else if let Some(status) = observation.status {
+                    if status >= 500 {
+                        process::exit(EXIT_HTTP_SERVER_ERROR);
+                    } else if status >= 400 {
+                        process::exit(EXIT_HTTP_CLIENT_ERROR);
                     }
-                }
-
-                // Return appropriate exit code based on severity
-                if critical_count > 0 {
-                    process::exit(EXIT_CRITICAL_ISSUES);
-                } else if warning_count > 0 {
-                    process::exit(EXIT_WARNING_ISSUES);
                 }
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
-                eprintln!("Error checking inventory: {}", e);
-                process::exit(EXIT_STORAGE_ERROR);
+                eprintln!("Error checking HTTP status: {}", e);
+                process::exit(EXIT_HTTP_ERROR);
             }
-        }
+        },
     }
+}
 
-    // Check if we're handling a 'report' command
-    if handle_report_command() {
-        match generate_report(&storage, &ignore_patterns) {
-            Ok(report) => {
-                println!("Balebos Report (last 7 days)");
-                println!("----------------------------");
-                println!();
-
-                println!("Inventory:");
-                println!("- total domains: {}", report.total_domains);
-                println!("- unique domains: {}", report.unique_domains);
-                println!();
-
-                println!("Changes:");
-                // Domain changes
-                if report.new_domains > 0 {
-                    println!(
-                        "+ {} new domain{}",
-                        report.new_domains,
-                        if report.new_domains == 1 { "" } else { "s" }
-                    );
-                } else {
-                    println!("+ no new domains");
-                }
-
-                if report.missing_domains > 0 {
-                    println!(
-                        "- {} missing domain{}",
-                        report.missing_domains,
-                        if report.missing_domains == 1 { "" } else { "s" }
-                    );
-                } else {
-                    println!("- no missing domains");
-                }
-
-                // Subdomain changes (if available)
-                if report.new_subdomains > 0 {
-                    println!(
-                        "+ {} new subdomain{}",
-                        report.new_subdomains,
-                        if report.new_subdomains == 1 { "" } else { "s" }
-                    );
-                }
-
-                if report.missing_subdomains > 0 {
-                    println!(
-                        "- {} missing subdomain{}",
-                        report.missing_subdomains,
-                        if report.missing_subdomains == 1 {
-                            ""
-                        } else {
-                            "s"
-                        }
-                    );
-                }
-                println!();
-
-                println!("Issues:");
-                let total_issues = report.critical_issues + report.warning_issues;
-
-                if total_issues == 0 {
-                    println!("- no issues detected");
-                } else {
-                    if report.stale_domains > 0 {
-                        println!(
-                            "- {} stale domain{} (>14 days)",
-                            report.stale_domains,
-                            if report.stale_domains == 1 { "" } else { "s" }
-                        );
-                    }
-
-                    if report.low_confidence_domains > 0 {
-                        println!(
-                            "- {} low confidence domain{}",
-                            report.low_confidence_domains,
-                            if report.low_confidence_domains == 1 {
-                                ""
-                            } else {
-                                "s"
-                            }
-                        );
-                    }
-
-                    if report.unknown_sources > 0 {
-                        println!(
-                            "- {} unknown source{}",
-                            report.unknown_sources,
-                            if report.unknown_sources == 1 { "" } else { "s" }
-                        );
-                    }
-
-                    if report.invalid_data > 0 {
-                        println!(
-                            "- {} normalization issue{}",
-                            report.invalid_data,
-                            if report.invalid_data == 1 { "" } else { "s" }
-                        );
-                    }
-
-                    if report.suspicious_subdomains > 0 {
-                        println!(
-                            "- {} suspicious subdomain pattern{}",
-                            report.suspicious_subdomains,
-                            if report.suspicious_subdomains == 1 {
-                                ""
-                            } else {
-                                "s"
-                            }
-                        );
-                    }
-
-                    if report.http_errors > 0 {
-                        println!(
-                            "- {} HTTP status error{}",
-                            report.http_errors,
-                            if report.http_errors == 1 { "" } else { "s" }
-                        );
-                    }
-
-                    if report.missing_http_checks > 0 {
-                        println!(
-                            "- {} domain{} without recent HTTP checks",
-                            report.missing_http_checks,
-                            if report.missing_http_checks == 1 {
-                                ""
-                            } else {
-                                "s"
-                            }
-                        );
-                    }
-                }
-                println!();
-
-                println!("Summary:");
-                if report.needs_attention {
-                    println!("⚠️ attention required");
-                } else {
-                    println!("✅ all systems normal");
-                }
-                println!();
-
-                println!("Run specific commands for details:");
-                println!("- 'balebos diff' for change details");
-                println!("- 'balebos check' for issue details");
-
-                // Return appropriate exit code based on needs_attention
-                if report.needs_attention {
-                    process::exit(EXIT_WARNING_ISSUES);
-                }
-                process::exit(EXIT_SUCCESS);
-            }
-            Err(e) => {
-                eprintln!("Error generating report: {}", e);
-                process::exit(EXIT_STORAGE_ERROR);
-            }
-        }
+/// Print a line like `+ 3 new domains` or `+ no new domains`.
+fn print_count_line(prefix: &str, label: &str, count: usize) {
+    if count > 0 {
+        let suffix = if count == 1 { "" } else { "s" };
+        println!("{} {} {}{}", prefix, count, label, suffix);
+    } else {
+        println!("{} no {}s", prefix, label);
     }
+}
 
-    // Check if we're handling a 'probe' command
-    if let Some((probe_type, domain)) = handle_probe_command() {
-        if probe_type == "subdomains" {
-            match probe_subdomains(&domain, &storage) {
-                Ok(subdomains) => {
-                    if subdomains.is_empty() {
-                        println!("No subdomains found for {}", domain);
-                    } else {
-                        println!("Found {} subdomains for {}:", subdomains.len(), domain);
-                        for subdomain in &subdomains {
-                            println!("- {}", subdomain);
-                        }
-                        println!("\nAll subdomains added to inventory.");
-                        println!("Run 'balebos diff' to see changes or 'balebos check' to detect anomalies.");
-                    }
-                    process::exit(EXIT_SUCCESS);
-                }
-                Err(e) => {
-                    eprintln!("Error probing subdomains: {}", e);
-                    eprintln!("\nMake sure subfinder is installed: https://github.com/projectdiscovery/subfinder");
-                    process::exit(EXIT_EXTERNAL_TOOL_ERROR);
-                }
-            }
-        } else if probe_type == "http" {
-            match http_check(&domain, &storage) {
-                Ok(observation) => {
-                    println!("HTTP check completed for {}", domain);
-
-                    // Display result based on success or error
-                    if let Some(status) = observation.status {
-                        println!("Status: {}", status);
-                        println!("Response time: {}ms", observation.response_time_ms);
-                    } else if let Some(error_kind) = observation.error_kind {
-                        println!("Probe failed: {:?}", error_kind);
-                        println!(
-                            "Error: {}",
-                            observation.error_message.as_deref().unwrap_or("unknown")
-                        );
-                        println!("Response time: {}ms", observation.response_time_ms);
-                    }
-
-                    println!("\nObservation added to inventory.");
-                    println!(
-                        "Run 'balebos check' to detect anomalies or 'balebos report' for a status summary."
-                    );
-
-                    // Map observation to exit code
-                    if let Some(error_kind) = observation.error_kind {
-                        match error_kind {
-                            HttpErrorKind::DnsNotFound => {
-                                process::exit(EXIT_DOMAIN_NOT_FOUND);
-                            }
-                            HttpErrorKind::Timeout | HttpErrorKind::ConnectionError => {
-                                process::exit(EXIT_PROBE_ERROR);
-                            }
-                            _ => process::exit(EXIT_PROBE_ERROR),
-                        }
-                    } else if let Some(status) = observation.status {
-                        if status >= 500 {
-                            process::exit(EXIT_HTTP_SERVER_ERROR);
-                        } else if status >= 400 {
-                            process::exit(EXIT_HTTP_CLIENT_ERROR);
-                        }
-                    }
-                    process::exit(EXIT_SUCCESS);
-                }
-                Err(e) => {
-                    eprintln!("Error checking HTTP status: {}", e);
-                    process::exit(EXIT_HTTP_ERROR);
-                }
-            }
-        }
+/// Print issue line only if count > 0.
+fn print_issue_line(label: &str, count: usize, extra: &str) {
+    if count > 0 {
+        let suffix = if count == 1 { "" } else { "s" };
+        println!("- {} {}{}{}", count, label, suffix, extra);
     }
-
-    // If we get here, no valid command was provided
-    print_usage();
-    process::exit(EXIT_INVALID_ARGUMENT);
 }

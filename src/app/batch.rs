@@ -1,7 +1,6 @@
 use crate::app::probe;
 use crate::app::probe_http;
 use crate::domain::normalize_domain;
-use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -84,7 +83,7 @@ pub fn batch_process(
             continue;
         }
 
-        match crate::app::scan::scan_domain(domain, &storage) {
+        match crate::app::scan::scan_domain(domain, storage) {
             Ok(_) => {
                 println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
                 stats.domains_added += 1;
@@ -111,7 +110,7 @@ pub fn batch_process(
         }
 
         print!("  ⟳ [{}/{}] {} ... ", idx + 1, domains.len(), domain);
-        match probe::probe_subdomains(domain, &storage) {
+        match probe::probe_subdomains(domain, storage) {
             Ok(subdomains) => {
                 println!("found {} subdomains", subdomains.len());
                 stats.subdomains_found += subdomains.len();
@@ -127,7 +126,7 @@ pub fn batch_process(
     println!("🌐 Step 3/3: Checking HTTP status...");
 
     // Get all current domains and subdomains
-    let all_assets = get_all_assets(&storage)?;
+    let all_assets = get_all_assets(storage)?;
     let mut completed = 0;
     let total = all_assets.len();
 
@@ -138,7 +137,7 @@ pub fn batch_process(
 
         print!("  ⟳ [{}/{}] {} ", completed + 1, total, asset);
 
-        match probe_http::http_check(&asset, &storage) {
+        match probe_http::http_check(&asset, storage) {
             Ok(obs) => {
                 if let Some(status) = obs.status {
                     print!("→ {}", status);
@@ -174,51 +173,24 @@ pub fn batch_process(
     Ok(stats)
 }
 
-/// Get all domains and subdomains currently in inventory
+/// Get all unique domains and subdomains currently in inventory
 fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
-    use serde::Deserialize;
     use std::collections::HashSet;
 
-    #[derive(Deserialize)]
-    struct RecordHeader {
-        item_type: String,
-    }
-
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    let mut assets = Vec::new();
     let mut seen = HashSet::new();
-
-    if path.exists() {
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
-
-        for line_result in reader.lines() {
-            let line = line_result?;
-
-            if line.trim().is_empty() {
-                continue;
+    let mut assets: Vec<String> = crate::storage::read_records(storage)?
+        .items
+        .into_iter()
+        .filter_map(|item| {
+            if seen.insert(item.name.clone()) {
+                Some(item.name)
+            } else {
+                None
             }
+        })
+        .collect();
 
-            let header = match serde_json::from_str::<RecordHeader>(&line) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
-
-            if header.item_type == "domain" || header.item_type == "subdomain" {
-                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                    if seen.insert(item.name.clone()) {
-                        assets.push(item.name);
-                    }
-                }
-            }
-        }
-    }
-
-    // Sort for consistent ordering
     assets.sort();
-
     Ok(assets)
 }
 

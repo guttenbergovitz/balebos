@@ -5,6 +5,21 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-21
+
+### Added
+
+- **Domain Validation** - New structural check for domain names before scanning
+  - Ensures presence of TLD (missing dot)
+  - Validates characters (alphanumeric and hyphens)
+  - Prevents adding invalid domains to the inventory
+
+### Changed
+
+- **CLI Architecture** - Replaced cascading CLI dispatch with a clean `Command` enum and `match` pattern
+- **Internal Storage Reader** - Extracted shared JSONL reader logic, eliminating multiple duplicate implementations of `RecordHeader` handling
+- **Code Quality** - Removed dead code, no-op branches, and resolved all clippy warnings for idiomatic Rust
+
 ## [0.2.0] - 2026-03-20
 
 ### Added

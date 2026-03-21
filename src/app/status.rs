@@ -33,27 +33,17 @@
 ///   🔴 Server errors (5xx):       32 (  3.2%)
 ///   ⚠️  Network errors:           182 ( 18.2%)
 /// ```
-use crate::storage::JsonlStorage;
-use serde::Deserialize;
+use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
+use std::io;
 
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
-
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct HttpCheck {
     target: String,
     status: Option<u16>,
-    response_time_ms: u32,
+    response_time_ms: u64,
     checked_at: String,
     error_kind: Option<String>,
-    #[allow(dead_code)]
-    error_message: Option<String>,
 }
 
 /// Internal structure to hold categorized status data
@@ -68,41 +58,20 @@ struct StatusReport {
 
 /// Collect and categorize HTTP check results from storage
 fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Inventory file not found",
-        ));
-    }
-
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
+    let observations = read_records(storage)?.http_observations;
 
     // Collect latest HTTP check for each target (dedup by most recent)
     let mut status_map: BTreeMap<String, HttpCheck> = BTreeMap::new();
 
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
+    for obs in observations {
+        let check = HttpCheck {
+            target: obs.target,
+            status: obs.status,
+            response_time_ms: obs.response_time_ms,
+            checked_at: obs.checked_at.to_rfc3339(),
+            error_kind: obs.error_kind.map(|k| format!("{:?}", k)),
         };
-
-        if header.item_type != "http_check" {
-            continue;
-        }
-
-        if let Ok(check) = serde_json::from_str::<HttpCheck>(&line) {
-            status_map.insert(check.target.clone(), check);
-        }
+        status_map.insert(check.target.clone(), check);
     }
 
     // Categorize by status
@@ -115,9 +84,9 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Err
     for (_, check) in status_map.iter() {
         match check.status {
             Some(200) => alive.push(check.clone()),
-            Some(code) if code >= 300 && code < 400 => client_errors.push(check.clone()),
-            Some(code) if code >= 400 && code < 500 => client_errors.push(check.clone()),
-            Some(code) if code >= 500 && code < 600 => server_errors.push(check.clone()),
+            Some(code) if (300..400).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (400..500).contains(&code) => client_errors.push(check.clone()),
+            Some(code) if (500..600).contains(&code) => server_errors.push(check.clone()),
             Some(_) => unchecked.push(check.clone()),
             None => {
                 if check.error_kind.is_some() {
@@ -302,8 +271,8 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     ));
     md.push_str("## Summary\n\n");
-    md.push_str(&format!("| Status | Count | Percentage |\n"));
-    md.push_str(&format!("|--------|-------|------------|\n"));
+    md.push_str("| Status | Count | Percentage |\n");
+    md.push_str("|--------|-------|------------|\n");
     md.push_str(&format!(
         "| 🟢 Alive (200) | {} | {:.1}% |\n",
         report.alive.len(),
@@ -344,7 +313,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
                 check.target, check.response_time_ms
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Server errors section
@@ -359,7 +328,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Client errors section
@@ -374,7 +343,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
             let status = check.status.map(|s| s.to_string()).unwrap_or_default();
             md.push_str(&format!("| {} | {} |\n", check.target, status));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Network errors section
@@ -392,7 +361,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
                 check.target, error, check.response_time_ms
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     std::fs::write(output_file, md)?;

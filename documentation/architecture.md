@@ -60,6 +60,16 @@ The central registry of all infrastructure assets. Unlike traditional asset data
 - It separates raw data from interpretation
 - It prioritizes completeness over cleanliness
 
+### Validation
+
+Balebos performs structural validation on domains before they are added to the inventory:
+- **Non-empty** - The domain cannot be an empty string after normalization.
+- **Top-Level Domain (TLD)** - Must contain at least one dot separating labels.
+- **Label Structure** - Labels must be alphanumeric (plus hyphens) and cannot start or end with a hyphen.
+- **TLD Length** - The TLD part must be at least 2 characters long.
+
+Validation is purely structural and does not require active DNS lookups.
+
 ### Normalization
 
 Balebos stores both raw and normalized data:

@@ -92,7 +92,7 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| io::Error::other(e.to_string()))?;
 
     let start = Instant::now();
 

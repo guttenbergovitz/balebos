@@ -226,6 +226,13 @@ balebos check > /reports/issues.txt
 
 ## Troubleshooting
 
+### Invalid domain format
+
+If you receive an error like `invalid domain 'example': 'example' has no TLD (missing dot)`, ensure:
+- The domain includes a valid TLD (e.g., `.com`, `.net`, `.io`)
+- The domain name contains only alphanumeric characters and hyphens
+- You are not scanning a local hostname (like `localhost` or `server1`)
+
 ### No domains found after scanning
 
 Check that the domain was added correctly:
