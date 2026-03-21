@@ -1,7 +1,6 @@
 use crate::app::probe;
 use crate::app::probe_http;
 use crate::domain::normalize_domain;
-use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -174,51 +173,24 @@ pub fn batch_process(
     Ok(stats)
 }
 
-/// Get all domains and subdomains currently in inventory
+/// Get all unique domains and subdomains currently in inventory
 fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
-    use serde::Deserialize;
     use std::collections::HashSet;
 
-    #[derive(Deserialize)]
-    struct RecordHeader {
-        item_type: String,
-    }
-
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    let mut assets = Vec::new();
     let mut seen = HashSet::new();
-
-    if path.exists() {
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
-
-        for line_result in reader.lines() {
-            let line = line_result?;
-
-            if line.trim().is_empty() {
-                continue;
+    let mut assets: Vec<String> = crate::storage::read_records(storage)?
+        .items
+        .into_iter()
+        .filter_map(|item| {
+            if seen.insert(item.name.clone()) {
+                Some(item.name)
+            } else {
+                None
             }
+        })
+        .collect();
 
-            let header = match serde_json::from_str::<RecordHeader>(&line) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
-
-            if header.item_type == "domain" || header.item_type == "subdomain" {
-                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                    if seen.insert(item.name.clone()) {
-                        assets.push(item.name);
-                    }
-                }
-            }
-        }
-    }
-
-    // Sort for consistent ordering
     assets.sort();
-
     Ok(assets)
 }
 

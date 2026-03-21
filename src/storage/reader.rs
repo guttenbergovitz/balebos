@@ -1,0 +1,66 @@
+use crate::app::probe_http::HttpObservation;
+use crate::inventory::InventoryItem;
+use serde::Deserialize;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
+
+use super::JsonlStorage;
+
+#[derive(Deserialize)]
+struct RecordHeader {
+    item_type: String,
+}
+
+/// All typed records extracted from a heterogeneous JSONL log.
+#[derive(Default)]
+pub struct Records {
+    pub items: Vec<InventoryItem>,
+    pub http_observations: Vec<HttpObservation>,
+}
+
+/// Read a heterogeneous JSONL log and separate into typed records.
+///
+/// Skips empty lines and malformed JSON silently.
+/// Unknown `item_type` values are ignored.
+pub fn read_records(storage: &JsonlStorage) -> Result<Records, io::Error> {
+    let file_path = storage.get_filepath();
+    let path = Path::new(file_path);
+
+    if !path.exists() {
+        return Ok(Records::default());
+    }
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    let mut records = Records::default();
+
+    for line_result in reader.lines() {
+        let line = line_result?;
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let header = match serde_json::from_str::<RecordHeader>(&line) {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+
+        match header.item_type.as_str() {
+            "domain" | "subdomain" => {
+                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
+                    records.items.push(item);
+                }
+            }
+            "http_check" => {
+                if let Ok(obs) = serde_json::from_str::<HttpObservation>(&line) {
+                    records.http_observations.push(obs);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(records)
+}

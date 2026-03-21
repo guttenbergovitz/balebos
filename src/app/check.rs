@@ -1,70 +1,10 @@
 use crate::app::probe_http::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::inventory::InventoryItem;
-use crate::storage::JsonlStorage;
+use crate::storage::{read_records, JsonlStorage};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
-
-// Lightweight header to identify record type
-#[derive(Deserialize)]
-struct RecordHeader {
-    item_type: String,
-}
-
-// Read heterogeneous JSONL log and separate into typed records
-fn read_mixed_records(
-    storage: &JsonlStorage,
-) -> Result<(Vec<InventoryItem>, Vec<HttpObservation>), io::Error> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    let mut items = Vec::new();
-    let mut observations = Vec::new();
-
-    if !path.exists() {
-        return Ok((items, observations));
-    }
-
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
-
-    for line_result in reader.lines() {
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        // Check record type without full deserialization
-        let header = match serde_json::from_str::<RecordHeader>(&line) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
-
-        // Route to appropriate type based on item_type
-        match header.item_type.as_str() {
-            "domain" | "subdomain" => {
-                if let Ok(item) = serde_json::from_str::<InventoryItem>(&line) {
-                    items.push(item);
-                }
-            }
-            "http_check" => {
-                if let Ok(obs) = serde_json::from_str::<HttpObservation>(&line) {
-                    observations.push(obs);
-                }
-            }
-            _ => {
-                // Unknown record type, skip silently
-            }
-        }
-    }
-
-    Ok((items, observations))
-}
+use std::io;
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,8 +301,9 @@ pub fn check_inventory(
     storage: &JsonlStorage,
     ignore_patterns: &[String],
 ) -> Result<Vec<Issue>, io::Error> {
-    // Read all records from heterogeneous JSONL log
-    let (items, http_observations) = read_mixed_records(storage)?;
+    let records = read_records(storage)?;
+    let items = records.items;
+    let http_observations = records.http_observations;
 
     if items.is_empty() {
         return Ok(vec![Issue::warning("No items in inventory")]);
