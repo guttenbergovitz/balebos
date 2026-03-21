@@ -5,6 +5,77 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-21
+
+### Added
+
+- **TLS Certificate Probing** - Integrated `httpx`'s `-tls-probe` to capture certificate details
+  - Records Issuer DN, Subject DN, Expiration Dates, and Fingerprints
+  - Stores certificate state in `TlsObservation` events
+- **Certificate Monitoring & Alerts** - `balebos check` now monitors TLS health
+  - Generates critical alerts for expired certificates
+  - Warns about certificates expiring within 14 and 30 days
+- **TUI Certificate Inspector**
+  - New "TLS Certificate" section in the details panel
+  - Visual urgency indicators: Red for <14 days, Yellow for <30 days, Green for healthy certs
+
+### Changed
+
+- **Version 1.1 Milestone** - Enhanced infrastructure observability with proactive security monitoring
+
+## [1.0.0] - 2026-03-21
+
+### Added
+
+- **Live TUI Filtering** - Press `/` or `f` to filter domains
+  - Instant searching across all root domains in the inventory
+  - Filter state persists until cleared, with a dedicated filter status bar
+  - Keyboard-friendly workflow: `Esc` or `Enter` to return to navigation
+- **UX Enhancements**
+  - Added dedicated Filter Bar in the dashboard
+  - Updated footer with new keybindings for discoverability
+  - Improved details panel layout for better readability of rich DNS records
+
+### Changed
+
+- **Version 1.0 Milestone** - Balebos is now a stable, high-performance orchestrator for infrastructure visibility
+
+## [0.9.0] - 2026-03-21
+
+### Added
+
+- **Interactive TUI Dashboard** - Launch with `balebos ui`
+  - Real-time inventory browser using Ratatui
+  - Hierarchical domain grouping with Expand/Collapse support
+  - Detailed asset inspector showing full tech stack and redirect history
+  - Background scanning: Add and probe domains without leaving the UI
+- **Rich DNS Data Collection**
+  - Now captures and displays: `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, and `SOA` records
+  - Timestamps for last successful DNS and HTTP checks shown in the UI inspector
+- **Concurrency & UI Polish**
+  - Integrated asynchronous background thread for non-blocking recon tasks
+  - Live status indicator `[SCANNING...]` in the dashboard header
+
+### Changed
+
+- **Storage Model** - Expanded `DnsObservation` to support rich record types
+- **Internal API** - `JsonlStorage` now implements `Clone` for easier multi-threaded access
+
+## [0.7.0] - 2026-03-21
+
+### Added
+
+- **High-Performance Streaming Architecture** - Completely refactored `batch` processing to use streaming pipes
+  - Integrated `dnsx` and `httpx` using a single-process, bulk-input approach
+  - Implemented background threading for non-blocking stdin feeding
+  - Real-time JSON output parsing for immediate inventory updates
+  - Massive performance boost for large-scale domain discovery and probing
+
+### Changed
+
+- **Batch Workflow** - DNS and HTTP steps now process the entire asset list in one pass instead of looping per-domain
+- **Documentation** - Updated architecture and pipeline guides to reflect the new concurrency model
+
 ## [0.6.0] - 2026-03-21
 
 ### Added

@@ -5,6 +5,7 @@ mod exit_codes;
 mod ignore;
 mod inventory;
 mod storage;
+mod tui;
 
 use exit_codes::*;
 use ignore::load_ignore_patterns;
@@ -34,6 +35,7 @@ fn print_usage() {
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
 }
@@ -61,7 +63,16 @@ fn main() {
         Command::Check => cmd_check(&storage, &ignore_patterns),
         Command::Report => cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => cmd_probe(kind, &target, &storage),
+        Command::Ui => cmd_ui(storage),
     }
+}
+
+fn cmd_ui(storage: JsonlStorage) {
+    if let Err(e) = tui::run(storage) {
+        eprintln!("TUI error: {}", e);
+        process::exit(EXIT_GENERAL_ERROR);
+    }
+    process::exit(EXIT_SUCCESS);
 }
 
 fn cmd_scan(domain_name: &str, storage: &JsonlStorage) {

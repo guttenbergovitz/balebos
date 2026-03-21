@@ -150,6 +150,15 @@ Balebos compresses information into actionable insights:
 - Issues are categorized and prioritized
 - A clear "needs attention" flag indicates action requirements
 
+### Tool Orchestration & Concurrency
+
+Balebos acts as a high-performance orchestrator for specialized OSINT tools. To maximize efficiency, it uses a **streaming batch architecture**:
+
+1.  **Bulk Input**: Instead of calling tools per-domain, Balebos launches a single persistent process for the entire target list.
+2.  **Standard Streams**: Data is fed via `stdin` and results are captured from `stdout` in real-time.
+3.  **Threaded Processing**: A dedicated background thread manages the input stream, while the main thread parses and saves incoming JSON objects line-by-line.
+4.  **Native Speed**: This approach allows tools like `dnsx` and `httpx` to use their internal Go-based concurrency (routines) at full capacity, processing thousands of assets in seconds.
+
 ## Implementation Details
 
 ### Storage Format

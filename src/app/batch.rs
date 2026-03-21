@@ -127,71 +127,74 @@ pub fn batch_process(
 
     // Get all current domains and subdomains
     let all_assets = get_all_assets(storage)?;
-    let total = all_assets.len();
 
     // Step 3: Probe DNS for all domains and subdomains
     println!("📡 Step 3/4: Resolving DNS records...");
-    let mut completed_dns = 0;
     
+    let mut dns_targets = Vec::new();
     for asset in &all_assets {
-        if crate::ignore::is_ignored(asset, ignore_patterns) {
-            continue;
+        if !crate::ignore::is_ignored(asset, ignore_patterns) {
+            dns_targets.push(asset.clone());
         }
-
-        print!("  ⟳ [{}/{}] {} ", completed_dns + 1, total, asset);
-        match probe_dns::probe_dns(asset, storage) {
-            Ok(obs) => {
-                let count = obs.a.len() + obs.aaaa.len() + obs.cname.len();
-                if count > 0 {
-                    println!("→ {} records", count);
-                } else {
-                    println!("→ no records");
-                }
-                stats.dns_checks_completed += 1;
+    }
+    
+    if dns_targets.is_empty() {
+        println!("  → No targets to check");
+    } else {
+        print!("  ⟳ Resolving {} targets in batch ", dns_targets.len());
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        
+        match probe_dns::probe_dns_batch(&dns_targets, storage) {
+            Ok(observations) => {
+                println!(" ✓");
+                println!("  → Recorded {} DNS observations", observations.len());
+                stats.dns_checks_completed += observations.len();
             }
             Err(e) => {
-                println!("✗ (error: {})", e);
+                println!(" ✗");
+                println!("  → DNS batch probe failed: {}", e);
             }
         }
-        completed_dns += 1;
     }
     println!();
 
     // Step 4: Probe HTTP for all domains and subdomains
     println!("🌐 Step 4/4: Checking HTTP status...");
-    let mut completed_http = 0;
-
+    
+    let mut http_targets = Vec::new();
     for asset in &all_assets {
-        if crate::ignore::is_ignored(asset, ignore_patterns) {
-            continue;
+        if !crate::ignore::is_ignored(asset, ignore_patterns) {
+            http_targets.push(asset.clone());
         }
+    }
 
-        print!("  ⟳ [{}/{}] {} ", completed_http + 1, total, asset);
+    if http_targets.is_empty() {
+        println!("  → No targets to check");
+    } else {
+        print!("  ⟳ Checking {} targets in batch ", http_targets.len());
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
 
-        match probe_http::http_check(asset, storage) {
-            Ok(obs) => {
-                if let Some(status) = obs.status {
-                    print!("→ {}", status);
-                    if status >= 500 {
-                        print!(" 🔴");
-                    } else if status >= 400 {
-                        print!(" 🟡");
-                    } else {
-                        print!(" 🟢");
+        match probe_http::probe_http_batch(&http_targets, storage) {
+            Ok(observations) => {
+                println!(" ✓");
+                println!("  → Recorded {} HTTP observations", observations.len());
+                
+                // For batch stats, we estimate based on observations returned
+                for obs in observations {
+                    if obs.status.is_some() {
+                        stats.http_checks_completed += 1;
+                    } else if obs.error_kind.is_some() {
+                        stats.http_errors += 1;
                     }
-                    stats.http_checks_completed += 1;
-                } else if obs.error_kind.is_some() {
-                    print!("→ ERROR");
-                    stats.http_errors += 1;
                 }
-                println!(" ({}ms)", obs.response_time_ms);
             }
             Err(e) => {
-                println!("✗ (error: {})", e);
+                println!(" ✗");
+                println!("  → HTTP batch probe failed: {}", e);
             }
         }
-
-        completed_http += 1;
     }
     println!();
 

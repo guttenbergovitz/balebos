@@ -1,9 +1,10 @@
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use std::process::Command;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,12 +20,26 @@ pub struct DnsObservation {
     pub aaaa: Vec<String>,
     #[serde(default)]
     pub cname: Vec<String>,
+    #[serde(default)]
+    pub mx: Vec<String>,
+    #[serde(default)]
+    pub ns: Vec<String>,
+    #[serde(default)]
+    pub txt: Vec<String>,
+    #[serde(default)]
+    pub soa: Vec<String>,
 
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+struct SoaRecord {
+    ns: Option<String>,
+    mailbox: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
 struct DnsxOutput {
     host: String,
     #[serde(default)]
@@ -33,15 +48,21 @@ struct DnsxOutput {
     aaaa: Vec<String>,
     #[serde(default)]
     cname: Vec<String>,
+    #[serde(default)]
+    mx: Vec<String>,
+    #[serde(default)]
+    ns: Vec<String>,
+    #[serde(default)]
+    txt: Vec<String>,
+    #[serde(default)]
+    soa: Option<Vec<SoaRecord>>,
 }
 
-pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
-    let mut child = Command::new("dnsx")
-        .args(["-json", "-a", "-aaaa", "-cname", "-silent"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+/// Helper function to check if dnsx is correctly installed.
+fn check_dnsx_installation() -> Result<(), io::Error> {
+    let _ = Command::new("dnsx")
+        .arg("-version")
+        .output()
         .map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 io::Error::new(
@@ -52,31 +73,94 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
                 e
             }
         })?;
+    Ok(())
+}
 
-    // Write the target domain to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(format!("{}\n", target).as_bytes())?;
+/// Run a batch DNS probe using a single dnsx process for efficiency.
+pub fn probe_dns_batch(
+    targets: &[String],
+    storage: &JsonlStorage,
+) -> Result<Vec<DnsObservation>, io::Error> {
+    if targets.is_empty() {
+        return Ok(Vec::new());
     }
 
-    let output = child.wait_with_output()?;
+    check_dnsx_installation()?;
+
+    // Use a temporary file for targets to avoid pipe issues
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
+    fs::write(&temp_file, targets.join("\n"))?;
+
+    let output = Command::new("dnsx")
+        .args([
+            "-l", temp_file.to_str().unwrap(),
+            "-json", 
+            "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
+            "-silent"
+        ])
+        .output()?;
+
+    // Cleanup temp file
+    let _ = fs::remove_file(&temp_file);
 
     if !output.status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            format!(
-                "dnsx failed with status: {}. Error: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr)
-            ),
+            format!("dnsx failed with status: {}", output.status),
         ));
     }
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let mut observations = Vec::new();
+    let reader = BufReader::new(&output.stdout[..]);
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        match serde_json::from_str::<DnsxOutput>(&line) {
+            Ok(parsed) => {
+                let soa_strings = parsed.soa.unwrap_or_default().into_iter()
+                    .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
+                    .collect();
+
+                let obs = DnsObservation {
+                    item_type: "dns_record".to_string(),
+                    id: Uuid::new_v4().to_string(),
+                    asset_type: "domain".to_string(),
+                    target: parsed.host,
+                    a: parsed.a,
+                    aaaa: parsed.aaaa,
+                    cname: parsed.cname,
+                    mx: parsed.mx,
+                    ns: parsed.ns,
+                    txt: parsed.txt,
+                    soa: soa_strings,
+                    checked_at: Utc::now(),
+                    source: "dnsx".to_string(),
+                };
+                storage.save(&obs)?;
+                observations.push(obs);
+            }
+            Err(e) => {
+                eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
+            }
+        }
+    }
+
+    Ok(observations)
+}
+
+pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
+    let targets = vec![target.to_string()];
+    let mut results = probe_dns_batch(&targets, storage)?;
     
-    // Check if dnsx actually found something. If not, it outputs empty line or nothing.
-    let trimmed = stdout_str.trim();
-    if trimmed.is_empty() {
-         let obs = DnsObservation {
+    if let Some(obs) = results.pop() {
+        Ok(obs)
+    } else {
+        let obs = DnsObservation {
             item_type: "dns_record".to_string(),
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
@@ -84,34 +168,14 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation,
             a: Vec::new(),
             aaaa: Vec::new(),
             cname: Vec::new(),
+            mx: Vec::new(),
+            ns: Vec::new(),
+            txt: Vec::new(),
+            soa: Vec::new(),
             checked_at: Utc::now(),
             source: "dnsx".to_string(),
         };
         storage.save(&obs)?;
-        return Ok(obs);
-    }
-
-    // Try to parse the JSON output from dnsx
-    match serde_json::from_str::<DnsxOutput>(trimmed) {
-        Ok(parsed) => {
-            let obs = DnsObservation {
-                item_type: "dns_record".to_string(),
-                id: Uuid::new_v4().to_string(),
-                asset_type: "domain".to_string(),
-                target: parsed.host,
-                a: parsed.a,
-                aaaa: parsed.aaaa,
-                cname: parsed.cname,
-                checked_at: Utc::now(),
-                source: "dnsx".to_string(),
-            };
-
-            storage.save(&obs)?;
-            Ok(obs)
-        }
-        Err(e) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse dnsx JSON output: {}", e),
-        )),
+        Ok(obs)
     }
 }

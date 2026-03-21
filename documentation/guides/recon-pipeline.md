@@ -44,14 +44,16 @@ balebos batch domains.txt
 1.  **Loader**: Loads all domains from the text file.
 2.  **Step 1/4**: Scans each domain and adds it to inventory.
 3.  **Step 2/4**: Runs `subfinder` for each domain.
-4.  **Step 3/4**: Collects all unique hosts (root + subdomains) and runs `dnsx`.
-5.  **Step 4/4**: Runs `httpx` on all hosts.
+4.  **Step 3/4**: Collects all unique hosts (root + subdomains) and runs `dnsx` **in high-concurrency batch mode**.
+5.  **Step 4/4**: Runs `httpx` on all hosts **in a single streaming process**.
 6.  **Summary**: Displays a comprehensive report of assets found and checks completed.
 
 ---
 
 ## Technical Invariants
 
-- **Persistence**: Every step writes its results immediately to `data/inventory.jsonl`. Even if the batch process is interrupted, the data already collected is safe.
+- **Performance**: Balebos is optimized for speed. By streaming data directly to tool pipelines, it can process hundreds of probes per second without the overhead of restarting processes.
+- **Persistence**: Every step writes its results immediately to `data/inventory.jsonl`.
+ Even if the batch process is interrupted, the data already collected is safe.
 - **Non-Destructive**: Balebos never deletes old observations. It builds a timeline of facts.
 - **Tool Dependency**: Ensure `subfinder`, `dnsx`, and `httpx` are in your `$PATH`. Balebos will provide a clear error message if a tool is missing.
