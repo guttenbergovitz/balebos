@@ -5,6 +5,20 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-21
+
+### Added
+
+- **DNS Record Probing** - Integration with `dnsx` for resolving domains and capturing records
+  - Captures A, AAAA, and CNAME records in `DnsObservation` events
+  - New `balebos probe dns <domain>` command
+  - Integrated into `batch` process as Step 3/4 (Discovery -> DNS -> HTTP)
+
+### Changed
+
+- **Batch Workflow** - Expanded to 4 steps to include DNS resolution before HTTP checks
+- **Storage Reader** - Added support for parsing `dns_record` entries from JSONL logs
+
 ## [0.4.0] - 2026-03-21
 
 ### Added

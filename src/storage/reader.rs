@@ -1,3 +1,4 @@
+use crate::app::probe_dns::DnsObservation;
 use crate::app::probe_http::HttpObservation;
 use crate::inventory::InventoryItem;
 use serde::Deserialize;
@@ -17,6 +18,7 @@ struct RecordHeader {
 pub struct Records {
     pub items: Vec<InventoryItem>,
     pub http_observations: Vec<HttpObservation>,
+    pub dns_observations: Vec<DnsObservation>,
 }
 
 /// Read a heterogeneous JSONL log and separate into typed records.
@@ -56,6 +58,11 @@ pub fn read_records(storage: &JsonlStorage) -> Result<Records, io::Error> {
             "http_check" => {
                 if let Ok(obs) = serde_json::from_str::<HttpObservation>(&line) {
                     records.http_observations.push(obs);
+                }
+            }
+            "dns_record" => {
+                if let Ok(obs) = serde_json::from_str::<DnsObservation>(&line) {
+                    records.dns_observations.push(obs);
                 }
             }
             _ => {}
