@@ -2,6 +2,7 @@ pub mod batch;
 pub mod check;
 pub mod diff;
 pub mod list;
+pub mod org;
 pub mod probe;
 pub mod probe_dns;
 pub mod probe_http;

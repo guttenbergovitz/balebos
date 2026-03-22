@@ -1,8 +1,37 @@
 use crate::app::probe_dns::DnsObservation;
 use crate::app::probe_http::HttpObservation;
+use crate::org::{
+    BrandId, BrandRecord, CompanyId, CompanyRecord, PersonId, PersonRecord, ProjectId,
+    ProjectRecord, RoleAssignmentRecord,
+};
 use crate::storage::{read_records, JsonlStorage};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::io;
+
+/// Person with their role in a project
+#[derive(Debug, Clone)]
+pub struct PersonWithRole {
+    pub name: String,
+    pub email: String,
+    pub role: String,
+}
+
+/// Company with their role in a project
+#[derive(Debug, Clone)]
+pub struct CompanyWithRole {
+    pub name: String,
+    pub role: String,
+}
+
+/// Organizational context for an asset
+#[derive(Debug, Clone)]
+pub struct ProjectContext {
+    pub project_name: String,
+    pub brand_name: String,
+    pub company_name: String,
+    pub assigned_persons: Vec<PersonWithRole>,
+    pub assigned_companies: Vec<CompanyWithRole>,
+}
 
 /// Aggregated state of a single asset for the TUI
 #[derive(Debug, Clone)]
@@ -10,6 +39,7 @@ pub struct AssetState {
     pub name: String,
     pub latest_dns: Option<DnsObservation>,
     pub latest_http: Option<HttpObservation>,
+    pub project: Option<ProjectContext>,
 }
 
 impl AssetState {
@@ -134,25 +164,234 @@ pub struct GlobalStats {
     pub http_errors: usize,
 }
 
+// ---------------------------------------------------------------------------
+// Organization Model
+// ---------------------------------------------------------------------------
+
+/// Flattened view of a project with resolved names for display
+#[derive(Debug, Clone)]
+pub struct ProjectView {
+    pub id: ProjectId,
+    pub name: String,
+    pub brand_name: String,
+    pub company_name: String,
+    pub asset_count: usize,
+    pub person_count: usize,
+    pub company_count: usize,
+}
+
+/// Organization data for the Organization and Projects tabs
+#[derive(Debug, Clone, Default)]
+pub struct OrgModel {
+    pub persons: Vec<PersonRecord>,
+    pub companies: Vec<CompanyRecord>,
+    pub brands: Vec<BrandRecord>,
+    pub projects: Vec<ProjectRecord>,
+    pub project_views: Vec<ProjectView>,
+    // Lookup maps for quick access (reserved for future use)
+    #[allow(dead_code)]
+    pub persons_by_id: HashMap<PersonId, PersonRecord>,
+    #[allow(dead_code)]
+    pub companies_by_id: HashMap<CompanyId, CompanyRecord>,
+    #[allow(dead_code)]
+    pub brands_by_id: HashMap<BrandId, BrandRecord>,
+    #[allow(dead_code)]
+    pub projects_by_id: HashMap<ProjectId, ProjectRecord>,
+}
+
+impl OrgModel {
+    pub fn load(storage: &JsonlStorage) -> io::Result<Self> {
+        let records = read_records(storage)?;
+
+        let persons_by_id: HashMap<_, _> = records
+            .persons
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+        let companies_by_id: HashMap<_, _> = records
+            .companies
+            .iter()
+            .map(|c| (c.id, c.clone()))
+            .collect();
+        let brands_by_id: HashMap<_, _> = records
+            .brands
+            .iter()
+            .map(|b| (b.id, b.clone()))
+            .collect();
+        let projects_by_id: HashMap<_, _> = records
+            .projects
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+
+        // Build project views with resolved names
+        let mut project_views = Vec::new();
+        for project in &records.projects {
+            // Get company and derive brand from company
+            let company = companies_by_id.get(&project.company);
+            let company_name = company
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let brand_name = company
+                .and_then(|c| c.brand)
+                .and_then(|brand_id| brands_by_id.get(&brand_id))
+                .map(|b| b.name.clone())
+                .unwrap_or_else(|| "External".to_string());
+
+            // Count assets assigned to this project
+            let asset_count = records
+                .asset_assignments
+                .iter()
+                .filter(|a| a.project == project.id)
+                .count();
+
+            // Count persons and companies assigned to this project
+            let mut person_count = 0;
+            let mut company_count = 0;
+            for role in &records.role_assignments {
+                if role.project == project.id {
+                    if role.person.is_some() {
+                        person_count += 1;
+                    }
+                    if role.company.is_some() {
+                        company_count += 1;
+                    }
+                }
+            }
+
+            project_views.push(ProjectView {
+                id: project.id,
+                name: project.name.clone(),
+                brand_name,
+                company_name,
+                asset_count,
+                person_count,
+                company_count,
+            });
+        }
+
+        Ok(OrgModel {
+            persons: records.persons,
+            companies: records.companies,
+            brands: records.brands,
+            projects: records.projects,
+            project_views,
+            persons_by_id,
+            companies_by_id,
+            brands_by_id,
+            projects_by_id,
+        })
+    }
+}
+
 pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     let records = read_records(storage)?;
-    
+
+    // Build lookup maps for org data
+    let persons_map: HashMap<_, _> = records
+        .persons
+        .iter()
+        .map(|p| (p.id, p.clone()))
+        .collect();
+    let companies_map: HashMap<_, _> = records
+        .companies
+        .iter()
+        .map(|c| (c.id, c.clone()))
+        .collect();
+    let brands_map: HashMap<_, _> = records
+        .brands
+        .iter()
+        .map(|b| (b.id, b.clone()))
+        .collect();
+    let projects_map: HashMap<_, _> = records
+        .projects
+        .iter()
+        .map(|p| (p.id, p.clone()))
+        .collect();
+
+    // Build asset -> project mapping (most recent assignment wins)
+    let mut asset_to_project: HashMap<String, ProjectId> = HashMap::new();
+    for assignment in &records.asset_assignments {
+        asset_to_project.insert(assignment.host.clone(), assignment.project);
+    }
+
+    // Build project -> role assignments mapping
+    let mut project_role_assignments: HashMap<ProjectId, Vec<&RoleAssignmentRecord>> =
+        HashMap::new();
+    for assignment in &records.role_assignments {
+        project_role_assignments
+            .entry(assignment.project)
+            .or_default()
+            .push(assignment);
+    }
+
+    // Helper to build ProjectContext for an asset
+    let build_project_context = |host: &str| -> Option<ProjectContext> {
+        let project_id = asset_to_project.get(host)?;
+        let project = projects_map.get(project_id)?;
+        let company = companies_map.get(&project.company);
+        // Derive brand from company
+        let brand = company
+            .and_then(|c| c.brand)
+            .and_then(|brand_id| brands_map.get(&brand_id));
+
+        let role_assignments = project_role_assignments.get(project_id);
+        let mut assigned_persons = Vec::new();
+        let mut assigned_companies = Vec::new();
+
+        if let Some(assignments) = role_assignments {
+            for a in assignments {
+                if let Some(person_id) = a.person {
+                    if let Some(person) = persons_map.get(&person_id) {
+                        assigned_persons.push(PersonWithRole {
+                            name: format!("{} {}", person.first_name, person.last_name),
+                            email: person.email.clone(),
+                            role: a.role.to_string(),
+                        });
+                    }
+                }
+                if let Some(company_id) = a.company {
+                    if let Some(company) = companies_map.get(&company_id) {
+                        assigned_companies.push(CompanyWithRole {
+                            name: company.name.clone(),
+                            role: a.role.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Some(ProjectContext {
+            project_name: project.name.clone(),
+            brand_name: brand.map(|b| b.name.clone()).unwrap_or_default(),
+            company_name: company.map(|c| c.name.clone()).unwrap_or_default(),
+            assigned_persons,
+            assigned_companies,
+        })
+    };
+
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
 
     // 1. Collect all assets
     for item in records.items {
+        let project = build_project_context(&item.name);
         assets_map.entry(item.name.clone()).or_insert(AssetState {
             name: item.name,
             latest_dns: None,
             latest_http: None,
+            project,
         });
     }
 
     for dns in records.dns_observations {
-        let entry = assets_map.entry(dns.target.clone()).or_insert(AssetState {
-            name: dns.target.clone(),
-            latest_dns: None,
-            latest_http: None,
+        let entry = assets_map.entry(dns.target.clone()).or_insert_with(|| {
+            let project = build_project_context(&dns.target);
+            AssetState {
+                name: dns.target.clone(),
+                latest_dns: None,
+                latest_http: None,
+                project,
+            }
         });
         match &entry.latest_dns {
             Some(existing) if dns.checked_at > existing.checked_at => entry.latest_dns = Some(dns),
@@ -162,10 +401,14 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     }
 
     for http in records.http_observations {
-        let entry = assets_map.entry(http.target.clone()).or_insert(AssetState {
-            name: http.target.clone(),
-            latest_dns: None,
-            latest_http: None,
+        let entry = assets_map.entry(http.target.clone()).or_insert_with(|| {
+            let project = build_project_context(&http.target);
+            AssetState {
+                name: http.target.clone(),
+                latest_dns: None,
+                latest_http: None,
+                project,
+            }
         });
         match &entry.latest_http {
             Some(existing) if http.checked_at > existing.checked_at => entry.latest_http = Some(http),
@@ -176,7 +419,7 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
 
     // 2. Group subdomains under root domains
     let mut groups: BTreeMap<String, DomainGroup> = BTreeMap::new();
-    
+
     let mut all_assets: Vec<AssetState> = assets_map.into_values().collect();
     all_assets.sort_by(|a, b| a.name.len().cmp(&b.name.len()));
 
@@ -184,17 +427,24 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
         let mut found_parent = false;
         for root_name in groups.keys().cloned().collect::<Vec<_>>() {
             if asset.name.ends_with(&format!(".{}", root_name)) {
-                groups.get_mut(&root_name).unwrap().subdomains.push(asset.clone());
+                groups
+                    .get_mut(&root_name)
+                    .unwrap()
+                    .subdomains
+                    .push(asset.clone());
                 found_parent = true;
                 break;
             }
         }
 
         if !found_parent {
-            groups.insert(asset.name.clone(), DomainGroup {
-                root: asset,
-                subdomains: Vec::new(),
-            });
+            groups.insert(
+                asset.name.clone(),
+                DomainGroup {
+                    root: asset,
+                    subdomains: Vec::new(),
+                },
+            );
         }
     }
 
@@ -293,6 +543,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            project: None,
         };
         // Same root domain → NOT external
         assert!(asset.external_redirect().is_none());
@@ -323,9 +574,13 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            project: None,
         };
         // Different root domain → IS external
-        assert_eq!(asset.external_redirect(), Some("mailhog.c-1694.maxcluster.net".to_string()));
+        assert_eq!(
+            asset.external_redirect(),
+            Some("mailhog.c-1694.maxcluster.net".to_string())
+        );
     }
 
     #[test]
@@ -353,6 +608,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            project: None,
         };
         // www + subfolder → NOT external
         assert!(asset.external_redirect().is_none());
@@ -393,6 +649,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            project: None,
         };
         // Different root domain → IS external
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
@@ -432,6 +689,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            project: None,
         };
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
     }

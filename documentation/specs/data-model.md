@@ -126,3 +126,119 @@ Deep probe results including tech stack and redirect history via `httpx`.
   "checked_at": "2026-03-21T10:10:00Z"
 }
 ```
+
+---
+
+## 5. Organizational Records
+
+Balebos supports organizational context for assets, allowing you to track ownership, responsibility, and cost allocation.
+
+### Hierarchy
+
+```
+Brand (e.g., "Acme Corp")
+  └── Company (e.g., "Acme Deutschland GmbH", brand=Some)
+        └── Project (cost center / MPK)
+              └── Asset (host assignment)
+
+External Contractor (brand=None)
+  └── Assigned to Project via RoleAssignment
+```
+
+### 5.1 Person Record
+
+- **`item_type`**: `"org_person"`
+- **`id`**: Unique numeric ID (timestamp-based)
+- **`first_name`**: First name
+- **`last_name`**: Last name
+- **`email`**: Email address
+- **`phone`**: Optional phone number
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{"item_type":"org_person","id":1234567890,"first_name":"Jan","last_name":"Kowalski","email":"jan@example.com","phone":null,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+### 5.2 Brand Record
+
+- **`item_type`**: `"org_brand"`
+- **`id`**: Unique numeric ID
+- **`name`**: Brand name
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{"item_type":"org_brand","id":1234567890,"name":"Acme Corp","created_at":"2026-03-21T10:00:00Z"}
+```
+
+### 5.3 Company Record
+
+Companies are legal entities. Internal companies belong to a Brand; external contractors have no brand.
+
+- **`item_type`**: `"org_company"`
+- **`id`**: Unique numeric ID
+- **`name`**: Company name
+- **`country`**: ISO 3166-1 alpha-3 country code
+- **`brand`**: Brand ID (null for external contractors)
+- **`created_at`**: RFC3339 Timestamp
+
+**Example (internal company):**
+```json
+{"item_type":"org_company","id":1234567890,"name":"Acme Deutschland GmbH","country":"DEU","brand":9876543210,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+**Example (external contractor):**
+```json
+{"item_type":"org_company","id":1234567891,"name":"External Agency","country":"POL","brand":null,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+### 5.4 Project Record
+
+Projects are cost centers (MPK / Kostenstelle) belonging to a Company. Brand is derived from the Company.
+
+- **`item_type`**: `"org_project"`
+- **`id`**: Unique numeric ID
+- **`name`**: Project name
+- **`company`**: Company ID
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{"item_type":"org_project","id":1234567890,"name":"Website Relaunch","company":9876543210,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+### 5.5 Asset Assignment Record
+
+Links a host (domain/subdomain) to a Project.
+
+- **`item_type`**: `"org_asset_assignment"`
+- **`host`**: Domain or subdomain name
+- **`project`**: Project ID
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{"item_type":"org_asset_assignment","host":"api.example.com","project":1234567890,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+### 5.6 Role Assignment Record
+
+Assigns a Person or Company to a Project with a specific role (Owner, Manager, Technician).
+
+- **`item_type`**: `"org_role_assignment"`
+- **`project`**: Project ID
+- **`role`**: One of `"Owner"`, `"Manager"`, `"Technician"`
+- **`person`**: Person ID (null if company assignment)
+- **`company`**: Company ID (null if person assignment)
+- **`created_at`**: RFC3339 Timestamp
+
+**Example (person assignment):**
+```json
+{"item_type":"org_role_assignment","project":1234567890,"role":"Owner","person":111222333,"company":null,"created_at":"2026-03-21T10:00:00Z"}
+```
+
+**Example (company assignment):**
+```json
+{"item_type":"org_role_assignment","project":1234567890,"role":"Technician","person":null,"company":444555666,"created_at":"2026-03-21T10:00:00Z"}
+```
