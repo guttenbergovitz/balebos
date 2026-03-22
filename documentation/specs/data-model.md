@@ -67,7 +67,7 @@ Captured facts about network-level resolution via `dnsx`.
   "aaaa": [],
   "mx": ["mail.example.com"],
   "ns": ["ns1.example.com"],
-  "txt": ["v=spf1 include:_spf.google.com ~all"],
+  "txt": ["v=spf1 include:_spf.example.com ~all"],
   "soa": ["ns:ns1.example.com mailbox:admin.example.com"],
   "checked_at": "2026-03-21T10:05:00Z"
 }
