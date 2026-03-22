@@ -46,11 +46,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::Editing {
         draw_input_modal(f, app);
     }
-    if let InputMode::OrgAdding(add_type) = &app.input_mode {
+    if let InputMode::OrgAdding(add_type) | InputMode::OrgEditing(add_type, _) = &app.input_mode {
         draw_org_add_modal(f, app, *add_type);
     }
     if app.input_mode == InputMode::Assigning {
         draw_assign_modal(f, app);
+    }
+    if let InputMode::RoleAssigning(step) = &app.input_mode {
+        draw_role_assign_modal(f, app, step);
     }
 }
 
@@ -211,13 +214,13 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | 1-3: Tabs | /: Filter | x: Ext | a: Add | s: Scan | o: Assign | Space: Toggle "
+            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | Space: Toggle "
         }
         Tab::Organization => {
-            " q: Quit | 1-3: Tabs | ←/→: Pane | a: Add | j/k: Nav "
+            " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
         }
         Tab::Projects => {
-            " q: Quit | 1-3: Tabs | a: Add Project | Space: Toggle | j/k: Nav "
+            " q: Quit | R: Refresh | 1-3: Tabs | a: Add | e: Edit | r: Role | Space: Toggle | j/k: Nav "
         }
     };
 
@@ -249,15 +252,10 @@ fn draw_input_modal(f: &mut Frame, app: &App) {
 }
 
 fn draw_assign_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(60, 30, f.area());
-
-    let asset_name = app
-        .selected_asset()
-        .map(|a| a.name.clone())
-        .unwrap_or_else(|| "Unknown".to_string());
+    let area = fixed_size_centered_rect(60, 20, f.area());
 
     let block = Block::default()
-        .title(" Assign Asset to Project ")
+        .title(" Assign to Project ")
         .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
 
@@ -274,19 +272,27 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Asset info
+            Constraint::Length(1), // Asset info
             Constraint::Length(1), // Spacer
-            Constraint::Length(2), // Project ID input
+            Constraint::Length(1), // Project ID input
             Constraint::Length(1), // Spacer
             Constraint::Min(3),    // Available projects list
             Constraint::Length(1), // Hint
         ])
         .split(inner);
 
+    let asset_info = if !app.marked_assets.is_empty() {
+        format!("{} marked items", app.marked_assets.len())
+    } else {
+        app.selected_asset()
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string())
+    };
+
     // Asset info
     let asset_line = Paragraph::new(Line::from(vec![
-        Span::styled("Asset: ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(asset_name, Style::default().fg(Color::Cyan)),
+        Span::styled("Assigning: ", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(asset_info, Style::default().fg(Color::Cyan)),
     ]));
     f.render_widget(asset_line, chunks[0]);
 
@@ -305,36 +311,39 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
 
     // Available projects
     let mut project_lines: Vec<Line> = vec![Line::from(Span::styled(
-        "Available Projects:",
+        " Search Projects (Type to filter, Arrows to navigate, Enter to pick):",
         Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::UNDERLINED),
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     ))];
 
-    for project in app.org_model.project_views.iter().take(5) {
-        project_lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {} ", project.id),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::raw(&project.name),
-            Span::styled(
-                format!(" ({})", project.brand_name),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
-    }
-    if app.org_model.project_views.len() > 5 {
+    if app.org_select_matches.is_empty() {
         project_lines.push(Line::from(Span::styled(
-            format!("  ... and {} more", app.org_model.project_views.len() - 5),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
-    if app.org_model.project_views.is_empty() {
-        project_lines.push(Line::from(Span::styled(
-            "  No projects available. Create one first.",
+            "  No matching projects found.",
             Style::default().fg(Color::Red),
         )));
+    } else {
+        for (i, (display, id)) in app.org_select_matches.iter().enumerate().take(8) {
+            let is_selected = Some(i) == app.org_select_index;
+            let style = if is_selected {
+                Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            project_lines.push(Line::from(vec![
+                Span::styled(if is_selected { "> " } else { "  " }, style),
+                Span::styled(format!("{:<30}", display), style),
+                Span::styled(format!(" [{}]", id), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        
+        if app.org_select_matches.len() > 8 {
+            project_lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", app.org_select_matches.len() - 8),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
     }
 
     let projects_p = Paragraph::new(project_lines);
@@ -343,7 +352,7 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
     // Hint
     let hint = Paragraph::new(Line::from(vec![
         Span::styled("Enter", Style::default().fg(Color::DarkGray)),
-        Span::raw(": Assign | "),
+        Span::raw(": Pick/Assign | "),
         Span::styled("Esc", Style::default().fg(Color::DarkGray)),
         Span::raw(": Cancel"),
     ]));
@@ -352,11 +361,22 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
 
 fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
     let fields = add_type.fields();
-    let height = (fields.len() as u16 * 3) + 4;
-    let area = centered_rect(50, height.min(80), f.area());
+    let has_selection = !app.org_select_matches.is_empty();
+    
+    let title = match app.input_mode {
+        InputMode::OrgEditing(_, _) => format!(" Edit {} ", add_type.title().replace("Add ", "")),
+        _ => format!(" {} ", add_type.title()),
+    };
+    
+    // Calculate total height: 3 lines per field + header/footer + selection list
+    let field_area_height = fields.len() as u16 * 3;
+    let selection_height = if has_selection { 8 } else { 0 };
+    let total_inner_height = field_area_height + selection_height + 2; // +2 for hints
+    
+    let area = fixed_size_centered_rect(60, total_inner_height + 4, f.area());
 
     let block = Block::default()
-        .title(format!(" {} ", add_type.title()))
+        .title(title)
         .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
 
@@ -364,54 +384,111 @@ fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
     f.render_widget(block, area);
 
     let inner = Rect {
-        x: area.x + 1,
+        x: area.x + 2,
         y: area.y + 1,
-        width: area.width.saturating_sub(2),
+        width: area.width.saturating_sub(4),
         height: area.height.saturating_sub(2),
     };
 
-    let field_height = 2;
-    let constraints: Vec<Constraint> = fields
-        .iter()
-        .map(|_| Constraint::Length(field_height))
-        .chain(std::iter::once(Constraint::Min(1))) // space for hint
-        .collect();
+    let constraints = if has_selection {
+        vec![
+            Constraint::Length(field_area_height),
+            Constraint::Length(1), // Spacer
+            Constraint::Min(5),    // Selection list
+            Constraint::Length(1), // Hint
+        ]
+    } else {
+        vec![
+            Constraint::Length(field_area_height),
+            Constraint::Min(1), // space for hint
+        ]
+    };
 
-    let chunks = Layout::default()
+    let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(inner);
+
+    // Render Fields
+    let field_constraints: Vec<Constraint> = fields
+        .iter()
+        .map(|_| Constraint::Length(3))
+        .collect();
+    
+    let field_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(field_constraints)
+        .split(main_chunks[0]);
 
     for (i, field_name) in fields.iter().enumerate() {
         let is_active = i == app.form_field_index;
         let value = app.form_fields.get(i).map(|s| s.as_str()).unwrap_or("");
 
-        let style = if is_active {
+        let border_style = if is_active {
             Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::White)
-        };
-
-        let label_style = if is_active {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
+        let field_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .title(Span::styled(
+                format!(" {} ", field_name),
+                if is_active {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                },
+            ));
+
         let text = Line::from(vec![
-            Span::styled(format!("{}: ", field_name), label_style),
-            Span::styled(value, style),
+            Span::styled(value, if is_active { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::White) }),
             if is_active {
-                Span::styled("_", Style::default().fg(Color::Yellow))
+                Span::styled("_", Style::default().fg(Color::Yellow).add_modifier(Modifier::SLOW_BLINK))
             } else {
                 Span::raw("")
             },
         ]);
 
-        let p = Paragraph::new(text);
-        f.render_widget(p, chunks[i]);
+        let p = Paragraph::new(text).block(field_block);
+        f.render_widget(p, field_chunks[i]);
+    }
+
+    // Render Selection List if active
+    if has_selection {
+        let mut list_items: Vec<Line> = vec![Line::from(Span::styled(
+            " Select from list (Arrows to navigate, Enter to pick):",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ))];
+
+        for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(5) {
+            let is_selected = Some(i) == app.org_select_index;
+            let style = if is_selected {
+                Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            let name_span = Span::styled(format!("{:<20}", name), style);
+            let id_span = Span::styled(format!(" ({})", id), Style::default().fg(Color::DarkGray));
+
+            list_items.push(Line::from(vec![
+                Span::styled(if is_selected { "> " } else { "  " }, style),
+                name_span,
+                id_span,
+            ]));
+        }
+
+        if app.org_select_matches.len() > 5 {
+            list_items.push(Line::from(Span::styled(
+                format!("  ... and {} more", app.org_select_matches.len() - 5),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        let selection_p = Paragraph::new(list_items);
+        f.render_widget(selection_p, main_chunks[2]);
     }
 
     // Hint at bottom
@@ -419,13 +496,13 @@ fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
         Span::styled("Tab", Style::default().fg(Color::DarkGray)),
         Span::raw(": Next field | "),
         Span::styled("Enter", Style::default().fg(Color::DarkGray)),
-        Span::raw(": Submit | "),
+        Span::raw(": Submit/Pick | "),
         Span::styled("Esc", Style::default().fg(Color::DarkGray)),
         Span::raw(": Cancel"),
     ]));
-    if let Some(hint_area) = chunks.last() {
-        f.render_widget(hint, *hint_area);
-    }
+    
+    let hint_area = if has_selection { main_chunks[3] } else { main_chunks[1] };
+    f.render_widget(hint, hint_area);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,3 +528,104 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         ])
         .split(popup_layout[1])[1]
 }
+
+fn fixed_size_centered_rect(width: u16, height: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length((r.height.saturating_sub(height)) / 2),
+            Constraint::Length(height),
+            Constraint::Min(0),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length((r.width.saturating_sub(width)) / 2),
+            Constraint::Length(width),
+            Constraint::Min(0),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+fn draw_role_assign_modal(f: &mut Frame, app: &App, step: &RoleAssignStep) {
+    let area = fixed_size_centered_rect(60, 20, f.area());
+    let block = Block::default()
+        .title(" Assign Person to Project ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 1,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+
+    match step {
+        RoleAssignStep::SelectTarget => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Search
+                    Constraint::Length(1), // Spacer
+                    Constraint::Min(5),    // List
+                    Constraint::Length(1), // Hint
+                ])
+                .split(inner);
+
+            let search_line = Line::from(vec![
+                Span::styled("Search Person: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&app.input),
+                Span::styled("_", Style::default().fg(Color::Yellow)),
+            ]);
+            f.render_widget(Paragraph::new(search_line), chunks[0]);
+
+            let mut list_items = vec![Line::from(Span::styled("Select person:", Style::default().fg(Color::Cyan)))];
+            for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(10) {
+                let is_selected = Some(i) == app.org_select_index;
+                let style = if is_selected {
+                    Style::default().bg(Color::Blue).fg(Color::White)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                list_items.push(Line::from(vec![
+                    Span::styled(if is_selected { "> " } else { "  " }, style),
+                    Span::styled(format!("{:<30}", name), style),
+                    Span::styled(format!(" [{}]", id), Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+            f.render_widget(Paragraph::new(list_items), chunks[2]);
+            
+            f.render_widget(Paragraph::new("Arrows to navigate, Enter to pick, Esc to cancel"), chunks[3]);
+        }
+        RoleAssignStep::SelectRole => {
+            let text = vec![
+                Line::from("Select a role for this person:"),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("[o]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Owner (Business Responsibility)"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[m]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Manager (Project Oversight)"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[t]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Technician (Technical Access)"),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled("Esc to go back", Style::default().fg(Color::DarkGray))),
+            ];
+            f.render_widget(Paragraph::new(text), inner);
+        }
+    }
+}
+
+use crate::tui::app::RoleAssignStep;
+

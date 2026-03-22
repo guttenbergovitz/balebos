@@ -97,20 +97,47 @@ This command combines scanning, subdomain discovery, and HTTP checking in a sing
 balebos ui
 ```
 
-Balebos includes a Terminal User Interface (TUI) for interactive inventory exploration:
-- **Navigation**: Use arrow keys or `j`/`k` to browse assets.
-- **Hierarchical View**: Subdomains are grouped under root domains. Use **Space** or **Enter** to expand/collapse groups.
-- **Smart Status**: The status column highlights external redirects (e.g., `EXT -> target.com`) vs internal/direct `200 OK` responses.
-- **Live Filtering**: 
-    - Press `/` or `f` to search for specific root domains.
-    - Press `x` to toggle the visibility of external redirects (hide domains that are just "jumpers").
-- **Detailed Inspector**: View tech stacks, full DNS records (MX, TXT, NS, SOA), TLS certificates (Issuer, Expiry), and redirect chains.
-- **Live Actions**:
-    - Press `a` to add and scan a new domain in the background.
-    - Press `s` to trigger a re-scan of the selected asset.
-    - Press `r` to refresh the view from the inventory file.
-    - Press `q` to quit.
-- Adds all observations to inventory with timestamps
+Balebos includes a comprehensive Terminal User Interface (TUI) for interactive exploration and management of your organization:
+
+#### Global Navigation
+- **Tabs**: Switch between views using keys `1` (Inventory), `2` (Organization), and `3` (Projects) or use **Tab** / **BackTab**.
+- **Refresh**: Press `R` (Shift+R) to reload all data from the inventory files.
+- **Quit**: Press `q` to exit the application.
+
+#### Inventory Tab (Asset Explorer)
+- **Browse**: Use arrow keys or `j`/`k` to navigate the list.
+- **Group Management**: Use **Space** or **Enter** to expand/collapse subdomain groups.
+- **Filtering**: 
+    - Press `/` or `f` to search for specific domains.
+    - Press `x` to toggle the visibility of external redirects.
+- **Domain Actions**:
+    - `a`: Add and scan a new domain in the background.
+    - `s`: Trigger a re-scan of the selected asset.
+    - `m`: **Mark** (select) an asset for batch actions.
+    - `M`: Clear all marks.
+    - `o`: **Assign** selected or marked assets to a Project (includes project search/autocomplete).
+
+#### Organization Tab (Management)
+- **Panes**: Switch between Persons, Companies, and Brands using **Left** / **Right** arrow keys.
+- **Actions**:
+    - `a`: Add a new entity (Person, Company, Brand).
+    - `e`: **Edit** the selected entity (Name, Country, Brand links, Phone, etc.).
+- **Smart Views**: The Companies list displays the linked Brand for each company.
+
+#### Projects Tab (Responsibility)
+- **Hierarchy**: View projects and their assigned assets. Use **Space** to expand a project and see its domains directly in the table.
+- **Details Panel**: View full project context, including:
+    - **Statistics**: Counts of assets, managers, and technicians.
+    - **Assigned People**: Full list of persons with their specific roles (**Owner**, **Manager**, **Technician**).
+    - **Assigned Assets**: Full list of domains belonging to the project.
+- **Actions**:
+    - `a`: Add a new project.
+    - `e`: Edit project details.
+    - `r`: **Assign Role** - launch a wizard to assign a Person to the project with a specific role.
+
+#### Form Helpers
+- **Autocomplete**: Many forms (like assigning a project or selecting a brand) feature live search. Type a fragment of the name, use **Up** / **Down** to pick from the matches, and press **Enter** to select.
+- **Fixed Layout**: Modals are optimized for visibility across different terminal sizes.
 
 ### Querying Data
 

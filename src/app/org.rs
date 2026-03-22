@@ -27,6 +27,7 @@ pub fn add_person(
     first_name: &str,
     last_name: &str,
     email: &str,
+    phone: Option<String>,
 ) -> io::Result<PersonRecord> {
     let id = PersonId::new(generate_id());
     let record = PersonRecord::new(
@@ -34,7 +35,26 @@ pub fn add_person(
         first_name.to_string(),
         last_name.to_string(),
         email.to_string(),
-        None,
+        phone,
+    );
+    storage.save(&record)?;
+    Ok(record)
+}
+
+pub fn update_person(
+    storage: &JsonlStorage,
+    id: PersonId,
+    first_name: &str,
+    last_name: &str,
+    email: &str,
+    phone: Option<String>,
+) -> io::Result<PersonRecord> {
+    let record = PersonRecord::new(
+        id,
+        first_name.to_string(),
+        last_name.to_string(),
+        email.to_string(),
+        phone,
     );
     storage.save(&record)?;
     Ok(record)
@@ -61,6 +81,18 @@ pub fn add_company(
     Ok(record)
 }
 
+pub fn update_company(
+    storage: &JsonlStorage,
+    id: CompanyId,
+    name: &str,
+    country: CountryCode,
+    brand: Option<BrandId>,
+) -> io::Result<CompanyRecord> {
+    let record = CompanyRecord::new(id, name.to_string(), country, brand);
+    storage.save(&record)?;
+    Ok(record)
+}
+
 pub fn list_companies(storage: &JsonlStorage) -> io::Result<Vec<CompanyRecord>> {
     let records = read_records(storage)?;
     Ok(records.companies)
@@ -72,6 +104,12 @@ pub fn list_companies(storage: &JsonlStorage) -> io::Result<Vec<CompanyRecord>> 
 
 pub fn add_brand(storage: &JsonlStorage, name: &str) -> io::Result<BrandRecord> {
     let id = BrandId::new(generate_id());
+    let record = BrandRecord::new(id, name.to_string());
+    storage.save(&record)?;
+    Ok(record)
+}
+
+pub fn update_brand(storage: &JsonlStorage, id: BrandId, name: &str) -> io::Result<BrandRecord> {
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
@@ -92,6 +130,17 @@ pub fn add_project(
     company_id: CompanyId,
 ) -> io::Result<ProjectRecord> {
     let id = ProjectId::new(generate_id());
+    let record = ProjectRecord::new(id, name.to_string(), company_id);
+    storage.save(&record)?;
+    Ok(record)
+}
+
+pub fn update_project(
+    storage: &JsonlStorage,
+    id: ProjectId,
+    name: &str,
+    company_id: CompanyId,
+) -> io::Result<ProjectRecord> {
     let record = ProjectRecord::new(id, name.to_string(), company_id);
     storage.save(&record)?;
     Ok(record)
