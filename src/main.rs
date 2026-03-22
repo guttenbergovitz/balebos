@@ -4,6 +4,7 @@ mod domain;
 mod exit_codes;
 mod ignore;
 mod inventory;
+mod org;
 mod storage;
 mod tui;
 

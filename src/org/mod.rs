@@ -1,0 +1,13 @@
+/// Organizational structure and ownership model.
+///
+/// Models responsibility and organizational context for infrastructure assets.
+/// Project is the smallest unit of responsibility — assets belong to projects,
+/// and people/companies are assigned to projects via roles.
+///
+/// Country codes use the `isocountry` crate (ISO 3166-1 alpha-3).
+pub mod model;
+
+pub use self::model::{
+    Asset, Assignment, Brand, BrandId, Company, CompanyId, CountryCode, Person, PersonId, Project,
+    ProjectId, Role,
+};
