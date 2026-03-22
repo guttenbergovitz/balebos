@@ -66,12 +66,24 @@ impl Person {
 // Company
 // ---------------------------------------------------------------------------
 
+/// A legal entity (company).
+///
+/// - Internal companies belong to a Brand (`brand: Some(...)`)
+/// - External contractors have no brand (`brand: None`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Company {
     pub id: CompanyId,
     pub name: String,
     pub country: CountryCode,
-    pub is_external: bool,
+    /// The brand this company belongs to. None for external contractors.
+    pub brand: Option<BrandId>,
+}
+
+impl Company {
+    /// Returns true if this is an external contractor (no brand).
+    pub fn is_external(&self) -> bool {
+        self.brand.is_none()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -85,14 +97,17 @@ pub struct Brand {
 }
 
 // ---------------------------------------------------------------------------
-// Project — smallest unit of responsibility
+// Project — smallest unit of responsibility (cost center / MPK)
 // ---------------------------------------------------------------------------
 
+/// A project belongs to a Company (which belongs to a Brand).
+///
+/// Projects are cost centers / budget positions within a company.
+/// External contractors can be assigned to projects via RoleAssignment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub id: ProjectId,
     pub name: String,
-    pub brand: BrandId,
     pub company: CompanyId,
 }
 
@@ -214,15 +229,26 @@ mod tests {
     }
 
     #[test]
-    fn test_company_with_country() {
+    fn test_company_with_brand() {
         let company = Company {
             id: CompanyId::new(1),
-            name: "Acme GmbH".to_string(),
+            name: "Bunga Deutschland".to_string(),
             country: CountryCode::DEU,
-            is_external: false,
+            brand: Some(BrandId::new(100)),
         };
         assert_eq!(company.country.name(), "Germany");
-        assert!(!company.is_external);
+        assert!(!company.is_external());
+    }
+
+    #[test]
+    fn test_external_company() {
+        let company = Company {
+            id: CompanyId::new(2),
+            name: "External Agency".to_string(),
+            country: CountryCode::POL,
+            brand: None,
+        };
+        assert!(company.is_external());
     }
 
     #[test]
@@ -261,14 +287,12 @@ mod tests {
     }
 
     #[test]
-    fn test_project_links_brand_and_company() {
+    fn test_project_belongs_to_company() {
         let project = Project {
             id: ProjectId::new(1),
             name: "Website Relaunch".to_string(),
-            brand: BrandId::new(100),
             company: CompanyId::new(200),
         };
-        assert_eq!(project.brand, BrandId::new(100));
         assert_eq!(project.company, CompanyId::new(200));
     }
 

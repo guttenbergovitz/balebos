@@ -51,10 +51,10 @@ pub fn add_company(
     storage: &JsonlStorage,
     name: &str,
     country: CountryCode,
-    is_external: bool,
+    brand: Option<BrandId>,
 ) -> io::Result<CompanyRecord> {
     let id = CompanyId::new(generate_id());
-    let record = CompanyRecord::new(id, name.to_string(), country, is_external);
+    let record = CompanyRecord::new(id, name.to_string(), country, brand);
     storage.save(&record)?;
     Ok(record)
 }
@@ -87,11 +87,10 @@ pub fn list_brands(storage: &JsonlStorage) -> io::Result<Vec<BrandRecord>> {
 pub fn add_project(
     storage: &JsonlStorage,
     name: &str,
-    brand_id: BrandId,
     company_id: CompanyId,
 ) -> io::Result<ProjectRecord> {
     let id = ProjectId::new(generate_id());
-    let record = ProjectRecord::new(id, name.to_string(), brand_id, company_id);
+    let record = ProjectRecord::new(id, name.to_string(), company_id);
     storage.save(&record)?;
     Ok(record)
 }

@@ -36,7 +36,8 @@ pub enum OrgCommand {
     CompanyAdd {
         name: String,
         country: String,
-        is_external: bool,
+        /// Brand ID. None means external contractor.
+        brand_id: Option<String>,
     },
     CompanyList,
     BrandAdd {
@@ -45,7 +46,6 @@ pub enum OrgCommand {
     BrandList,
     ProjectAdd {
         name: String,
-        brand_id: String,
         company_id: String,
     },
     ProjectList,
@@ -147,13 +147,14 @@ fn parse_org_command(args: &[String]) -> Option<Command> {
         }
         ("person", "list") => Some(Command::Org(OrgCommand::PersonList)),
         ("company", "add") => {
+            // balebos org company add "Name" "DE" [--brand <id>]
             let name = args.get(4)?.clone();
             let country = args.get(5)?.clone();
-            let is_external = args.get(6).is_some_and(|a| a == "--external");
+            let brand_id = find_flag_value(args, "--brand");
             Some(Command::Org(OrgCommand::CompanyAdd {
                 name,
                 country,
-                is_external,
+                brand_id,
             }))
         }
         ("company", "list") => Some(Command::Org(OrgCommand::CompanyList)),
@@ -163,29 +164,10 @@ fn parse_org_command(args: &[String]) -> Option<Command> {
         }
         ("brand", "list") => Some(Command::Org(OrgCommand::BrandList)),
         ("project", "add") => {
-            // balebos org project add "Name" --brand <id> --company <id>
+            // balebos org project add "Name" --company <id>
             let name = args.get(4)?.clone();
-            let mut brand_id = None;
-            let mut company_id = None;
-            let mut i = 5;
-            while i < args.len() {
-                match args[i].as_str() {
-                    "--brand" => {
-                        brand_id = args.get(i + 1).cloned();
-                        i += 2;
-                    }
-                    "--company" => {
-                        company_id = args.get(i + 1).cloned();
-                        i += 2;
-                    }
-                    _ => i += 1,
-                }
-            }
-            Some(Command::Org(OrgCommand::ProjectAdd {
-                name,
-                brand_id: brand_id?,
-                company_id: company_id?,
-            }))
+            let company_id = find_flag_value(args, "--company")?;
+            Some(Command::Org(OrgCommand::ProjectAdd { name, company_id }))
         }
         ("project", "list") => Some(Command::Org(OrgCommand::ProjectList)),
         ("assign", "asset") => {

@@ -53,20 +53,26 @@ pub struct CompanyRecord {
     pub id: CompanyId,
     pub name: String,
     pub country: CountryCode,
-    pub is_external: bool,
+    /// The brand this company belongs to. None for external contractors.
+    pub brand: Option<BrandId>,
     pub created_at: DateTime<Utc>,
 }
 
 impl CompanyRecord {
-    pub fn new(id: CompanyId, name: String, country: CountryCode, is_external: bool) -> Self {
+    pub fn new(id: CompanyId, name: String, country: CountryCode, brand: Option<BrandId>) -> Self {
         Self {
             item_type: "org_company".to_string(),
             id,
             name,
             country,
-            is_external,
+            brand,
             created_at: Utc::now(),
         }
+    }
+
+    /// Returns true if this is an external contractor (no brand).
+    pub fn is_external(&self) -> bool {
+        self.brand.is_none()
     }
 }
 
@@ -97,23 +103,23 @@ impl BrandRecord {
 // Project Record
 // ---------------------------------------------------------------------------
 
+/// A project (cost center / MPK) belongs to a company.
+/// Brand is derived from the company's brand.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectRecord {
     pub item_type: String,
     pub id: ProjectId,
     pub name: String,
-    pub brand: BrandId,
     pub company: CompanyId,
     pub created_at: DateTime<Utc>,
 }
 
 impl ProjectRecord {
-    pub fn new(id: ProjectId, name: String, brand: BrandId, company: CompanyId) -> Self {
+    pub fn new(id: ProjectId, name: String, company: CompanyId) -> Self {
         Self {
             item_type: "org_project".to_string(),
             id,
             name,
-            brand,
             company,
             created_at: Utc::now(),
         }
@@ -202,16 +208,31 @@ mod tests {
     }
 
     #[test]
-    fn test_company_record_serializes() {
+    fn test_company_record_with_brand_serializes() {
         let rec = CompanyRecord::new(
             CompanyId::new(1),
-            "Acme GmbH".to_string(),
+            "Bunga Deutschland".to_string(),
             CountryCode::DEU,
-            false,
+            Some(BrandId::new(100)),
         );
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"item_type\":\"org_company\""));
-        assert!(json.contains("\"name\":\"Acme GmbH\""));
+        assert!(json.contains("\"name\":\"Bunga Deutschland\""));
+        assert!(json.contains("\"brand\":100"));
+        assert!(!rec.is_external());
+    }
+
+    #[test]
+    fn test_external_company_record_serializes() {
+        let rec = CompanyRecord::new(
+            CompanyId::new(2),
+            "External Agency".to_string(),
+            CountryCode::POL,
+            None,
+        );
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("\"brand\":null"));
+        assert!(rec.is_external());
     }
 
     #[test]
@@ -226,11 +247,11 @@ mod tests {
         let rec = ProjectRecord::new(
             ProjectId::new(1),
             "Website".to_string(),
-            BrandId::new(10),
             CompanyId::new(20),
         );
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"item_type\":\"org_project\""));
+        assert!(json.contains("\"company\":20"));
     }
 
     #[test]

@@ -1,6 +1,9 @@
 use crate::app::probe_dns::DnsObservation;
 use crate::app::probe_http::HttpObservation;
-use crate::org::{ProjectId, RoleAssignmentRecord};
+use crate::org::{
+    BrandId, BrandRecord, CompanyId, CompanyRecord, PersonId, PersonRecord, ProjectId,
+    ProjectRecord, RoleAssignmentRecord,
+};
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{BTreeMap, HashMap};
 use std::io;
@@ -161,6 +164,122 @@ pub struct GlobalStats {
     pub http_errors: usize,
 }
 
+// ---------------------------------------------------------------------------
+// Organization Model
+// ---------------------------------------------------------------------------
+
+/// Flattened view of a project with resolved names for display
+#[derive(Debug, Clone)]
+pub struct ProjectView {
+    pub id: ProjectId,
+    pub name: String,
+    pub brand_name: String,
+    pub company_name: String,
+    pub asset_count: usize,
+    pub person_count: usize,
+    pub company_count: usize,
+}
+
+/// Organization data for the Organization and Projects tabs
+#[derive(Debug, Clone, Default)]
+pub struct OrgModel {
+    pub persons: Vec<PersonRecord>,
+    pub companies: Vec<CompanyRecord>,
+    pub brands: Vec<BrandRecord>,
+    pub projects: Vec<ProjectRecord>,
+    pub project_views: Vec<ProjectView>,
+    // Lookup maps for quick access
+    pub persons_by_id: HashMap<PersonId, PersonRecord>,
+    pub companies_by_id: HashMap<CompanyId, CompanyRecord>,
+    pub brands_by_id: HashMap<BrandId, BrandRecord>,
+    pub projects_by_id: HashMap<ProjectId, ProjectRecord>,
+}
+
+impl OrgModel {
+    pub fn load(storage: &JsonlStorage) -> io::Result<Self> {
+        let records = read_records(storage)?;
+
+        let persons_by_id: HashMap<_, _> = records
+            .persons
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+        let companies_by_id: HashMap<_, _> = records
+            .companies
+            .iter()
+            .map(|c| (c.id, c.clone()))
+            .collect();
+        let brands_by_id: HashMap<_, _> = records
+            .brands
+            .iter()
+            .map(|b| (b.id, b.clone()))
+            .collect();
+        let projects_by_id: HashMap<_, _> = records
+            .projects
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+
+        // Build project views with resolved names
+        let mut project_views = Vec::new();
+        for project in &records.projects {
+            // Get company and derive brand from company
+            let company = companies_by_id.get(&project.company);
+            let company_name = company
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let brand_name = company
+                .and_then(|c| c.brand)
+                .and_then(|brand_id| brands_by_id.get(&brand_id))
+                .map(|b| b.name.clone())
+                .unwrap_or_else(|| "External".to_string());
+
+            // Count assets assigned to this project
+            let asset_count = records
+                .asset_assignments
+                .iter()
+                .filter(|a| a.project == project.id)
+                .count();
+
+            // Count persons and companies assigned to this project
+            let mut person_count = 0;
+            let mut company_count = 0;
+            for role in &records.role_assignments {
+                if role.project == project.id {
+                    if role.person.is_some() {
+                        person_count += 1;
+                    }
+                    if role.company.is_some() {
+                        company_count += 1;
+                    }
+                }
+            }
+
+            project_views.push(ProjectView {
+                id: project.id,
+                name: project.name.clone(),
+                brand_name,
+                company_name,
+                asset_count,
+                person_count,
+                company_count,
+            });
+        }
+
+        Ok(OrgModel {
+            persons: records.persons,
+            companies: records.companies,
+            brands: records.brands,
+            projects: records.projects,
+            project_views,
+            persons_by_id,
+            companies_by_id,
+            brands_by_id,
+            projects_by_id,
+        })
+    }
+}
+
 pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     let records = read_records(storage)?;
 
@@ -206,8 +325,11 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     let build_project_context = |host: &str| -> Option<ProjectContext> {
         let project_id = asset_to_project.get(host)?;
         let project = projects_map.get(project_id)?;
-        let brand = brands_map.get(&project.brand);
         let company = companies_map.get(&project.company);
+        // Derive brand from company
+        let brand = company
+            .and_then(|c| c.brand)
+            .and_then(|brand_id| brands_map.get(&brand_id));
 
         let role_assignments = project_role_assignments.get(project_id);
         let mut assigned_persons = Vec::new();

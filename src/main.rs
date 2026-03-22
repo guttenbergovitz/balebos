@@ -571,7 +571,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
         OrgCommand::CompanyAdd {
             name,
             country,
-            is_external,
+            brand_id,
         } => {
             let country_code = match CountryCode::for_alpha2(&country) {
                 Ok(code) => code,
@@ -580,12 +580,24 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
-            match add_company(storage, &name, country_code, is_external) {
+            let brand = match brand_id {
+                Some(id_str) => match id_str.parse::<BrandId>() {
+                    Ok(id) => Some(id),
+                    Err(_) => {
+                        eprintln!("Invalid brand ID: {}", id_str);
+                        process::exit(EXIT_INVALID_ARGUMENT);
+                    }
+                },
+                None => None,
+            };
+            match add_company(storage, &name, country_code, brand) {
                 Ok(rec) => {
                     println!("Company added: {} ({})", rec.name, rec.country.name());
                     println!("ID: {}", rec.id);
-                    if rec.is_external {
-                        println!("Type: External");
+                    if rec.is_external() {
+                        println!("Type: External contractor");
+                    } else if let Some(brand_id) = rec.brand {
+                        println!("Brand ID: {}", brand_id);
                     }
                     process::exit(EXIT_SUCCESS);
                 }
@@ -602,8 +614,14 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 } else {
                     println!("Companies ({}):", companies.len());
                     for c in companies {
-                        let ext = if c.is_external { " [external]" } else { "" };
-                        println!("  {} - {} ({}){}", c.id, c.name, c.country.name(), ext);
+                        let brand_info = if c.is_external() {
+                            " [external]".to_string()
+                        } else if let Some(brand_id) = c.brand {
+                            format!(" [brand: {}]", brand_id)
+                        } else {
+                            String::new()
+                        };
+                        println!("  {} - {} ({}){}", c.id, c.name, c.country.name(), brand_info);
                     }
                 }
                 process::exit(EXIT_SUCCESS);
@@ -641,18 +659,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 process::exit(EXIT_STORAGE_ERROR);
             }
         },
-        OrgCommand::ProjectAdd {
-            name,
-            brand_id,
-            company_id,
-        } => {
-            let brand = match brand_id.parse::<BrandId>() {
-                Ok(id) => id,
-                Err(_) => {
-                    eprintln!("Invalid brand ID: {}", brand_id);
-                    process::exit(EXIT_INVALID_ARGUMENT);
-                }
-            };
+        OrgCommand::ProjectAdd { name, company_id } => {
             let company = match company_id.parse::<CompanyId>() {
                 Ok(id) => id,
                 Err(_) => {
@@ -660,11 +667,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
-            match add_project(storage, &name, brand, company) {
+            match add_project(storage, &name, company) {
                 Ok(rec) => {
                     println!("Project added: {}", rec.name);
                     println!("ID: {}", rec.id);
-                    println!("Brand ID: {}", rec.brand);
                     println!("Company ID: {}", rec.company);
                     process::exit(EXIT_SUCCESS);
                 }
@@ -681,7 +687,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 } else {
                     println!("Projects ({}):", projects.len());
                     for p in projects {
-                        println!("  {} - {} (brand: {}, company: {})", p.id, p.name, p.brand, p.company);
+                        println!("  {} - {} (company: {})", p.id, p.name, p.company);
                     }
                 }
                 process::exit(EXIT_SUCCESS);
