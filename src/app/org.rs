@@ -1,5 +1,7 @@
 //! Business logic for organizational entity management.
 
+#![allow(dead_code)]
+
 use crate::org::{
     AssetAssignmentRecord, BrandId, BrandRecord, CompanyId, CompanyRecord, CountryCode, PersonId,
     PersonRecord, ProjectId, ProjectRecord, Role, RoleAssignmentRecord,

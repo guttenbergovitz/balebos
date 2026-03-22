@@ -188,10 +188,14 @@ pub struct OrgModel {
     pub brands: Vec<BrandRecord>,
     pub projects: Vec<ProjectRecord>,
     pub project_views: Vec<ProjectView>,
-    // Lookup maps for quick access
+    // Lookup maps for quick access (reserved for future use)
+    #[allow(dead_code)]
     pub persons_by_id: HashMap<PersonId, PersonRecord>,
+    #[allow(dead_code)]
     pub companies_by_id: HashMap<CompanyId, CompanyRecord>,
+    #[allow(dead_code)]
     pub brands_by_id: HashMap<BrandId, BrandRecord>,
+    #[allow(dead_code)]
     pub projects_by_id: HashMap<ProjectId, ProjectRecord>,
 }
 

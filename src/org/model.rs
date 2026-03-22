@@ -1,3 +1,11 @@
+//! Domain model types for organizational entities.
+//!
+//! These types define the business domain model. Currently we use the
+//! storage Record types directly, but these will be used when we build
+//! more business logic layers.
+
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

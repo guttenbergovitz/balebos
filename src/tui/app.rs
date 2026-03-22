@@ -327,6 +327,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn form_current_value(&self) -> &str {
         self.form_fields
             .get(self.form_field_index)
