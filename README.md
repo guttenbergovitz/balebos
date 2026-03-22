@@ -100,6 +100,24 @@ balebos report
 
 # Launch interactive TUI dashboard
 balebos ui
+
+# Organization management
+balebos org brand add "Acme Corp"
+balebos org brand list
+
+balebos org company add "Acme DE" DE --brand 123456
+balebos org company add "External Agency" PL  # no brand = external
+balebos org company list
+
+balebos org person add "Jan" "Kowalski" "jan@example.com"
+balebos org person list
+
+balebos org project add "Website" --company 789012
+balebos org project list
+
+balebos org assign asset api.example.com --project 345678
+balebos org assign person 111222 --project 345678 --role owner
+balebos org assign company 333444 --project 345678 --role technician
 ```
 
 ### Data Storage
@@ -121,6 +139,26 @@ This approach ensures:
 4. **Anomaly detection** - Identification of suspicious patterns and deviations
 5. **Operational monitoring** - Regular reports highlighting changes requiring attention
 6. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+7. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
+
+### Organizational Model
+
+Balebos tracks ownership and responsibility through a hierarchical organizational model:
+
+```
+Brand (e.g., "Acme Corp")
+  └── Company (e.g., "Acme Deutschland GmbH")
+        └── Project (cost center / MPK)
+              └── Asset (domain/subdomain)
+```
+
+- **Brands** group related companies under a single umbrella
+- **Companies** are legal entities (internal or external contractors)
+- **Projects** are cost centers within a company
+- **Assets** are assigned to projects for ownership tracking
+- **Role assignments** link people or companies to projects (Owner, Manager, Technician)
+
+External contractors (companies without a brand) can be assigned to projects via role assignments but don't own projects directly.
 
 ### Domain Hierarchy Visualization
 
@@ -237,9 +275,13 @@ balebos ui
 ```
 
 **Key features:**
+- **Tab-based navigation** — Three main views: Inventory, Organization, Projects (`1`/`2`/`3` keys)
 - **Hierarchical navigation** — Root domains with collapsible subdomain groups (`Space`/`Enter`)
 - **Smart status column** — Distinguishes `200 OK`, external redirects (`EXT -> target.com`), HTTP errors, and DNS failures
 - **Detail inspector** — Full DNS records, HTTP info (title, server, tech stack), TLS certificate details with expiry countdown, and redirect chain visualization
+- **Organization tab** — Manage brands, companies, and persons with CRUD operations
+- **Projects tab** — View projects with asset counts and team assignments
+- **Asset assignment** — Press `o` to assign selected asset to a project
 - **Live scanning** — Press `a` to add a new domain, `s` to rescan the selected asset — runs in the background with a real-time progress indicator in the header
 - **Filtering** — Press `/` to search, `x` to hide external redirects
 - **Redirect detection** — Correctly identifies external redirects (to a different root domain) while ignoring same-domain redirects (www, subfolders, sibling subdomains)
