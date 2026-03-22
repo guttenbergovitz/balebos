@@ -33,8 +33,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let stats = &app.model.stats;
-    let scanning = if *app.is_scanning.lock().unwrap() {
-        Span::styled(" [SCANNING...] ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
+    let is_scanning = *app.is_scanning.lock().unwrap();
+    let scan_status = app.scan_status.lock().unwrap().clone();
+
+    let scanning_span = if is_scanning {
+        let label = if scan_status.is_empty() {
+            "SCANNING...".to_string()
+        } else {
+            scan_status
+        };
+        Span::styled(format!(" ⟳ {} ", label), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
     } else {
         Span::raw("")
     };
@@ -47,7 +55,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(format!(" Alive: {} ", stats.alive), Style::default().fg(Color::Green)),
             Span::styled(format!(" HTTP Errors: {} ", stats.http_errors), Style::default().fg(Color::Red)),
             Span::styled(format!(" DNS Issues: {} ", stats.dns_issues), Style::default().fg(Color::Yellow)),
-            scanning,
+            scanning_span,
         ]),
     ];
 

@@ -97,6 +97,9 @@ balebos diff
 
 # Generate consolidated status report
 balebos report
+
+# Launch interactive TUI dashboard
+balebos ui
 ```
 
 ### Data Storage
@@ -198,6 +201,48 @@ This report helps identify:
 - Services with configuration issues (4xx errors)
 - Backend failures requiring attention (5xx errors)
 - Network connectivity problems
+
+### Interactive TUI Dashboard
+
+Balebos includes an interactive Terminal User Interface for real-time inventory exploration:
+
+```bash
+balebos ui
+```
+
+```
+┌─ Overview ────────────────────────────────────────────────────────────────────┐
+│ Balebos Dashboard  | Assets: 645  Alive: 487  HTTP Errors: 23  DNS Issues: 8 │
+└───────────────────────────────────────────────────────────────────────────────┘
+┌─ Inventory (Space to toggle) ──────────┬─ Details ────────────────────────────┐
+│ Asset               Status       Tech  │ Target: myapp.io                     │
+│ [+] myapp.io        200 OK       Reac.│                                      │
+│ [-] acme-corp.com   200 OK       Ngi..│ DNS Records (Last check: ...):        │
+│   └─ api.acme-co    200 OK       -    │   A:     203.0.113.10               │
+│   └─ www.acme-co    200 OK       Ngi..│   AAAA:  2001:db8::1                │
+│ [+] legacy.net      EXT -> other  -   │                                      │
+│     defunct.org      DnsNotFound   -   │ HTTP Info (Last check: ...):          │
+│                                        │   Title:  My Application             │
+│                                        │   Server: nginx                      │
+│                                        │   Tech:   Nginx, HSTS               │
+│                                        │   Final:  https://myapp.io           │
+│                                        │                                      │
+│                                        │   TLS Certificate:                   │
+│                                        │     Issuer:  CN=DigiCert...          │
+│                                        │     Expires: 2027-01-15 (296 days)   │
+└────────────────────────────────────────┴──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ q: Quit | /: Filter | x: Toggle Ext | a: Add | s: Scan | Space: Toggle    │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key features:**
+- **Hierarchical navigation** — Root domains with collapsible subdomain groups (`Space`/`Enter`)
+- **Smart status column** — Distinguishes `200 OK`, external redirects (`EXT -> target.com`), HTTP errors, and DNS failures
+- **Detail inspector** — Full DNS records, HTTP info (title, server, tech stack), TLS certificate details with expiry countdown, and redirect chain visualization
+- **Live scanning** — Press `a` to add a new domain, `s` to rescan the selected asset — runs in the background with a real-time progress indicator in the header
+- **Filtering** — Press `/` to search, `x` to hide external redirects
+- **Redirect detection** — Correctly identifies external redirects (to a different root domain) while ignoring same-domain redirects (www, subfolders, sibling subdomains)
 
 #### Exporting Status Reports
 

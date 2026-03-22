@@ -31,6 +31,7 @@ pub struct App {
     pub filter: String,
     pub input_mode: InputMode,
     pub is_scanning: Arc<Mutex<bool>>,
+    pub scan_status: Arc<Mutex<String>>,
 
     // Toggles
     pub hide_external_redirects: bool,
@@ -50,6 +51,7 @@ impl App {
             filter: String::new(),
             input_mode: InputMode::Normal,
             is_scanning: Arc::new(Mutex::new(false)),
+            scan_status: Arc::new(Mutex::new(String::new())),
             hide_external_redirects: false,
         };
         app.update_visible_items();
@@ -166,6 +168,7 @@ impl App {
         
         let storage = self.storage.clone();
         let is_scanning = Arc::clone(&self.is_scanning);
+        let scan_status = Arc::clone(&self.scan_status);
         
         {
             let mut scanning = is_scanning.lock().unwrap();
@@ -173,8 +176,15 @@ impl App {
         }
 
         thread::spawn(move || {
+            let set_status = |msg: &str| {
+                *scan_status.lock().unwrap() = msg.to_string();
+            };
+
             // Full discovery for new root domain
+            set_status(&format!("Scanning {}...", domain));
             let _ = crate::app::scan::scan_domain(&domain, &storage);
+
+            set_status(&format!("Discovering subdomains for {}...", domain));
             let _ = crate::app::probe::probe_subdomains(&domain, &storage);
             
             // Collect all unique targets found
@@ -186,10 +196,20 @@ impl App {
                     }
                 }
                 let target_list: Vec<String> = targets.into_iter().collect();
+                let total = target_list.len();
+
+                set_status(&format!("Resolving DNS for {} targets...", total));
                 let _ = crate::app::probe_dns::probe_dns_batch(&target_list, &storage);
-                let _ = crate::app::probe_http::probe_http_batch(&target_list, &storage);
+
+                set_status(&format!("Probing HTTP 0/{} ...", total));
+                let status_ref = Arc::clone(&scan_status);
+                let progress_cb: crate::app::probe_http::ProgressCallback = Arc::new(move |done, tot, name| {
+                    *status_ref.lock().unwrap() = format!("HTTP {}/{} — {}", done, tot, name);
+                });
+                let _ = crate::app::probe_http::probe_http_batch_with_progress(&target_list, &storage, Some(progress_cb));
             }
 
+            set_status("");
             let mut scanning = is_scanning.lock().unwrap();
             *scanning = false;
         });
@@ -201,6 +221,7 @@ impl App {
             
             let storage = self.storage.clone();
             let is_scanning = Arc::clone(&self.is_scanning);
+            let scan_status = Arc::clone(&self.scan_status);
             
             {
                 let mut scanning = is_scanning.lock().unwrap();
@@ -208,10 +229,13 @@ impl App {
             }
 
             thread::spawn(move || {
-                // For existing assets, just update facts
+                *scan_status.lock().unwrap() = format!("Resolving DNS for {}...", target);
                 let _ = crate::app::probe_dns::probe_dns(&target, &storage);
+
+                *scan_status.lock().unwrap() = format!("Probing HTTP for {}...", target);
                 let _ = crate::app::probe_http::http_check(&target, &storage);
 
+                *scan_status.lock().unwrap() = String::new();
                 let mut scanning = is_scanning.lock().unwrap();
                 *scanning = false;
             });
