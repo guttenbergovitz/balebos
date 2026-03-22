@@ -65,17 +65,17 @@ This command:
 
 If a redirect is detected, the output shows the full chain:
 ```text
-HTTP check completed for google.com
+HTTP check completed for acme-corp.com
 Status: 200
 
 Redirect chain (1 hops):
-  1. https://google.com (301) -> https://www.google.com/
-  Final URL: https://www.google.com/
+  1. https://acme-corp.com (301) -> https://www.acme-corp.com/
+  Final URL: https://www.acme-corp.com/
 
 Details:
-  Title: Google
-  Server: gws
-  Tech: Google Web Server, HSTS, HTTP/3
+  Title: Acme Corp
+  Server: nginx
+  Tech: Nginx, HSTS, HTTP/3
 Response time: 534ms
 ```
 

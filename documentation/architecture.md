@@ -37,12 +37,19 @@ Balebos is organized into focused components, each with a clear responsibility:
    - Parses arguments and options
    - Presents results to the user
 
+5. **TUI Layer** (`src/tui/`)
+   - Interactive terminal dashboard built with `ratatui` and `crossterm`
+   - **`model.rs`** — Loads and aggregates inventory data into `AssetState` groups (root domains with subdomains), computes global statistics, and detects external redirects by comparing root domains (handles www, subfolders, sibling subdomains, and two-part TLDs like `.co.uk`)
+   - **`app.rs`** — Application state machine managing navigation, input modes (Normal, Editing, Filtering), and background scan orchestration via `Arc<Mutex<>>` shared state
+   - **`ui.rs`** — Rendering layer: header with live stats and scan progress, collapsible asset table, detail inspector (DNS, HTTP, TLS, redirect chains), filter bar, input modal, and keyboard help footer
+   - Background scanning runs in a separate thread with progress updates piped back to the UI via shared `scan_status` — no stdout pollution in alternate screen mode
+
 ### Data Flow
 
 ```
-CLI → Application → Domain → Storage
-              ↑         ↑
-              └────Storage
+CLI / TUI → Application → Domain → Storage
+                  ↑           ↑
+                  └──── Storage
 ```
 
 This organization ensures:
@@ -168,8 +175,8 @@ Data is stored as newline-delimited JSON (JSONL) with support for multiple recor
 ```json
 {"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
 {"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
-{"item_type":"dns_record","target":"google.com","a":["142.250.181.238"],"aaaa":["2a00:1450:4025:804::65"],"cname":[]}
-{"item_type":"http_check","target":"google.com","status":200,"final_url":"https://www.google.com/","redirect_chain":[{"url":"https://google.com","status":301,"redirect_to":"https://www.google.com/"}],"tech":["Google Web Server","HTTP/3"],"webserver":"gws","title":"Google"}
+{"item_type":"dns_record","target":"acme-corp.com","a":["203.0.113.10"],"aaaa":["2001:db8::1"],"cname":[]}
+{"item_type":"http_check","target":"acme-corp.com","status":200,"final_url":"https://www.acme-corp.com/","redirect_chain":[{"url":"https://acme-corp.com","status":301,"redirect_to":"https://www.acme-corp.com/"}],"tech":["Nginx","HTTP/3"],"webserver":"nginx","title":"Acme Corp"}
 ```
 
 **Record Types:**

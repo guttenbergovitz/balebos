@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
 
@@ -277,6 +278,15 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
             error_message: Some(error_msg),
         }
     } else {
+        // Determine the true final URL: if there's a redirect chain with 3xx hops,
+        // use the redirect_to of the last 3xx hop (where we actually ended up).
+        // parsed.url is just the probed input URL, NOT the final destination.
+        let final_url = redirect_chain.iter()
+            .rev()
+            .find(|hop| (300..400).contains(&(hop.status as u32)))
+            .map(|hop| hop.redirect_to.clone())
+            .or(parsed.url);
+
         HttpObservation {
             item_type: "http_check".to_string(),
             id: Uuid::new_v4().to_string(),
@@ -284,7 +294,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
             target: original_target.to_string(),
             status: parsed.status_code,
             response_time_ms: duration_ms,
-            final_url: parsed.url,
+            final_url,
             redirect_chain,
             tls,
             tech: parsed.tech.unwrap_or_default(),
@@ -303,16 +313,31 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
     obs
 }
 
+/// Progress callback type for reporting scan progress without printing to stdout.
+pub type ProgressCallback = Arc<dyn Fn(usize, usize, &str) + Send + Sync>;
+
 /// Run a batch HTTP probe using a single httpx process for maximum concurrency.
+/// Optionally accepts a progress callback `on_progress(completed, total, target_name)`.
 pub fn probe_http_batch(
     targets: &[String],
     storage: &JsonlStorage,
+) -> Result<Vec<HttpObservation>, io::Error> {
+    probe_http_batch_with_progress(targets, storage, None)
+}
+
+/// Like `probe_http_batch` but with an optional progress callback for TUI integration.
+pub fn probe_http_batch_with_progress(
+    targets: &[String],
+    storage: &JsonlStorage,
+    on_progress: Option<ProgressCallback>,
 ) -> Result<Vec<HttpObservation>, io::Error> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
 
     check_httpx_installation()?;
+
+    let total = targets.len();
 
     let mut child = Command::new("httpx")
         .args([
@@ -372,11 +397,13 @@ pub fn probe_http_batch(
             
             let obs = map_httpx_to_observation(parsed, original);
             storage.save(&obs)?;
-            observations.push(obs);
             target_idx += 1;
-            
-            print!(".");
-            let _ = io::stdout().flush();
+
+            if let Some(ref cb) = on_progress {
+                cb(target_idx, total, &obs.target);
+            }
+
+            observations.push(obs);
         }
     }
 

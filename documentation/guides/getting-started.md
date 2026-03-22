@@ -60,7 +60,26 @@ balebos tree
 
 # Check health status
 balebos status
+
+# Or launch the interactive dashboard
+balebos ui
 ```
+
+### 5. Interactive Dashboard (TUI)
+
+For hands-on exploration, launch the TUI:
+
+```bash
+balebos ui
+```
+
+From the dashboard you can:
+- Browse all domains and subdomains in a collapsible tree
+- See HTTP status, tech stack, DNS records, and TLS certificate details at a glance
+- Press `a` to add and scan a new domain (runs in the background with live progress)
+- Press `s` to rescan the selected asset
+- Press `/` to filter, `x` to hide external redirects
+- Press `q` to quit
 
 ## Batch Processing
 

@@ -13,34 +13,106 @@ pub struct AssetState {
 }
 
 impl AssetState {
-    /// Detects if the asset has an external redirect.
+    /// Detects if the asset has an external redirect (to a different root domain).
     /// Returns Some(target_domain) if it's external, None otherwise.
+    ///
+    /// Same-domain redirects are NOT considered external:
+    /// - non-www to www (or vice versa)
+    /// - to a subfolder (e.g. example.com -> example.com/en)
+    /// - between subdomains of the same root domain (e.g. shop.josera.de -> template.josera.de)
     pub fn external_redirect(&self) -> Option<String> {
         let http = self.latest_http.as_ref()?;
-        let final_url = http.final_url.as_ref()?;
-        
+
         // 1. Clean up the current asset name (the intended target)
-        let current_base = self.name.to_lowercase()
+        let current_domain = self.name.to_lowercase()
             .replace("www.", "")
             .trim_matches('.')
             .to_string();
 
-        // 2. Extract and clean the domain from final_url
-        let final_domain = final_url.to_lowercase()
-            .replace("https://", "")
-            .replace("http://", "")
-            .split('/')
-            .next()?
-            .replace("www.", "")
-            .trim_matches('.')
-            .to_string();
-            
-        if !final_domain.is_empty() && final_domain != current_base {
-            Some(final_domain)
-        } else {
-            None
+        // 2. Determine the true final destination.
+        //    Prefer final_url, but also check redirect_chain as fallback
+        //    (the last 3xx hop's redirect_to is the actual destination).
+        let destination_url = http.final_url.clone().or_else(|| {
+            http.redirect_chain.iter()
+                .rev()
+                .find(|hop| (300..400).contains(&(hop.status as u32)))
+                .map(|hop| hop.redirect_to.clone())
+        })?;
+
+        // 3. Extract and clean the domain from destination URL (strip protocol, path, port, www)
+        let final_domain = extract_domain_from_url(&destination_url);
+
+        if final_domain.is_empty() || final_domain == current_domain {
+            return None;
         }
+
+        // 4. Check if both domains share the same root domain.
+        //    A redirect between subdomains of the same root is NOT external.
+        if is_same_root_domain(&current_domain, &final_domain) {
+            return None;
+        }
+
+        Some(final_domain)
     }
+}
+
+/// Extracts a clean domain from a URL, stripping protocol, path, port, and www prefix.
+fn extract_domain_from_url(url: &str) -> String {
+    let lower = url.to_lowercase();
+    let without_proto = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+        .unwrap_or(&lower);
+    let host = without_proto.split('/').next().unwrap_or("");
+    let host = host.split(':').next().unwrap_or(host);
+    host.replace("www.", "")
+        .trim_matches('.')
+        .to_string()
+}
+
+/// Checks whether two domain names share the same root domain.
+///
+/// Handles common two-part TLDs (e.g. co.uk, com.au) as well as standard TLDs.
+/// For example:
+/// - `shop.josera.de` and `template.josera.de` → true (root: josera.de)
+/// - `josera.de` and `maxcluster.net` → false
+/// - `foo.co.uk` and `bar.co.uk` → true (root: co.uk level, need 3 labels)
+fn is_same_root_domain(a: &str, b: &str) -> bool {
+    let a_parts: Vec<&str> = a.split('.').collect();
+    let b_parts: Vec<&str> = b.split('.').collect();
+
+    // Known two-part TLDs where the root domain requires 3 labels
+    const TWO_PART_TLDS: &[&str] = &[
+        "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il",
+        "com.au", "com.br", "com.cn", "com.mx", "com.tr", "com.ua",
+        "org.uk", "org.au", "net.au", "net.uk",
+        "ac.uk", "gov.uk", "edu.au",
+    ];
+
+    let needed = if a_parts.len() >= 3 || b_parts.len() >= 3 {
+        let a_suffix = if a_parts.len() >= 2 {
+            format!("{}.{}", a_parts[a_parts.len()-2], a_parts[a_parts.len()-1])
+        } else { String::new() };
+        let b_suffix = if b_parts.len() >= 2 {
+            format!("{}.{}", b_parts[b_parts.len()-2], b_parts[b_parts.len()-1])
+        } else { String::new() };
+
+        if TWO_PART_TLDS.contains(&a_suffix.as_str()) || TWO_PART_TLDS.contains(&b_suffix.as_str()) {
+            3
+        } else {
+            2
+        }
+    } else {
+        2
+    };
+
+    if a_parts.len() < needed || b_parts.len() < needed {
+        return false;
+    }
+
+    let root_a = &a_parts[a_parts.len()-needed..];
+    let root_b = &b_parts[b_parts.len()-needed..];
+    root_a == root_b
 }
 
 /// A group of subdomains under a root domain
@@ -163,5 +235,204 @@ fn update_stats(stats: &mut GlobalStats, asset: &AssetState) {
         if dns.a.is_empty() && dns.aaaa.is_empty() && dns.cname.is_empty() {
             stats.dns_issues += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_same_root_subdomains() {
+        assert!(is_same_root_domain("shop.josera.de", "template.josera.de"));
+        assert!(is_same_root_domain("josera.de", "shop.josera.de"));
+        assert!(is_same_root_domain("a.b.josera.de", "josera.de"));
+    }
+
+    #[test]
+    fn test_different_root_domains() {
+        assert!(!is_same_root_domain("josera.de", "maxcluster.net"));
+        assert!(!is_same_root_domain("phonebook.josera.de", "convertexperiments.com"));
+    }
+
+    #[test]
+    fn test_same_domain_exact() {
+        assert!(is_same_root_domain("josera.de", "josera.de"));
+    }
+
+    #[test]
+    fn test_two_part_tld() {
+        assert!(is_same_root_domain("foo.example.co.uk", "bar.example.co.uk"));
+        assert!(!is_same_root_domain("foo.example.co.uk", "foo.other.co.uk"));
+        // bare co.uk shouldn't match a real domain under co.uk
+        assert!(!is_same_root_domain("co.uk", "example.co.uk"));
+    }
+
+    #[test]
+    fn test_external_redirect_same_root() {
+        let asset = AssetState {
+            name: "shop.josera.de".to_string(),
+            latest_dns: None,
+            latest_http: Some(HttpObservation {
+                item_type: "http_check".to_string(),
+                id: "test".to_string(),
+                asset_type: "domain".to_string(),
+                target: "shop.josera.de".to_string(),
+                status: Some(200),
+                response_time_ms: 100,
+                final_url: Some("https://template.josera.de/path".to_string()),
+                redirect_chain: vec![],
+                tls: None,
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: None,
+                favicon_hash: None,
+                checked_at: chrono::Utc::now(),
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            }),
+        };
+        // Same root domain → NOT external
+        assert!(asset.external_redirect().is_none());
+    }
+
+    #[test]
+    fn test_external_redirect_different_root() {
+        let asset = AssetState {
+            name: "vwo.josera.de".to_string(),
+            latest_dns: None,
+            latest_http: Some(HttpObservation {
+                item_type: "http_check".to_string(),
+                id: "test".to_string(),
+                asset_type: "domain".to_string(),
+                target: "vwo.josera.de".to_string(),
+                status: Some(200),
+                response_time_ms: 100,
+                final_url: Some("https://mailhog.c-1694.maxcluster.net".to_string()),
+                redirect_chain: vec![],
+                tls: None,
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: None,
+                favicon_hash: None,
+                checked_at: chrono::Utc::now(),
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            }),
+        };
+        // Different root domain → IS external
+        assert_eq!(asset.external_redirect(), Some("mailhog.c-1694.maxcluster.net".to_string()));
+    }
+
+    #[test]
+    fn test_external_redirect_www_not_external() {
+        let asset = AssetState {
+            name: "example.com".to_string(),
+            latest_dns: None,
+            latest_http: Some(HttpObservation {
+                item_type: "http_check".to_string(),
+                id: "test".to_string(),
+                asset_type: "domain".to_string(),
+                target: "example.com".to_string(),
+                status: Some(200),
+                response_time_ms: 100,
+                final_url: Some("https://www.example.com/en".to_string()),
+                redirect_chain: vec![],
+                tls: None,
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: None,
+                favicon_hash: None,
+                checked_at: chrono::Utc::now(),
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            }),
+        };
+        // www + subfolder → NOT external
+        assert!(asset.external_redirect().is_none());
+    }
+
+    #[test]
+    fn test_external_redirect_via_chain_fallback() {
+        use crate::app::probe_http::RedirectHop;
+
+        // Simulates josera-estonia.com: final_url is wrongly set to self,
+        // but redirect_chain shows a 301 to josera.com/et
+        let asset = AssetState {
+            name: "josera-estonia.com".to_string(),
+            latest_dns: None,
+            latest_http: Some(HttpObservation {
+                item_type: "http_check".to_string(),
+                id: "test".to_string(),
+                asset_type: "domain".to_string(),
+                target: "josera-estonia.com".to_string(),
+                status: Some(200),
+                response_time_ms: 100,
+                final_url: Some("https://josera.com/et".to_string()),
+                redirect_chain: vec![
+                    RedirectHop {
+                        url: "https://josera-estonia.com/".to_string(),
+                        status: 301,
+                        redirect_to: "https://josera.com/et".to_string(),
+                    },
+                ],
+                tls: None,
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: None,
+                favicon_hash: None,
+                checked_at: chrono::Utc::now(),
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            }),
+        };
+        // Different root domain → IS external
+        assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
+    }
+
+    #[test]
+    fn test_external_redirect_chain_only_no_final_url() {
+        use crate::app::probe_http::RedirectHop;
+
+        // final_url is None, but redirect_chain has the data
+        let asset = AssetState {
+            name: "josera-estonia.com".to_string(),
+            latest_dns: None,
+            latest_http: Some(HttpObservation {
+                item_type: "http_check".to_string(),
+                id: "test".to_string(),
+                asset_type: "domain".to_string(),
+                target: "josera-estonia.com".to_string(),
+                status: Some(200),
+                response_time_ms: 100,
+                final_url: None,
+                redirect_chain: vec![
+                    RedirectHop {
+                        url: "https://josera-estonia.com/".to_string(),
+                        status: 301,
+                        redirect_to: "https://josera.com/et".to_string(),
+                    },
+                ],
+                tls: None,
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: None,
+                favicon_hash: None,
+                checked_at: chrono::Utc::now(),
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            }),
+        };
+        assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
     }
 }
