@@ -18,7 +18,7 @@ use app::{
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
-use cli::{parse_command, Command, ProbeKind};
+use cli::{parse_command, Command, OrgCommand, ProbeKind};
 use storage::JsonlStorage;
 
 fn print_usage() {
@@ -39,6 +39,23 @@ fn print_usage() {
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
+    eprintln!();
+    eprintln!("Organizational management:");
+    eprintln!("  balebos org person add <first> <last> <email>  - Add a person");
+    eprintln!("  balebos org person list                        - List all persons");
+    eprintln!("  balebos org company add <name> <country>       - Add a company (ISO 3166-1 alpha-2)");
+    eprintln!("  balebos org company list                       - List all companies");
+    eprintln!("  balebos org brand add <name>                   - Add a brand");
+    eprintln!("  balebos org brand list                         - List all brands");
+    eprintln!("  balebos org project add <name> --brand <id> --company <id>");
+    eprintln!("                                                 - Add a project");
+    eprintln!("  balebos org project list                       - List all projects");
+    eprintln!("  balebos org assign asset <host> --project <id> - Assign asset to project");
+    eprintln!("  balebos org assign person <id> --project <id> --role <role>");
+    eprintln!("                                                 - Assign person to project");
+    eprintln!("  balebos org assign company <id> --project <id> --role <role>");
+    eprintln!("                                                 - Assign company to project");
+    eprintln!("  balebos org unassign <host>                    - Unassign asset from project");
 }
 
 fn main() {
@@ -65,6 +82,7 @@ fn main() {
         Command::Report => cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => cmd_probe(kind, &target, &storage),
         Command::Ui => cmd_ui(storage),
+        Command::Org(org_cmd) => cmd_org(org_cmd, &storage),
     }
 }
 
@@ -510,5 +528,290 @@ fn print_issue_line(label: &str, count: usize, extra: &str) {
     if count > 0 {
         let suffix = if count == 1 { "" } else { "s" };
         println!("- {} {}{}{}", count, label, suffix, extra);
+    }
+}
+
+fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
+    use app::org::*;
+    use org::{BrandId, CompanyId, CountryCode, PersonId, ProjectId, Role};
+
+    match org_cmd {
+        OrgCommand::PersonAdd {
+            first_name,
+            last_name,
+            email,
+        } => match add_person(storage, &first_name, &last_name, &email) {
+            Ok(rec) => {
+                println!("Person added: {} {} <{}>", rec.first_name, rec.last_name, rec.email);
+                println!("ID: {}", rec.id);
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error adding person: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+        OrgCommand::PersonList => match list_persons(storage) {
+            Ok(persons) => {
+                if persons.is_empty() {
+                    println!("No persons found.");
+                } else {
+                    println!("Persons ({}):", persons.len());
+                    for p in persons {
+                        println!("  {} - {} {} <{}>", p.id, p.first_name, p.last_name, p.email);
+                    }
+                }
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error listing persons: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        OrgCommand::CompanyAdd {
+            name,
+            country,
+            is_external,
+        } => {
+            let country_code = match CountryCode::for_alpha2(&country) {
+                Ok(code) => code,
+                Err(_) => {
+                    eprintln!("Invalid country code: {}. Use ISO 3166-1 alpha-2 (e.g., DE, PL, US)", country);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            match add_company(storage, &name, country_code, is_external) {
+                Ok(rec) => {
+                    println!("Company added: {} ({})", rec.name, rec.country.name());
+                    println!("ID: {}", rec.id);
+                    if rec.is_external {
+                        println!("Type: External");
+                    }
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error adding company: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        OrgCommand::CompanyList => match list_companies(storage) {
+            Ok(companies) => {
+                if companies.is_empty() {
+                    println!("No companies found.");
+                } else {
+                    println!("Companies ({}):", companies.len());
+                    for c in companies {
+                        let ext = if c.is_external { " [external]" } else { "" };
+                        println!("  {} - {} ({}){}", c.id, c.name, c.country.name(), ext);
+                    }
+                }
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error listing companies: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        OrgCommand::BrandAdd { name } => match add_brand(storage, &name) {
+            Ok(rec) => {
+                println!("Brand added: {}", rec.name);
+                println!("ID: {}", rec.id);
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error adding brand: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+        OrgCommand::BrandList => match list_brands(storage) {
+            Ok(brands) => {
+                if brands.is_empty() {
+                    println!("No brands found.");
+                } else {
+                    println!("Brands ({}):", brands.len());
+                    for b in brands {
+                        println!("  {} - {}", b.id, b.name);
+                    }
+                }
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error listing brands: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        OrgCommand::ProjectAdd {
+            name,
+            brand_id,
+            company_id,
+        } => {
+            let brand = match brand_id.parse::<BrandId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid brand ID: {}", brand_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            let company = match company_id.parse::<CompanyId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid company ID: {}", company_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            match add_project(storage, &name, brand, company) {
+                Ok(rec) => {
+                    println!("Project added: {}", rec.name);
+                    println!("ID: {}", rec.id);
+                    println!("Brand ID: {}", rec.brand);
+                    println!("Company ID: {}", rec.company);
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error adding project: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        OrgCommand::ProjectList => match list_projects(storage) {
+            Ok(projects) => {
+                if projects.is_empty() {
+                    println!("No projects found.");
+                } else {
+                    println!("Projects ({}):", projects.len());
+                    for p in projects {
+                        println!("  {} - {} (brand: {}, company: {})", p.id, p.name, p.brand, p.company);
+                    }
+                }
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error listing projects: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        OrgCommand::AssignAsset { host, project_id } => {
+            let project = match project_id.parse::<ProjectId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid project ID: {}", project_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            match assign_asset(storage, &host, project) {
+                Ok(rec) => {
+                    println!("Asset assigned: {} -> project {}", rec.host, rec.project);
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error assigning asset: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        OrgCommand::AssignPerson {
+            person_id,
+            project_id,
+            role,
+        } => {
+            let person = match person_id.parse::<PersonId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid person ID: {}", person_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            let project = match project_id.parse::<ProjectId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid project ID: {}", project_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            let role_enum = match role.to_lowercase().as_str() {
+                "owner" => Role::Owner,
+                "manager" => Role::Manager,
+                "technician" => Role::Technician,
+                _ => {
+                    eprintln!("Invalid role: {}. Valid roles: owner, manager, technician", role);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            match assign_person_to_project(storage, person, project, role_enum) {
+                Ok(rec) => {
+                    println!(
+                        "Person {} assigned to project {} as {}",
+                        rec.person.unwrap(),
+                        rec.project,
+                        rec.role
+                    );
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error assigning person: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        OrgCommand::AssignCompany {
+            company_id,
+            project_id,
+            role,
+        } => {
+            let company = match company_id.parse::<CompanyId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid company ID: {}", company_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            let project = match project_id.parse::<ProjectId>() {
+                Ok(id) => id,
+                Err(_) => {
+                    eprintln!("Invalid project ID: {}", project_id);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            let role_enum = match role.to_lowercase().as_str() {
+                "owner" => Role::Owner,
+                "manager" => Role::Manager,
+                "technician" => Role::Technician,
+                _ => {
+                    eprintln!("Invalid role: {}. Valid roles: owner, manager, technician", role);
+                    process::exit(EXIT_INVALID_ARGUMENT);
+                }
+            };
+            match assign_company_to_project(storage, company, project, role_enum) {
+                Ok(rec) => {
+                    println!(
+                        "Company {} assigned to project {} as {}",
+                        rec.company.unwrap(),
+                        rec.project,
+                        rec.role
+                    );
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error assigning company: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        OrgCommand::Unassign { host } => match unassign_asset(storage, &host) {
+            Ok(found) => {
+                if found {
+                    println!("Asset {} unassigned.", host);
+                    println!("Note: The unassignment is recorded but the original assignment remains in the log.");
+                } else {
+                    println!("Asset {} was not assigned to any project.", host);
+                }
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error unassigning asset: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
     }
 }

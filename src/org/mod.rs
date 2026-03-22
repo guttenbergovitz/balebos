@@ -6,8 +6,12 @@
 ///
 /// Country codes use the `isocountry` crate (ISO 3166-1 alpha-3).
 pub mod model;
+pub mod storage;
 
 pub use self::model::{
-    Asset, Assignment, Brand, BrandId, Company, CompanyId, CountryCode, Person, PersonId, Project,
-    ProjectId, Role,
+    Brand, BrandId, Company, CompanyId, CountryCode, Person, PersonId, Project, ProjectId, Role,
+};
+pub use self::storage::{
+    AssetAssignmentRecord, BrandRecord, CompanyRecord, PersonRecord, ProjectRecord,
+    RoleAssignmentRecord,
 };

@@ -16,11 +16,23 @@ macro_rules! typed_id {
             pub fn new(value: u128) -> Self {
                 Self(value)
             }
+
+            pub fn inner(&self) -> u128 {
+                self.0
+            }
         }
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0)
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = std::num::ParseIntError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                s.parse::<u128>().map(Self)
             }
         }
     };
@@ -156,6 +168,19 @@ mod tests {
         assert_eq!(person.to_string(), company.to_string());
         // Same inner value but different types — won't compile:
         // let _: PersonId = company;
+    }
+
+    #[test]
+    fn test_typed_id_inner() {
+        let id = PersonId::new(42);
+        assert_eq!(id.inner(), 42);
+    }
+
+    #[test]
+    fn test_typed_id_from_str() {
+        let id: PersonId = "123".parse().unwrap();
+        assert_eq!(id.inner(), 123);
+        assert!("not_a_number".parse::<PersonId>().is_err());
     }
 
     #[test]

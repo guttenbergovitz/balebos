@@ -1,3 +1,3 @@
 pub mod router;
 
-pub use self::router::{parse_command, Command, ExportArgs, ProbeKind};
+pub use self::router::{parse_command, Command, ExportArgs, OrgCommand, ProbeKind};

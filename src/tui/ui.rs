@@ -270,7 +270,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
                 text.push(Line::from(""));
                 text.push(Line::from(Span::styled("  TLS Certificate:", Style::default().add_modifier(Modifier::ITALIC))));
                 text.push(Line::from(format!("    Issuer:  {}", tls.issuer_dn)));
-                
+
                 let now = Utc::now();
                 let days_left = tls.not_after.signed_duration_since(now).num_days();
                 let expiry_style = if days_left < 0 {
@@ -293,6 +293,48 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
             }
         } else {
             text.push(Line::from("  Not probed"));
+        }
+
+        // Organization Details
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Organization:",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+        )));
+
+        if let Some(project) = &asset.project {
+            text.push(Line::from(format!("  Project: {}", project.project_name)));
+            if !project.brand_name.is_empty() {
+                text.push(Line::from(format!("  Brand:   {}", project.brand_name)));
+            }
+            if !project.company_name.is_empty() {
+                text.push(Line::from(format!("  Company: {}", project.company_name)));
+            }
+
+            if !project.assigned_persons.is_empty() {
+                text.push(Line::from("  People:"));
+                for person in &project.assigned_persons {
+                    text.push(Line::from(format!(
+                        "    - {} ({}) <{}>",
+                        person.name, person.role, person.email
+                    )));
+                }
+            }
+
+            if !project.assigned_companies.is_empty() {
+                text.push(Line::from("  Companies:"));
+                for company in &project.assigned_companies {
+                    text.push(Line::from(format!(
+                        "    - {} ({})",
+                        company.name, company.role
+                    )));
+                }
+            }
+        } else {
+            text.push(Line::from(Span::styled(
+                "  Not assigned",
+                Style::default().fg(Color::DarkGray),
+            )));
         }
 
         let details = Paragraph::new(text).block(block).wrap(ratatui::widgets::Wrap { trim: true });
