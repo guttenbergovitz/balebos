@@ -242,49 +242,18 @@ This report helps identify:
 
 ### Interactive TUI Dashboard
 
-Balebos includes an interactive Terminal User Interface for real-time inventory exploration:
+Balebos includes an interactive terminal dashboard built with [ratatui](https://github.com/ratatui/ratatui).
 
 ```bash
 balebos ui
 ```
 
-```
-┌─ Overview ────────────────────────────────────────────────────────────────────┐
-│ Balebos Dashboard  | Assets: 645  Alive: 487  HTTP Errors: 23  DNS Issues: 8 │
-└───────────────────────────────────────────────────────────────────────────────┘
-┌─ Inventory (Space to toggle) ──────────┬─ Details ────────────────────────────┐
-│ Asset               Status       Tech  │ Target: myapp.io                     │
-│ [+] myapp.io        200 OK       Reac.│                                      │
-│ [-] acme-corp.com   200 OK       Ngi..│ DNS Records (Last check: ...):        │
-│   └─ api.acme-co    200 OK       -    │   A:     203.0.113.10               │
-│   └─ www.acme-co    200 OK       Ngi..│   AAAA:  2001:db8::1                │
-│ [+] legacy.net      EXT -> other  -   │                                      │
-│     defunct.org      DnsNotFound   -   │ HTTP Info (Last check: ...):          │
-│                                        │   Title:  My Application             │
-│                                        │   Server: nginx                      │
-│                                        │   Tech:   Nginx, HSTS               │
-│                                        │   Final:  https://myapp.io           │
-│                                        │                                      │
-│                                        │   TLS Certificate:                   │
-│                                        │     Issuer:  CN=DigiCert...          │
-│                                        │     Expires: 2027-01-15 (296 days)   │
-└────────────────────────────────────────┴──────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ q: Quit | /: Filter | x: Toggle Ext | a: Add | s: Scan | Space: Toggle    │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Key features:**
-- **Tab-based navigation** — Three main views: Inventory, Organization, Projects (`1`/`2`/`3` keys)
-- **Hierarchical navigation** — Root domains with collapsible subdomain groups (`Space`/`Enter`)
-- **Smart status column** — Distinguishes `200 OK`, external redirects (`EXT -> target.com`), HTTP errors, and DNS failures
-- **Detail inspector** — Full DNS records, HTTP info (title, server, tech stack), TLS certificate details with expiry countdown, and redirect chain visualization
-- **Organization tab** — Manage brands, companies, and persons with CRUD operations
-- **Projects tab** — View projects with asset counts and team assignments
-- **Asset assignment** — Press `o` to assign selected asset to a project
-- **Live scanning** — Press `a` to add a new domain, `s` to rescan the selected asset — runs in the background with a real-time progress indicator in the header
-- **Filtering** — Press `/` to search, `x` to hide external redirects
-- **Redirect detection** — Correctly identifies external redirects (to a different root domain) while ignoring same-domain redirects (www, subfolders, sibling subdomains)
+The TUI provides:
+- Inventory browsing with hierarchical subdomain view
+- Asset details: DNS records, HTTP info, TLS certificates, redirect chains
+- Organization management (brands, companies, persons)
+- Project management with asset assignments
+- Live scanning and filtering
 
 #### Exporting Status Reports
 
