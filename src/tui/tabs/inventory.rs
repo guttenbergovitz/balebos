@@ -134,8 +134,15 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
             None => "-".to_string(),
         };
 
+        let is_marked = app.marked_assets.contains(&asset.name);
+        let mark_prefix = if is_marked { "[x] " } else { "[ ] " };
+
         Row::new(vec![
-            Cell::from(Line::from(vec![Span::raw(prefix), name_span])),
+            Cell::from(Line::from(vec![
+                Span::raw(prefix),
+                Span::styled(mark_prefix, if is_marked { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) }),
+                name_span
+            ])),
             Cell::from(status_text).style(status_style),
             Cell::from(tech),
         ])

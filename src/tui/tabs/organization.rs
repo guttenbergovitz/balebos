@@ -118,7 +118,7 @@ fn draw_persons_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: 
 }
 
 fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: Style) {
-    let header_cells = ["Name", "Country", "Type"]
+    let header_cells = ["Name", "Country", "Brand", "Type"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan)));
     let header = Row::new(header_cells)
@@ -137,9 +137,16 @@ fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style
         } else {
             Style::default().fg(Color::Green)
         };
+
+        let brand_name = company.brand
+            .and_then(|id| app.org_model.brands_by_id.get(&id))
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| "-".to_string());
+
         Row::new(vec![
             Cell::from(company.name.clone()),
             Cell::from(company.country.alpha2().to_string()),
+            Cell::from(brand_name),
             Cell::from(type_str).style(type_style),
         ])
     });
@@ -147,9 +154,10 @@ fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style
     let t = Table::new(
         rows,
         [
-            Constraint::Percentage(50),
-            Constraint::Percentage(20),
+            Constraint::Percentage(40),
+            Constraint::Percentage(10),
             Constraint::Percentage(30),
+            Constraint::Percentage(20),
         ],
     )
     .header(header)

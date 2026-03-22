@@ -540,7 +540,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
             first_name,
             last_name,
             email,
-        } => match add_person(storage, &first_name, &last_name, &email) {
+        } => match add_person(storage, &first_name, &last_name, &email, None) {
             Ok(rec) => {
                 println!("Person added: {} {} <{}>", rec.first_name, rec.last_name, rec.email);
                 println!("ID: {}", rec.id);

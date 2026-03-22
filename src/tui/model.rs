@@ -178,6 +178,8 @@ pub struct ProjectView {
     pub asset_count: usize,
     pub person_count: usize,
     pub company_count: usize,
+    pub assigned_persons: Vec<PersonWithRole>,
+    pub assigned_companies: Vec<CompanyWithRole>,
 }
 
 /// Organization data for the Organization and Projects tabs
@@ -188,6 +190,7 @@ pub struct OrgModel {
     pub brands: Vec<BrandRecord>,
     pub projects: Vec<ProjectRecord>,
     pub project_views: Vec<ProjectView>,
+    pub assets_by_project: HashMap<ProjectId, Vec<String>>,
     // Lookup maps for quick access (reserved for future use)
     #[allow(dead_code)]
     pub persons_by_id: HashMap<PersonId, PersonRecord>,
@@ -226,6 +229,15 @@ impl OrgModel {
 
         // Build project views with resolved names
         let mut project_views = Vec::new();
+        let mut assets_by_project: HashMap<ProjectId, Vec<String>> = HashMap::new();
+
+        for asset_assignment in &records.asset_assignments {
+            assets_by_project
+                .entry(asset_assignment.project)
+                .or_default()
+                .push(asset_assignment.host.clone());
+        }
+
         for project in &records.projects {
             // Get company and derive brand from company
             let company = companies_by_id.get(&project.company);
@@ -248,13 +260,29 @@ impl OrgModel {
             // Count persons and companies assigned to this project
             let mut person_count = 0;
             let mut company_count = 0;
+            let mut assigned_persons = Vec::new();
+            let mut assigned_companies = Vec::new();
+
             for role in &records.role_assignments {
                 if role.project == project.id {
-                    if role.person.is_some() {
+                    if let Some(p_id) = role.person {
                         person_count += 1;
+                        if let Some(p) = persons_by_id.get(&p_id) {
+                            assigned_persons.push(PersonWithRole {
+                                name: format!("{} {}", p.first_name, p.last_name),
+                                email: p.email.clone(),
+                                role: role.role.to_string(),
+                            });
+                        }
                     }
-                    if role.company.is_some() {
+                    if let Some(c_id) = role.company {
                         company_count += 1;
+                        if let Some(c) = companies_by_id.get(&c_id) {
+                            assigned_companies.push(CompanyWithRole {
+                                name: c.name.clone(),
+                                role: role.role.to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -267,6 +295,8 @@ impl OrgModel {
                 asset_count,
                 person_count,
                 company_count,
+                assigned_persons,
+                assigned_companies,
             });
         }
 
@@ -276,6 +306,7 @@ impl OrgModel {
             brands: records.brands,
             projects: records.projects,
             project_views,
+            assets_by_project,
             persons_by_id,
             companies_by_id,
             brands_by_id,
