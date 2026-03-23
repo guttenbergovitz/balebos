@@ -207,6 +207,42 @@ pub fn batch_process(
     Ok(stats)
 }
 
+/// Run full reconnaissance on a single domain
+pub fn run_single_recon(
+    domain: &str,
+    storage: &JsonlStorage,
+    ignore_patterns: &[String],
+) -> Result<(), io::Error> {
+    if crate::ignore::is_ignored(domain, ignore_patterns) {
+        return Ok(());
+    }
+
+    // 1. Scan/Add domain
+    crate::app::scan::scan_domain(domain, storage)?;
+
+    // 2. Discover subdomains
+    let subdomains = match probe::probe_subdomains(domain, storage) {
+        Ok(subs) => subs,
+        Err(_) => Vec::new(),
+    };
+
+    // 3. Prepare targets for batch probes (domain + subdomains)
+    let mut targets = vec![domain.to_string()];
+    for sub in subdomains {
+        if !crate::ignore::is_ignored(&sub, ignore_patterns) {
+            targets.push(sub);
+        }
+    }
+
+    // 4. Batch DNS Probe
+    let _ = probe_dns::probe_dns_batch(&targets, storage);
+
+    // 5. Batch HTTP Probe
+    let _ = probe_http::probe_http_batch(&targets, storage);
+
+    Ok(())
+}
+
 /// Get all unique domains and subdomains currently in inventory
 fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
     use std::collections::HashSet;

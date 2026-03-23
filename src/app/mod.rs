@@ -12,7 +12,7 @@ pub mod stats;
 pub mod status;
 pub mod tree;
 
-pub use self::batch::batch_process;
+pub use self::batch::{batch_process, run_single_recon};
 pub use self::check::{check_inventory, Severity};
 pub use self::diff::get_inventory_diff;
 pub use self::list::list_domains;
