@@ -92,12 +92,12 @@ impl HttpObservation {
 }
 
 // DTO for httpx JSON output
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct HttpxChainItem {
     request: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct HttpxTls {
     #[serde(default)]
     subject_dn: String,
@@ -111,7 +111,7 @@ struct HttpxTls {
     fingerprint_sha256: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 struct HttpxOutput {
     input: String,
@@ -351,7 +351,12 @@ pub fn probe_http_batch_with_progress(
             "-fc", "301,302,307,308",
             "-fr",
             "-include-chain",
-            "-silent"
+            "-silent",
+            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "-x", "get",
+            "-retries", "2",
+            "-timeout", "10",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -365,8 +370,7 @@ pub fn probe_http_batch_with_progress(
         let clean = target
             .trim()
             .replace("http://", "")
-            .replace("https://", "")
-            .replace("www.", "");
+            .replace("https://", "");
         clean_targets.push(clean);
     }
     
@@ -380,27 +384,31 @@ pub fn probe_http_batch_with_progress(
     let reader = BufReader::new(stdout);
     let mut observations = Vec::new();
 
-    let mut target_idx = 0;
-    for line in reader.lines() {
+    for (line_idx, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
 
         if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
-            let input_copy = parsed.input.clone();
-            let original = if target_idx < targets.len() {
-                &targets[target_idx]
-            } else {
-                &input_copy
-            };
+            let input_from_httpx = parsed.input.clone();
+            
+            // Match input to the original target to preserve its casing/format
+            let original = targets.iter()
+                .find(|&t| {
+                    let clean = t.trim()
+                        .replace("http://", "")
+                        .replace("https://", "");
+                    clean == input_from_httpx
+                })
+                .map(|s| s.as_str())
+                .unwrap_or(&input_from_httpx);
             
             let obs = map_httpx_to_observation(parsed, original);
             storage.save(&obs)?;
-            target_idx += 1;
 
             if let Some(ref cb) = on_progress {
-                cb(target_idx, total, &obs.target);
+                cb(line_idx + 1, total, &obs.target);
             }
 
             observations.push(obs);
@@ -418,8 +426,7 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     let clean_domain = domain
         .trim()
         .replace("http://", "")
-        .replace("https://", "")
-        .replace("www.", "");
+        .replace("https://", "");
 
     let output = Command::new("httpx")
         .args([
@@ -434,7 +441,12 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
             "-fc", "301,302,307,308",
             "-fr",
             "-include-chain",
-            "-silent"
+            "-silent",
+            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "-x", "get",
+            "-retries", "2",
+            "-timeout", "10",
         ])
         .output()?;
 
@@ -446,19 +458,25 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     }
 
     // httpx might output multiple JSON lines if it probes multiple endpoints (e.g. root + www).
-    // We take the last one as it usually represents the final state or the most complete probe.
-    let mut last_parsed = None;
+    // We want to pick the one that matches our requested domain best, preferably a successful one.
+    let mut results = Vec::new();
     for line in trimmed.lines() {
         if let Ok(p) = serde_json::from_str::<HttpxOutput>(line) {
-            last_parsed = Some(p);
+            results.push(p);
         }
     }
 
-    let parsed = last_parsed.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "No valid JSON records in httpx output")
-    })?;
+    if results.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "No valid JSON records in httpx output"));
+    }
 
-    let mut obs = map_httpx_to_observation(parsed, domain);
+    // Pick the best result: prefer 200, then any status code, then whatever matches input
+    let parsed = results.iter()
+        .find(|r| r.status_code == Some(200))
+        .or_else(|| results.iter().find(|r| r.status_code.is_some()))
+        .unwrap_or(&results[results.len() - 1]);
+
+    let mut obs = map_httpx_to_observation(parsed.clone(), domain);
     obs.target = domain.to_string(); 
     storage.save(&obs)?;
     Ok(obs)

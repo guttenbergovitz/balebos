@@ -191,12 +191,14 @@ pub struct App {
     // Scanning state
     pub is_scanning: Arc<Mutex<bool>>,
     pub scan_status: Arc<Mutex<String>>,
+    pub ignore_patterns: Vec<String>,
 }
 
 impl App {
     pub fn new(storage: JsonlStorage) -> Result<Self, io::Error> {
         let model = load_tui_model(&storage)?;
         let org_model = OrgModel::load(&storage)?;
+        let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");
 
         let mut app = Self {
             model,
@@ -241,6 +243,7 @@ impl App {
             // Scanning state
             is_scanning: Arc::new(Mutex::new(false)),
             scan_status: Arc::new(Mutex::new(String::new())),
+            ignore_patterns,
         };
 
         app.update_visible_items();
@@ -1102,6 +1105,7 @@ impl App {
 
         let storage = self.storage.clone();
         let is_scanning = self.is_scanning.clone();
+        let ignore_patterns = self.ignore_patterns.clone();
 
         std::thread::spawn(move || {
             {
@@ -1109,7 +1113,7 @@ impl App {
                 *s = true;
             }
             
-            let res = crate::app::scan::scan_domain(&target, &storage);
+            let res = crate::app::run_single_recon(&target, &storage, &ignore_patterns);
             
             {
                 let mut s = is_scanning.lock().unwrap();
