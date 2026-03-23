@@ -620,6 +620,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Same root domain → NOT external
@@ -651,6 +652,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Different root domain → IS external
@@ -685,6 +687,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // www + subfolder → NOT external
@@ -726,6 +729,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Different root domain → IS external
@@ -766,6 +770,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));

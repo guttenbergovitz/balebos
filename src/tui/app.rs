@@ -5,7 +5,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use ratatui::widgets::TableState;
 
-use crate::org::{BrandId, CompanyId, ProjectId};
+use crate::org::BrandId;
 use crate::storage::JsonlStorage;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
 
