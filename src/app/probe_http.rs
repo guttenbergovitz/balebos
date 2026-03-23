@@ -337,89 +337,103 @@ pub fn probe_http_batch_with_progress(
 
     check_httpx_installation()?;
 
-    let total = targets.len();
+    let mut all_observations = Vec::new();
+    let chunk_size = 10;
 
-    let mut child = Command::new("httpx")
-        .args([
-            "-json", 
-            "-td",
-            "-title",
-            "-server",
-            "-cdn",
-            "-favicon",
-            "-tls-probe",
-            "-fc", "301,302,307,308",
-            "-fr",
-            "-include-chain",
-            "-silent",
-            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "-x", "get",
-            "-retries", "2",
-            "-timeout", "10",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
+        let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;
+        println!(
+            "    ⟳ HTTP: Processing chunk {}/{} ({} targets)...",
+            chunk_idx + 1,
+            total_chunks,
+            chunk.len()
+        );
 
-    let mut stdin = child.stdin.take().expect("Failed to open stdin");
-    
-    let mut clean_targets = Vec::new();
-    for target in targets {
-        let clean = target
-            .trim()
-            .replace("http://", "")
-            .replace("https://", "");
-        clean_targets.push(clean);
-    }
-    
-    let targets_string = clean_targets.join("\n") + "\n";
-    
-    thread::spawn(move || {
-        let _ = stdin.write_all(targets_string.as_bytes());
-    });
+        let mut child = Command::new("httpx")
+            .args([
+                "-json", 
+                "-td",
+                "-title",
+                "-server",
+                "-cdn",
+                "-favicon",
+                "-tls-probe",
+                "-fc", "301,302,307,308",
+                "-fr",
+                "-include-chain",
+                "-silent",
+                "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "-x", "get",
+                "-retries", "2",
+                "-timeout", "10",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
-    let stdout = child.stdout.take().expect("Failed to open stdout");
-    let reader = BufReader::new(stdout);
-    let mut observations = Vec::new();
-
-    for (line_idx, line) in reader.lines().enumerate() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        
+        let mut clean_targets = Vec::new();
+        for target in chunk {
+            let clean = target
+                .trim()
+                .replace("http://", "")
+                .replace("https://", "");
+            clean_targets.push(clean);
         }
+        
+        let targets_string = clean_targets.join("\n") + "\n";
+        
+        thread::spawn(move || {
+            let _ = stdin.write_all(targets_string.as_bytes());
+        });
 
-        if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
-            let input_from_httpx = parsed.input.clone();
-            
-            // Match input to the original target to preserve its casing/format
-            let original = targets.iter()
-                .find(|&t| {
-                    let clean = t.trim()
-                        .replace("http://", "")
-                        .replace("https://", "");
-                    clean == input_from_httpx
-                })
-                .map(|s| s.as_str())
-                .unwrap_or(&input_from_httpx);
-            
-            let obs = map_httpx_to_observation(parsed, original);
-            
-            if let Some(ref cb) = on_progress {
-                cb(line_idx + 1, total, &obs.target);
+        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let reader = BufReader::new(stdout);
+        let mut observations = Vec::new();
+
+        for (line_idx, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
             }
 
-            observations.push(obs);
+            if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
+                let input_from_httpx = parsed.input.clone();
+                
+                // Match input to the original target to preserve its casing/format
+                let original = chunk.iter()
+                    .find(|&t| {
+                        let clean = t.trim()
+                            .replace("http://", "")
+                            .replace("https://", "");
+                        clean == input_from_httpx
+                    })
+                    .map(|s| s.as_str())
+                    .unwrap_or(&input_from_httpx);
+                
+                let obs = map_httpx_to_observation(parsed, original);
+                
+                if let Some(ref cb) = on_progress {
+                    // Global progress calculation if needed, here we just use chunk local
+                    cb(line_idx + 1, chunk.len(), &obs.target);
+                }
+
+                observations.push(obs);
+            }
         }
+
+        if !observations.is_empty() {
+            storage.save_batch(&observations)?;
+            all_observations.extend(observations);
+        }
+
+        let _ = child.wait()?;
     }
 
-    if !observations.is_empty() {
-        storage.save_batch(&observations)?;
-    }
-
-    let _ = child.wait()?;
-    Ok(observations)
+    Ok(all_observations)
 }
 
 // Perform HTTP probe (single domain wrapper around batch)

@@ -80,7 +80,21 @@ pub fn batch_process(
         total_runtime_secs: 0,
     };
 
-    // Step 1: Scan all domains
+    // Load existing records to skip RDAP if already checked today
+    let existing_records = crate::storage::read_records(storage).ok();
+    let checked_today: std::collections::HashSet<String> = existing_records
+        .as_ref()
+        .map(|r| {
+            let now = chrono::Utc::now().date_naive();
+            r.domain_registrations
+                .iter()
+                .filter(|reg| reg.created_at.date_naive() == now)
+                .map(|reg| reg.domain.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Step 1: Scan all domains (Parallel)
     println!("🔍 Step 1/5: Scanning domains and RDAP info (parallel)...");
     
     // Process domains in parallel
@@ -89,15 +103,20 @@ pub fn batch_process(
         .enumerate()
         .map(|(idx, domain)| {
             if crate::ignore::is_ignored(domain, ignore_patterns) {
-                return (idx, domain.clone(), None, None, None);
+                return (idx, domain.clone(), None, None, None, true);
             }
 
+            let skip_rdap = checked_today.contains(domain);
             match crate::app::scan::scan_domain_no_save(domain) {
                 Ok((_, item)) => {
-                    let rdap_result = probe_rdap::run_rdap_probe_no_save(domain).ok();
-                    (idx, domain.clone(), Some(item), rdap_result, None)
+                    let rdap_result = if skip_rdap {
+                        None
+                    } else {
+                        probe_rdap::run_rdap_probe_no_save(domain).ok()
+                    };
+                    (idx, domain.clone(), Some(item), rdap_result, None, skip_rdap)
                 }
-                Err(e) => (idx, domain.clone(), None, None, Some(e.to_string())),
+                Err(e) => (idx, domain.clone(), None, None, Some(e.to_string()), false),
             }
         })
         .collect();
@@ -106,20 +125,32 @@ pub fn batch_process(
     let mut new_items = Vec::new();
     let mut new_rdaps = Vec::new();
 
-    for (idx, domain, item_opt, rdap_opt, err_opt) in results {
+    let mut skipped_rdap_count = 0;
+
+    for (idx, domain, item_opt, rdap_opt, err_opt, skipped) in results {
         if let Some(err) = err_opt {
             println!("  ✗ [{}/{}] {} (error: {})", idx + 1, domains.len(), domain, err);
             stats.domains_failed += 1;
         } else if let Some(item) = item_opt {
-            println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
+            let status = if skipped {
+                skipped_rdap_count += 1;
+                "(RDAP fresh, skipped)"
+            } else if rdap_opt.is_some() {
+                "(RDAP updated)"
+            } else {
+                "(RDAP failed/no data)"
+            };
+            println!("  ✓ [{}/{}] {} {}", idx + 1, domains.len(), domain, status);
             stats.domains_added += 1;
             new_items.push(item);
             if let Some(rdap) = rdap_opt {
                 new_rdaps.push(rdap);
             }
-        } else {
-            println!("  ⊘ [{}/{}] {} (ignored)", idx + 1, domains.len(), domain);
         }
+    }
+
+    if skipped_rdap_count > 0 {
+        println!("  ℹ Skipped {} RDAP checks (already up to date today)", skipped_rdap_count);
     }
 
     if !new_items.is_empty() {

@@ -66,7 +66,7 @@ pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<Stri
 
 fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result<Vec<String>> {
     let mut all_subdomains = Vec::new();
-    let chunk_size = 50; // Process 50 domains at a time to avoid overwhelming subfinder/network
+    let chunk_size = 10; // Frequent updates for better feedback
 
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
         let total_chunks = (domains.len() as f32 / chunk_size as f32).ceil() as usize;
@@ -94,6 +94,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
         let now = Utc::now();
         let mut chunk_items = Vec::new();
         let mut chunk_subdomains = Vec::new();
+        let mut found_in_chunk = 0;
 
         for line in reader.lines() {
             let subdomain = line?;
@@ -101,6 +102,11 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
             if trimmed.is_empty() {
                 continue;
             }
+            
+            found_in_chunk += 1;
+            print!("\r      → Found {} subdomains in current chunk...", found_in_chunk);
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
 
             // Find original apex domain for context
             let mut original_input = None;
@@ -134,6 +140,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
         if !chunk_items.is_empty() {
             storage.save_batch(&chunk_items)?;
         }
+        println!(); // New line after chunk progress
 
         let _ = child.wait();
         let _ = fs::remove_file(&temp_file);
