@@ -4,6 +4,7 @@ use crate::app::probe_http;
 use crate::app::probe_rdap;
 use crate::domain::normalize_domain;
 use crate::storage::JsonlStorage;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
@@ -80,44 +81,72 @@ pub fn batch_process(
     };
 
     // Step 1: Scan all domains
-    println!("🔍 Step 1/5: Scanning domains and RDAP info...");
-    for (idx, domain) in domains.iter().enumerate() {
-        if crate::ignore::is_ignored(domain, ignore_patterns) {
+    println!("🔍 Step 1/5: Scanning domains and RDAP info (parallel)...");
+    
+    // Process domains in parallel
+    let results: Vec<_> = domains
+        .par_iter()
+        .enumerate()
+        .map(|(idx, domain)| {
+            if crate::ignore::is_ignored(domain, ignore_patterns) {
+                return (idx, domain.clone(), None, None, None);
+            }
+
+            match crate::app::scan::scan_domain_no_save(domain) {
+                Ok((_, item)) => {
+                    let rdap_result = probe_rdap::run_rdap_probe_no_save(domain).ok();
+                    (idx, domain.clone(), Some(item), rdap_result, None)
+                }
+                Err(e) => (idx, domain.clone(), None, None, Some(e.to_string())),
+            }
+        })
+        .collect();
+
+    // Save results and print status sequentially to avoid jumbled output
+    let mut new_items = Vec::new();
+    let mut new_rdaps = Vec::new();
+
+    for (idx, domain, item_opt, rdap_opt, err_opt) in results {
+        if let Some(err) = err_opt {
+            println!("  ✗ [{}/{}] {} (error: {})", idx + 1, domains.len(), domain, err);
+            stats.domains_failed += 1;
+        } else if let Some(item) = item_opt {
+            println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
+            stats.domains_added += 1;
+            new_items.push(item);
+            if let Some(rdap) = rdap_opt {
+                new_rdaps.push(rdap);
+            }
+        } else {
             println!("  ⊘ [{}/{}] {} (ignored)", idx + 1, domains.len(), domain);
-            continue;
         }
+    }
 
-        match crate::app::scan::scan_domain(domain, storage) {
-            Ok(_) => {
-                println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
-                stats.domains_added += 1;
-
-                // Also run RDAP probe for the apex domain
-                let _ = probe_rdap::run_rdap_probe(storage, domain);
-            }
-            Err(e) => {
-                println!(
-                    "  ✗ [{}/{}] {} (error: {})",
-                    idx + 1,
-                    domains.len(),
-                    domain,
-                    e
-                );
-                stats.domains_failed += 1;
-            }
-        }
+    if !new_items.is_empty() {
+        storage.save_batch(&new_items)?;
+    }
+    if !new_rdaps.is_empty() {
+        storage.save_batch(&new_rdaps)?;
     }
     println!();
 
-    // Step 2: Probe subdomains for each domain
-    println!("🕷️  Step 2/5: Discovering subdomains...");
-    for (idx, domain) in domains.iter().enumerate() {
-        if crate::ignore::is_ignored(domain, ignore_patterns) {
-            continue;
+    // Step 2: Probe subdomains for all domains
+    println!("🕷️  Step 2/5: Discovering subdomains in batch...");
+    let mut valid_domains = Vec::new();
+    for domain in &domains {
+        if !crate::ignore::is_ignored(domain, ignore_patterns) {
+            valid_domains.push(domain.clone());
         }
+    }
 
-        print!("  ⟳ [{}/{}] {} ... ", idx + 1, domains.len(), domain);
-        match probe::probe_subdomains(domain, storage) {
+    if valid_domains.is_empty() {
+        println!("  → No domains to check");
+    } else {
+        print!("  ⟳ Running subfinder for {} domains ... ", valid_domains.len());
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        match probe::probe_subdomains_batch(&valid_domains, storage) {
             Ok(subdomains) => {
                 println!("found {} subdomains", subdomains.len());
                 stats.subdomains_found += subdomains.len();

@@ -405,14 +405,17 @@ pub fn probe_http_batch_with_progress(
                 .unwrap_or(&input_from_httpx);
             
             let obs = map_httpx_to_observation(parsed, original);
-            storage.save(&obs)?;
-
+            
             if let Some(ref cb) = on_progress {
                 cb(line_idx + 1, total, &obs.target);
             }
 
             observations.push(obs);
         }
+    }
+
+    if !observations.is_empty() {
+        storage.save_batch(&observations)?;
     }
 
     let _ = child.wait()?;

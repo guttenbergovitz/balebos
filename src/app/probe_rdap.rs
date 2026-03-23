@@ -29,14 +29,16 @@ struct RdapOutput {
 }
 
 pub fn run_rdap_probe(storage: &JsonlStorage, domain: &str) -> io::Result<DomainRegistrationRecord> {
+    let record = run_rdap_probe_no_save(domain)?;
+    storage.save(&record)?;
+    Ok(record)
+}
+
+pub fn run_rdap_probe_no_save(domain: &str) -> io::Result<DomainRegistrationRecord> {
     match perform_rdap_query(domain) {
-        Ok(record) => {
-            storage.save(&record)?;
-            Ok(record)
-        }
+        Ok(record) => Ok(record),
         Err(_) => {
             let record = perform_whois_query(domain)?;
-            storage.save(&record)?;
             Ok(record)
         }
     }

@@ -141,13 +141,16 @@ pub fn probe_dns_batch(
                     checked_at: Utc::now(),
                     source: "dnsx".to_string(),
                 };
-                storage.save(&obs)?;
                 observations.push(obs);
             }
             Err(e) => {
                 eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
             }
         }
+    }
+
+    if !observations.is_empty() {
+        storage.save_batch(&observations)?;
     }
 
     Ok(observations)
