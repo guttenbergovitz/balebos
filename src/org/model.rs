@@ -132,6 +132,31 @@ pub struct Asset {
 }
 
 // ---------------------------------------------------------------------------
+// Domain Registration — RDAP/Whois information
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainContact {
+    pub name: Option<String>,
+    pub organization: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainRegistration {
+    pub domain: String,
+    pub registrar: Option<String>,
+    pub registered_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub status: Vec<String>,
+    pub registrant: Option<DomainContact>,
+    pub admin: Option<DomainContact>,
+    pub tech: Option<DomainContact>,
+    pub source: String, // rdap, whois
+}
+
+// ---------------------------------------------------------------------------
 // ContractorRole — role for external contractor assignments
 // ---------------------------------------------------------------------------
 

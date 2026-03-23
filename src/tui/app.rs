@@ -5,6 +5,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use ratatui::widgets::TableState;
 
+use crate::org::{BrandId, CompanyId, ProjectId};
 use crate::storage::JsonlStorage;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
 
@@ -432,7 +433,7 @@ impl App {
                     self.form_fields = vec![
                         c.name.clone(),
                         c.country.alpha2().to_string(),
-                        c.brand.map(|id| id.to_string()).unwrap_or_default(),
+                        c.brand.map(|id: BrandId| id.to_string()).unwrap_or_default(),
                     ];
                 }
             }
@@ -446,7 +447,7 @@ impl App {
                     self.form_fields = vec![
                         p.name.clone(),
                         p.company.to_string(),
-                        p.importance.map(|i| i.to_string()).unwrap_or_default(),
+                        p.importance.map(|i: u8| i.to_string()).unwrap_or_default(),
                     ];
                 }
             }
@@ -516,7 +517,7 @@ impl App {
                             .unwrap_or_else(|| "Unknown".to_string());
                         (format!("{} ({})", p.name, brand_name), p.id.to_string())
                     })
-                    .filter(|(display, _id)| display.to_lowercase().contains(&current_input))
+                    .filter(|(display, _id): &(String, String)| display.to_lowercase().contains(&current_input))
                     .collect();
                 
                 if self.org_select_matches.is_empty() {
@@ -1082,7 +1083,7 @@ impl App {
 
         self.org_select_matches = self.org_model.persons.iter()
             .map(|p| (format!("{} {}", p.first_name, p.last_name), p.id.to_string()))
-            .filter(|(name, _)| name.to_lowercase().contains(&filter))
+            .filter(|(name, _): &(String, String)| name.to_lowercase().contains(&filter))
             .collect();
 
         if self.org_select_matches.is_empty() {
@@ -1159,9 +1160,9 @@ impl App {
         let filter = self.input.to_lowercase();
 
         self.org_select_matches = self.org_model.companies.iter()
-            .filter(|c| c.is_external())
+            .filter(|c: &&crate::org::CompanyRecord| c.is_external())
             .map(|c| (c.name.clone(), c.id.to_string()))
-            .filter(|(name, _)| name.to_lowercase().contains(&filter))
+            .filter(|(name, _): &(String, String)| name.to_lowercase().contains(&filter))
             .collect();
 
         if self.org_select_matches.is_empty() {

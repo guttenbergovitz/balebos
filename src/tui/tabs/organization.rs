@@ -126,7 +126,7 @@ fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style
         .height(1)
         .bottom_margin(1);
 
-    let rows = app.org_model.companies.iter().map(|company| {
+    let rows = app.org_model.companies.iter().map(|company: &crate::org::CompanyRecord| {
         let type_str = if company.is_external() {
             "External"
         } else {
@@ -269,7 +269,7 @@ fn build_company_details(app: &App) -> Vec<Line<'static>> {
         None => return vec![Line::from("Select a company to see details")],
     };
 
-    let company = match app.org_model.companies.get(idx) {
+    let company: &crate::org::CompanyRecord = match app.org_model.companies.get(idx) {
         Some(c) => c,
         None => return vec![Line::from("Company not found")],
     };
