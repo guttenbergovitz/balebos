@@ -55,6 +55,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if let InputMode::RoleAssigning(step) = &app.input_mode {
         draw_role_assign_modal(f, app, step);
     }
+    if let InputMode::ContractorAssigning(step) = &app.input_mode {
+        draw_contractor_assign_modal(f, app, step);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +223,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
         }
         Tab::Projects => {
-            " q: Quit | R: Refresh | 1-3: Tabs | a: Add | e: Edit | r: Role | Space: Toggle | j/k: Nav "
+            " q: Quit | R: Refresh | 1-3: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
         }
     };
 
@@ -627,5 +630,97 @@ fn draw_role_assign_modal(f: &mut Frame, app: &App, step: &RoleAssignStep) {
     }
 }
 
-use crate::tui::app::RoleAssignStep;
+fn draw_contractor_assign_modal(f: &mut Frame, app: &App, step: &ContractorAssignStep) {
+    let area = fixed_size_centered_rect(60, 20, f.area());
+    let block = Block::default()
+        .title(" Assign External Contractor ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 1,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+
+    match step {
+        ContractorAssignStep::SelectCompany => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Length(1),
+                    Constraint::Min(5),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+
+            let search_line = Line::from(vec![
+                Span::styled("Search Company: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&app.input),
+                Span::styled("_", Style::default().fg(Color::Yellow)),
+            ]);
+            f.render_widget(Paragraph::new(search_line), chunks[0]);
+
+            let mut list_items = vec![Line::from(Span::styled(
+                "Select external company:",
+                Style::default().fg(Color::Cyan),
+            ))];
+            for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(10) {
+                let is_selected = Some(i) == app.org_select_index;
+                let style = if is_selected {
+                    Style::default().bg(Color::Blue).fg(Color::White)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                list_items.push(Line::from(vec![
+                    Span::styled(if is_selected { "> " } else { "  " }, style),
+                    Span::styled(format!("{:<30}", name), style),
+                    Span::styled(format!(" [{}]", id), Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+            f.render_widget(Paragraph::new(list_items), chunks[2]);
+
+            f.render_widget(
+                Paragraph::new("Arrows to navigate, Enter to pick, Esc to cancel"),
+                chunks[3],
+            );
+        }
+        ContractorAssignStep::SelectRole => {
+            let text = vec![
+                Line::from("Select a contractor role:"),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("[d]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Development"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[o]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - DevOps"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[g]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Design"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[c]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Consultancy"),
+                ]),
+                Line::from(vec![
+                    Span::styled("[s]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Security"),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled("Esc to go back", Style::default().fg(Color::DarkGray))),
+            ];
+            f.render_widget(Paragraph::new(text), inner);
+        }
+    }
+}
+
+use crate::tui::app::{ContractorAssignStep, RoleAssignStep};
 

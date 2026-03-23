@@ -117,6 +117,8 @@ pub struct Project {
     pub id: ProjectId,
     pub name: String,
     pub company: CompanyId,
+    /// Importance rating from 1 (low) to 5 (critical). None if not rated.
+    pub importance: Option<u8>,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +129,44 @@ pub struct Project {
 pub struct Asset {
     pub host: String,
     pub project: ProjectId,
+}
+
+// ---------------------------------------------------------------------------
+// ContractorRole — role for external contractor assignments
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContractorRole {
+    Development,
+    DevOps,
+    Design,
+    Consultancy,
+    Security,
+}
+
+impl ContractorRole {
+    /// Returns all contractor role variants.
+    pub fn all() -> &'static [ContractorRole] {
+        &[
+            ContractorRole::Development,
+            ContractorRole::DevOps,
+            ContractorRole::Design,
+            ContractorRole::Consultancy,
+            ContractorRole::Security,
+        ]
+    }
+}
+
+impl std::fmt::Display for ContractorRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContractorRole::Development => write!(f, "Development"),
+            ContractorRole::DevOps => write!(f, "DevOps"),
+            ContractorRole::Design => write!(f, "Design"),
+            ContractorRole::Consultancy => write!(f, "Consultancy"),
+            ContractorRole::Security => write!(f, "Security"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -300,8 +340,21 @@ mod tests {
             id: ProjectId::new(1),
             name: "Website Relaunch".to_string(),
             company: CompanyId::new(200),
+            importance: None,
         };
         assert_eq!(project.company, CompanyId::new(200));
+        assert_eq!(project.importance, None);
+    }
+
+    #[test]
+    fn test_project_with_importance() {
+        let project = Project {
+            id: ProjectId::new(2),
+            name: "Critical API".to_string(),
+            company: CompanyId::new(100),
+            importance: Some(5),
+        };
+        assert_eq!(project.importance, Some(5));
     }
 
     #[test]
@@ -309,5 +362,25 @@ mod tests {
         assert_eq!(Role::Owner.to_string(), "Owner");
         assert_eq!(Role::Manager.to_string(), "Manager");
         assert_eq!(Role::Technician.to_string(), "Technician");
+    }
+
+    #[test]
+    fn test_contractor_role_all() {
+        let all = ContractorRole::all();
+        assert_eq!(all.len(), 5);
+        assert_eq!(all[0], ContractorRole::Development);
+        assert_eq!(all[1], ContractorRole::DevOps);
+        assert_eq!(all[2], ContractorRole::Design);
+        assert_eq!(all[3], ContractorRole::Consultancy);
+        assert_eq!(all[4], ContractorRole::Security);
+    }
+
+    #[test]
+    fn test_contractor_role_display() {
+        assert_eq!(ContractorRole::Development.to_string(), "Development");
+        assert_eq!(ContractorRole::DevOps.to_string(), "DevOps");
+        assert_eq!(ContractorRole::Design.to_string(), "Design");
+        assert_eq!(ContractorRole::Consultancy.to_string(), "Consultancy");
+        assert_eq!(ContractorRole::Security.to_string(), "Security");
     }
 }

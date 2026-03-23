@@ -60,6 +60,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => handle_org_adding_mode(app, key.code),
                     InputMode::Assigning => handle_assigning_mode(app, key.code),
                     InputMode::RoleAssigning(_) => handle_role_assigning_mode(app, key.code),
+                    InputMode::ContractorAssigning(_) => handle_contractor_assigning_mode(app, key.code),
                 }
             }
         }
@@ -227,6 +228,44 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         KeyCode::Char('r') => {
             app.start_role_assign();
         }
+        KeyCode::Char('c') => {
+            app.start_contractor_assign();
+        }
+        _ => {}
+    }
+}
+
+fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
+    use crate::tui::app::ContractorAssignStep;
+    use crate::org::ContractorRole;
+
+    match &app.input_mode {
+        InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany) => match code {
+            KeyCode::Esc => app.input_mode = InputMode::Normal,
+            KeyCode::Down => app.org_select_next(),
+            KeyCode::Up => app.org_select_prev(),
+            KeyCode::Enter => {
+                let _ = app.contractor_assign_pick_company();
+            }
+            KeyCode::Char(c) => {
+                app.input.push(c);
+                app.update_contractor_assign_matches();
+            }
+            KeyCode::Backspace => {
+                app.input.pop();
+                app.update_contractor_assign_matches();
+            }
+            _ => {}
+        },
+        InputMode::ContractorAssigning(ContractorAssignStep::SelectRole) => match code {
+            KeyCode::Esc => app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany),
+            KeyCode::Char('d') => { let _ = app.contractor_assign_submit(ContractorRole::Development); },
+            KeyCode::Char('o') => { let _ = app.contractor_assign_submit(ContractorRole::DevOps); },
+            KeyCode::Char('g') => { let _ = app.contractor_assign_submit(ContractorRole::Design); },
+            KeyCode::Char('c') => { let _ = app.contractor_assign_submit(ContractorRole::Consultancy); },
+            KeyCode::Char('s') => { let _ = app.contractor_assign_submit(ContractorRole::Security); },
+            _ => {}
+        },
         _ => {}
     }
 }

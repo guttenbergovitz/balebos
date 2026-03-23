@@ -2,8 +2,8 @@ use crate::app::probe_dns::DnsObservation;
 use crate::app::probe_http::HttpObservation;
 use crate::inventory::InventoryItem;
 use crate::org::{
-    AssetAssignmentRecord, BrandRecord, CompanyRecord, PersonRecord, ProjectRecord,
-    RoleAssignmentRecord,
+    AssetAssignmentRecord, AssetImportanceRecord, BrandRecord, CompanyRecord,
+    ExternalContractorAssignment, PersonRecord, ProjectRecord, RoleAssignmentRecord,
 };
 use serde::Deserialize;
 use std::fs::File;
@@ -30,6 +30,8 @@ pub struct Records {
     pub projects: Vec<ProjectRecord>,
     pub asset_assignments: Vec<AssetAssignmentRecord>,
     pub role_assignments: Vec<RoleAssignmentRecord>,
+    pub contractor_assignments: Vec<ExternalContractorAssignment>,
+    pub asset_importances: Vec<AssetImportanceRecord>,
 }
 
 /// Read a heterogeneous JSONL log and separate into typed records.
@@ -104,6 +106,16 @@ pub fn read_records(storage: &JsonlStorage) -> Result<Records, io::Error> {
             "org_role_assignment" => {
                 if let Ok(rec) = serde_json::from_str::<RoleAssignmentRecord>(&line) {
                     records.role_assignments.push(rec);
+                }
+            }
+            "org_contractor_assignment" => {
+                if let Ok(rec) = serde_json::from_str::<ExternalContractorAssignment>(&line) {
+                    records.contractor_assignments.push(rec);
+                }
+            }
+            "org_asset_importance" => {
+                if let Ok(rec) = serde_json::from_str::<AssetImportanceRecord>(&line) {
+                    records.asset_importances.push(rec);
                 }
             }
             _ => {}

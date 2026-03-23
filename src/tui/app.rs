@@ -92,7 +92,7 @@ impl OrgAddType {
             OrgAddType::Person => &["First Name", "Last Name", "Email", "Phone (optional)"],
             OrgAddType::Company => &["Name", "Country Code", "Brand ID (empty=external)"],
             OrgAddType::Brand => &["Name"],
-            OrgAddType::Project => &["Name", "Company ID"],
+            OrgAddType::Project => &["Name", "Company ID", "Importance (1-5, optional)"],
         }
     }
 
@@ -133,11 +133,18 @@ pub enum InputMode {
     OrgEditing(OrgAddType, usize), // (type, selected_index)
     Assigning,
     RoleAssigning(RoleAssignStep),
+    ContractorAssigning(ContractorAssignStep),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoleAssignStep {
     SelectTarget, // Person
+    SelectRole,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractorAssignStep {
+    SelectCompany,
     SelectRole,
 }
 
@@ -187,6 +194,11 @@ pub struct App {
     pub role_assign_type: Option<bool>, // true=Person, false=Company
     pub role_assign_target: Option<String>, // ID string
     pub role_assign_role: Option<crate::org::Role>,
+
+    // Contractor assignment state
+    pub contractor_assign_project: Option<crate::org::ProjectId>,
+    pub contractor_assign_company: Option<String>, // CompanyId string
+    pub contractor_assign_role: Option<crate::org::ContractorRole>,
 
     // Scanning state
     pub is_scanning: Arc<Mutex<bool>>,
@@ -239,6 +251,10 @@ impl App {
             role_assign_type: None,
             role_assign_target: None,
             role_assign_role: None,
+
+            contractor_assign_project: None,
+            contractor_assign_company: None,
+            contractor_assign_role: None,
 
             // Scanning state
             is_scanning: Arc::new(Mutex::new(false)),
@@ -430,6 +446,7 @@ impl App {
                     self.form_fields = vec![
                         p.name.clone(),
                         p.company.to_string(),
+                        p.importance.map(|i| i.to_string()).unwrap_or_default(),
                     ];
                 }
             }
@@ -753,11 +770,23 @@ impl App {
         Ok(true)
     }
 
+    fn parse_importance(&self) -> Option<u8> {
+        let imp_str = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
+        if imp_str.is_empty() {
+            return None;
+        }
+        match imp_str.parse::<u8>() {
+            Ok(v) if (1..=5).contains(&v) => Some(v),
+            _ => None,
+        }
+    }
+
     fn submit_project_form(&mut self) -> io::Result<bool> {
         use crate::org::CompanyId;
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
         let company_id_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
+        let importance = self.parse_importance();
 
         if name.is_empty() || company_id_str.is_empty() {
             return Ok(false);
@@ -765,10 +794,10 @@ impl App {
 
         let company_id = match company_id_str.parse::<CompanyId>() {
             Ok(id) => id,
-            Err(_) => return Ok(false), // Invalid company ID
+            Err(_) => return Ok(false),
         };
 
-        crate::app::org::add_project(&self.storage, name, company_id)?;
+        crate::app::org::add_project_with_importance(&self.storage, name, company_id, importance)?;
         Ok(true)
     }
 
@@ -777,6 +806,7 @@ impl App {
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
         let company_id_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
+        let importance = self.parse_importance();
 
         if name.is_empty() || company_id_str.is_empty() {
             return Ok(false);
@@ -784,10 +814,10 @@ impl App {
 
         let company_id = match company_id_str.parse::<CompanyId>() {
             Ok(id) => id,
-            Err(_) => return Ok(false), // Invalid company ID
+            Err(_) => return Ok(false),
         };
 
-        crate::app::org::update_project(&self.storage, id, name, company_id)?;
+        crate::app::org::set_project_importance(&self.storage, id, name, company_id, importance)?;
         Ok(true)
     }
 
@@ -1083,6 +1113,85 @@ impl App {
         let person_id = target_id_str.parse::<crate::org::PersonId>()
             .map_err(|_| io::Error::other("Invalid person ID"))?;
         crate::app::org::assign_person_to_project(&self.storage, person_id, project_id, role)?;
+
+        self.input_mode = InputMode::Normal;
+        self.input.clear();
+        self.refresh()?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Contractor assignment
+    // -----------------------------------------------------------------------
+
+    pub fn start_contractor_assign(&mut self) {
+        if let Some(idx) = self.projects_table_state.selected() {
+            let mut current_idx = 0;
+            let mut selected_project = None;
+            for project in &self.org_model.project_views {
+                if current_idx == idx {
+                    selected_project = Some(project);
+                    break;
+                }
+                current_idx += 1;
+                if self.expanded_projects.contains(&project.id.to_string()) {
+                    if let Some(assets) = self.org_model.assets_by_project.get(&project.id) {
+                        current_idx += assets.len();
+                    } else {
+                        current_idx += 1;
+                    }
+                }
+            }
+
+            if let Some(project) = selected_project {
+                self.contractor_assign_project = Some(project.id);
+                self.contractor_assign_company = None;
+                self.contractor_assign_role = None;
+                self.input.clear();
+                self.org_select_index = None;
+                self.update_contractor_assign_matches();
+                self.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany);
+            }
+        }
+    }
+
+    pub fn update_contractor_assign_matches(&mut self) {
+        let filter = self.input.to_lowercase();
+
+        self.org_select_matches = self.org_model.companies.iter()
+            .filter(|c| c.is_external())
+            .map(|c| (c.name.clone(), c.id.to_string()))
+            .filter(|(name, _)| name.to_lowercase().contains(&filter))
+            .collect();
+
+        if self.org_select_matches.is_empty() {
+            self.org_select_index = None;
+        } else if let Some(i) = self.org_select_index {
+            if i >= self.org_select_matches.len() {
+                self.org_select_index = Some(0);
+            }
+        }
+    }
+
+    pub fn contractor_assign_pick_company(&mut self) -> bool {
+        if let Some(i) = self.org_select_index {
+            if let Some((_, id)) = self.org_select_matches.get(i) {
+                self.contractor_assign_company = Some(id.clone());
+                self.org_select_index = Some(0);
+                self.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectRole);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn contractor_assign_submit(&mut self, role: crate::org::ContractorRole) -> io::Result<()> {
+        let project_id = self.contractor_assign_project.ok_or_else(|| io::Error::other("No project selected"))?;
+        let company_id_str = self.contractor_assign_company.as_ref().ok_or_else(|| io::Error::other("No company selected"))?;
+
+        let company_id = company_id_str.parse::<crate::org::CompanyId>()
+            .map_err(|_| io::Error::other("Invalid company ID"))?;
+        crate::app::org::assign_contractor_to_project(&self.storage, company_id, project_id, role)?;
 
         self.input_mode = InputMode::Normal;
         self.input.clear();

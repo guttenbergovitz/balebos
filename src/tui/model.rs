@@ -23,6 +23,13 @@ pub struct CompanyWithRole {
     pub role: String,
 }
 
+/// External contractor company with their contractor role in a project
+#[derive(Debug, Clone)]
+pub struct ContractorWithRole {
+    pub name: String,
+    pub role: String,
+}
+
 /// Organizational context for an asset
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
@@ -178,6 +185,8 @@ pub struct ProjectView {
     pub asset_count: usize,
     pub person_count: usize,
     pub company_count: usize,
+    pub importance: Option<u8>,
+    pub contractors: Vec<ContractorWithRole>,
     pub assigned_persons: Vec<PersonWithRole>,
     pub assigned_companies: Vec<CompanyWithRole>,
 }
@@ -287,6 +296,18 @@ impl OrgModel {
                 }
             }
 
+            let mut contractors = Vec::new();
+            for ca in &records.contractor_assignments {
+                if ca.project == project.id {
+                    if let Some(c) = companies_by_id.get(&ca.company) {
+                        contractors.push(ContractorWithRole {
+                            name: c.name.clone(),
+                            role: ca.role.to_string(),
+                        });
+                    }
+                }
+            }
+
             project_views.push(ProjectView {
                 id: project.id,
                 name: project.name.clone(),
@@ -295,6 +316,8 @@ impl OrgModel {
                 asset_count,
                 person_count,
                 company_count,
+                importance: project.importance,
+                contractors,
                 assigned_persons,
                 assigned_companies,
             });

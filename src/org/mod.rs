@@ -8,8 +8,8 @@
 pub mod model;
 pub mod storage;
 
-pub use self::model::{BrandId, CompanyId, CountryCode, PersonId, ProjectId, Role};
+pub use self::model::{BrandId, CompanyId, ContractorRole, CountryCode, PersonId, ProjectId, Role};
 pub use self::storage::{
-    AssetAssignmentRecord, BrandRecord, CompanyRecord, PersonRecord, ProjectRecord,
-    RoleAssignmentRecord,
+    AssetAssignmentRecord, AssetImportanceRecord, BrandRecord, CompanyRecord,
+    ExternalContractorAssignment, PersonRecord, ProjectRecord, RoleAssignmentRecord,
 };
