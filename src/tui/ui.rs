@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
+use crate::tui::tabs::{build_details_text, draw_inventory, draw_organization, draw_projects};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -57,6 +57,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if let InputMode::ContractorAssigning(step) = &app.input_mode {
         draw_contractor_assign_modal(f, app, step);
+    }
+    if app.input_mode == InputMode::AssetDetails {
+        draw_asset_details_modal(f, app);
     }
 }
 
@@ -217,7 +220,7 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | Space: Toggle "
+            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info | Space/Enter: Toggle "
         }
         Tab::Organization => {
             " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
@@ -719,6 +722,25 @@ fn draw_contractor_assign_modal(f: &mut Frame, app: &App, step: &ContractorAssig
             ];
             f.render_widget(Paragraph::new(text), inner);
         }
+    }
+}
+
+fn draw_asset_details_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(90, 90, f.area());
+    let block = Block::default()
+        .title(" Full Asset Details (Esc/Enter to close, j/k to scroll) ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    if let Some(asset) = app.selected_asset() {
+        let text = build_details_text(asset);
+        let details = Paragraph::new(text)
+            .block(block)
+            .scroll((app.asset_details_scroll, 0))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(details, area);
     }
 }
 

@@ -61,6 +61,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Assigning => handle_assigning_mode(app, key.code),
                     InputMode::RoleAssigning(_) => handle_role_assigning_mode(app, key.code),
                     InputMode::ContractorAssigning(_) => handle_contractor_assigning_mode(app, key.code),
+                    InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
                 }
             }
         }
@@ -131,6 +132,12 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
             app.clear_marks();
         }
         KeyCode::Char(' ') | KeyCode::Enter => app.toggle_expand(),
+        KeyCode::Char('i') => {
+            if app.selected_asset().is_some() {
+                app.asset_details_scroll = 0;
+                app.input_mode = InputMode::AssetDetails;
+            }
+        }
         KeyCode::Down | KeyCode::Char('j') => app.next(),
         KeyCode::Up | KeyCode::Char('k') => app.previous(),
         _ => {}
@@ -403,6 +410,27 @@ fn handle_assigning_mode(app: &mut App, code: KeyCode) {
         }
         KeyCode::Backspace => {
             app.assign_pop_char();
+        }
+        _ => {}
+    }
+}
+
+fn handle_asset_details_mode(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter | KeyCode::Char('i') => {
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_add(1);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_sub(1);
+        }
+        KeyCode::PageDown => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_add(10);
+        }
+        KeyCode::PageUp => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_sub(10);
         }
         _ => {}
     }

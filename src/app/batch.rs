@@ -1,6 +1,7 @@
 use crate::app::probe;
 use crate::app::probe_dns;
 use crate::app::probe_http;
+use crate::app::probe_rdap;
 use crate::domain::normalize_domain;
 use crate::storage::JsonlStorage;
 use std::fs::File;
@@ -79,7 +80,7 @@ pub fn batch_process(
     };
 
     // Step 1: Scan all domains
-    println!("🔍 Step 1/4: Scanning domains...");
+    println!("🔍 Step 1/5: Scanning domains and RDAP info...");
     for (idx, domain) in domains.iter().enumerate() {
         if crate::ignore::is_ignored(domain, ignore_patterns) {
             println!("  ⊘ [{}/{}] {} (ignored)", idx + 1, domains.len(), domain);
@@ -90,6 +91,9 @@ pub fn batch_process(
             Ok(_) => {
                 println!("  ✓ [{}/{}] {}", idx + 1, domains.len(), domain);
                 stats.domains_added += 1;
+
+                // Also run RDAP probe for the apex domain
+                let _ = probe_rdap::run_rdap_probe(storage, domain);
             }
             Err(e) => {
                 println!(
@@ -106,7 +110,7 @@ pub fn batch_process(
     println!();
 
     // Step 2: Probe subdomains for each domain
-    println!("🕷️  Step 2/4: Discovering subdomains...");
+    println!("🕷️  Step 2/5: Discovering subdomains...");
     for (idx, domain) in domains.iter().enumerate() {
         if crate::ignore::is_ignored(domain, ignore_patterns) {
             continue;
@@ -129,7 +133,7 @@ pub fn batch_process(
     let all_assets = get_all_assets(storage)?;
 
     // Step 3: Probe DNS for all domains and subdomains
-    println!("📡 Step 3/4: Resolving DNS records...");
+    println!("📡 Step 3/5: Resolving DNS records...");
     
     let mut dns_targets = Vec::new();
     for asset in &all_assets {
@@ -160,7 +164,7 @@ pub fn batch_process(
     println!();
 
     // Step 4: Probe HTTP for all domains and subdomains
-    println!("🌐 Step 4/4: Checking HTTP status...");
+    println!("🌐 Step 4/5: Checking HTTP status...");
     
     let mut http_targets = Vec::new();
     for asset in &all_assets {
@@ -220,13 +224,16 @@ pub fn run_single_recon(
     // 1. Scan/Add domain
     crate::app::scan::scan_domain(domain, storage)?;
 
-    // 2. Discover subdomains
+    // 2. Run RDAP probe (apex domain)
+    let _ = probe_rdap::run_rdap_probe(storage, domain);
+
+    // 3. Discover subdomains
     let subdomains = match probe::probe_subdomains(domain, storage) {
         Ok(subs) => subs,
         Err(_) => Vec::new(),
     };
 
-    // 3. Prepare targets for batch probes (domain + subdomains)
+    // 4. Prepare targets for batch probes (domain + subdomains)
     let mut targets = vec![domain.to_string()];
     for sub in subdomains {
         if !crate::ignore::is_ignored(&sub, ignore_patterns) {
@@ -234,10 +241,10 @@ pub fn run_single_recon(
         }
     }
 
-    // 4. Batch DNS Probe
+    // 5. Batch DNS Probe
     let _ = probe_dns::probe_dns_batch(&targets, storage);
 
-    // 5. Batch HTTP Probe
+    // 6. Batch HTTP Probe
     let _ = probe_http::probe_http_batch(&targets, storage);
 
     Ok(())

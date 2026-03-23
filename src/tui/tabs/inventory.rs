@@ -182,7 +182,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
+pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
     let mut text = vec![
         Line::from(vec![
             Span::styled("Target: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -339,6 +339,60 @@ fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
         }
     } else {
         text.push(Line::from("  Not probed"));
+    }
+
+    // Registration Info
+    if let Some(reg) = &asset.registration {
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Registration Info (RDAP/Whois):",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )));
+        if let Some(registrar) = &reg.registrar {
+            text.push(Line::from(format!("  Registrar:  {}", registrar)));
+        }
+        if let Some(registered) = reg.registered_at {
+            text.push(Line::from(format!("  Registered: {}", registered.format("%Y-%m-%d"))));
+        }
+        if let Some(expires) = reg.expires_at {
+            let now = Utc::now();
+            let days_left = expires.signed_duration_since(now).num_days();
+            let expiry_style = if days_left < 0 {
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            } else if days_left < 30 {
+                Style::default().fg(Color::Red)
+            } else if days_left < 90 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Green)
+            };
+            text.push(Line::from(vec![
+                Span::raw("  Expires:    "),
+                Span::styled(
+                    format!("{} ({} days left)", expires.format("%Y-%m-%d"), days_left),
+                    expiry_style,
+                ),
+            ]));
+        }
+        if !reg.status.is_empty() {
+            text.push(Line::from(format!("  Status:     {}", reg.status.join(", "))));
+        }
+
+        // Contacts
+        if let Some(c) = &reg.registrant {
+            text.push(Line::from(Span::styled("  Registrant:", Style::default().add_modifier(Modifier::ITALIC))));
+            text.push(Line::from(format!("    Name:     {}", c.name.as_deref().unwrap_or("-"))));
+            text.push(Line::from(format!("    Email:    {}", c.email.as_deref().unwrap_or("-"))));
+        }
+        if let Some(c) = &reg.admin {
+            text.push(Line::from(Span::styled("  Admin:", Style::default().add_modifier(Modifier::ITALIC))));
+            text.push(Line::from(format!("    Name:     {}", c.name.as_deref().unwrap_or("-"))));
+            text.push(Line::from(format!("    Email:    {}", c.email.as_deref().unwrap_or("-"))));
+        }
+
+        text.push(Line::from(format!("  Source:     {}", reg.source)));
     }
 
     // Organization Details

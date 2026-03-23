@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use isocountry::CountryCode;
 use serde::{Deserialize, Serialize};
 
-use super::{BrandId, CompanyId, ContractorRole, PersonId, ProjectId, Role};
+use super::{BrandId, CompanyId, ContractorRole, DomainContact, PersonId, ProjectId, Role};
 
 // ---------------------------------------------------------------------------
 // Person Record
@@ -219,6 +219,45 @@ impl RoleAssignmentRecord {
             role,
             person: None,
             company: Some(company),
+            created_at: Utc::now(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Domain Registration Record
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainRegistrationRecord {
+    pub item_type: String,
+    pub domain: String,
+    pub registrar: Option<String>,
+    pub registered_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub status: Vec<String>,
+    pub registrant: Option<DomainContact>,
+    pub admin: Option<DomainContact>,
+    pub tech: Option<DomainContact>,
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl DomainRegistrationRecord {
+    pub fn new(domain: String, source: String) -> Self {
+        Self {
+            item_type: "org_domain_registration".to_string(),
+            domain,
+            registrar: None,
+            registered_at: None,
+            expires_at: None,
+            updated_at: None,
+            status: Vec::new(),
+            registrant: None,
+            admin: None,
+            tech: None,
+            source,
             created_at: Utc::now(),
         }
     }

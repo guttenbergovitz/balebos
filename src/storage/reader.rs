@@ -3,7 +3,8 @@ use crate::app::probe_http::HttpObservation;
 use crate::inventory::InventoryItem;
 use crate::org::{
     AssetAssignmentRecord, AssetImportanceRecord, BrandRecord, CompanyRecord,
-    ExternalContractorAssignment, PersonRecord, ProjectRecord, RoleAssignmentRecord,
+    DomainRegistrationRecord, ExternalContractorAssignment, PersonRecord, ProjectRecord,
+    RoleAssignmentRecord,
 };
 use serde::Deserialize;
 use std::fs::File;
@@ -32,6 +33,7 @@ pub struct Records {
     pub role_assignments: Vec<RoleAssignmentRecord>,
     pub contractor_assignments: Vec<ExternalContractorAssignment>,
     pub asset_importances: Vec<AssetImportanceRecord>,
+    pub domain_registrations: Vec<DomainRegistrationRecord>,
 }
 
 /// Read a heterogeneous JSONL log and separate into typed records.
@@ -116,6 +118,11 @@ pub fn read_records(storage: &JsonlStorage) -> Result<Records, io::Error> {
             "org_asset_importance" => {
                 if let Ok(rec) = serde_json::from_str::<AssetImportanceRecord>(&line) {
                     records.asset_importances.push(rec);
+                }
+            }
+            "org_domain_registration" => {
+                if let Ok(rec) = serde_json::from_str::<DomainRegistrationRecord>(&line) {
+                    records.domain_registrations.push(rec);
                 }
             }
             _ => {}
