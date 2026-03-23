@@ -5,6 +5,23 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **RDAP/WHOIS Domain Registration Probing** - Query domain registration data via RDAP protocol with WHOIS fallback
+  - Captures registrar, registration/expiration dates, and EPP status codes
+  - Records registrant, admin, and tech contact information
+  - New `DomainRegistrationRecord` storage format (`item_type: "org_domain_registration"`)
+  - Integrated into batch processing for bulk domain intelligence
+- **External Contractor Assignments** - Assign external companies to projects with contractor roles
+  - Supports roles: Development, DevOps, Design, Consultancy, Security
+  - New `ExternalContractorAssignment` record type
+
+### Changed
+
+- **TUI Asset Details** - Now displays domain registration information when available
+
 ## [1.1.0] - 2026-03-21
 
 ### Added
