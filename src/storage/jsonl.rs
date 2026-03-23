@@ -54,4 +54,34 @@ impl JsonlStorage {
 
         Ok(())
     }
+
+    /// Save multiple items efficiently by opening the file only once
+    pub fn save_batch<T: Serialize>(&self, data: &[T]) -> Result<(), std::io::Error> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        let path = Path::new(&self.filepath);
+
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.filepath)?;
+
+        let mut writer = BufWriter::new(file);
+
+        for item in data {
+            let json = serde_json::to_string(item)?;
+            writeln!(writer, "{}", json)?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
 }
