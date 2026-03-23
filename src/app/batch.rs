@@ -259,7 +259,7 @@ pub fn run_single_recon(
     // 3. Discover subdomains
     let subdomains = match probe::probe_subdomains(domain, storage) {
         Ok(subs) => subs,
-        Err(_) => Vec::new(),
+        Err(_) => Vec::<String>::new(),
     };
 
     // 4. Prepare targets for batch probes (domain + subdomains)
