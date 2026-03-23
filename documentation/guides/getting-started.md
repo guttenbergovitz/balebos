@@ -8,6 +8,7 @@ This guide will help you get up and running with Balebos quickly.
 
 - Rust 2021 edition or newer
 - [subfinder](https://github.com/projectdiscovery/subfinder) (optional, for subdomain discovery)
+- [rdap](https://github.com/openrdap/rdap) (required for domain registration info)
 
 ### Building from Source
 

@@ -18,6 +18,7 @@ Balebos is designed so that system state does not depend on constant human atten
 - discovers assets (domains, subdomains, repos)
 - resolves DNS records (A, AAAA, CNAME) via dnsx
 - performs deep HTTP probing (tech stack, title, web server) via httpx
+- tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
 - stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
@@ -300,6 +301,7 @@ Balebos integrates with external tools to leverage proven solutions:
 - `subfinder` - For subdomain enumeration
 - `dnsx` - For fast DNS resolution
 - `httpx` - For deep HTTP probing, fingerprinting, and redirect tracking
+- `rdap` - For domain registration and expiration data
 
 ## Installation
 
@@ -318,7 +320,8 @@ cargo build --release
 ### Dependencies
 
 - Rust 2021 edition or newer
-- ProjectDiscovery ecosystem tools (required for probes):
+- Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
   - [dnsx](https://github.com/projectdiscovery/dnsx)
   - [httpx](https://github.com/projectdiscovery/httpx)
+  - [rdap](https://github.com/openrdap/rdap) (or a compatible RDAP client)
