@@ -107,6 +107,7 @@ Balebos includes a comprehensive Terminal User Interface (TUI) for interactive e
 #### Inventory Tab (Asset Explorer)
 - **Browse**: Use arrow keys or `j`/`k` to navigate the list.
 - **Group Management**: Use **Space** or **Enter** to expand/collapse subdomain groups.
+- **Details**: Press `i` to open a **Full-screen Detail View** (przewijalne). Use `j`/`k` or **PageUp** / **PageDown** to scroll through DNS, HTTP, and Registration info.
 - **Filtering**: 
     - Press `/` or `f` to search for specific domains.
     - Press `x` to toggle the visibility of external redirects.
@@ -352,10 +353,16 @@ Each line is a JSON object representing a single item in the inventory. Records 
 {"item_type":"http_check","target":"broken.com","status":null,"response_time_ms":0,"checked_at":"2026-03-18T22:45:12.345678Z","error_kind":"dns_not_found","error_message":"DNS resolution failed"}
 ```
 
+**Registration Records:**
+```json
+{"item_type":"org_domain_registration","domain":"example.com","registrar":"Google LLC","registered_at":"2005-01-01T00:00:00Z","expires_at":"2030-01-01T00:00:00Z","registrant":{"name":"Domain Admin","email":"admin@example.com"},"source":"rdap"}
+```
+
 **Record Types:**
 - `domain` - Root domains added to inventory
 - `subdomain` - Subdomains discovered via scanning
 - `http_check` - HTTP probe results and network error observations
+- `org_domain_registration` - RDAP/Whois information and contact data
 
 ## Error Handling
 
