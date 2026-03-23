@@ -87,70 +87,84 @@ pub fn probe_dns_batch(
 
     check_dnsx_installation()?;
 
-    // Use a temporary file for targets to avoid pipe issues
-    let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
-    fs::write(&temp_file, targets.join("\n"))?;
+    let mut all_observations = Vec::new();
+    let chunk_size = 10;
 
-    let output = Command::new("dnsx")
-        .args([
-            "-l", temp_file.to_str().unwrap(),
-            "-json", 
-            "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
-            "-silent"
-        ])
-        .output()?;
+    for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
+        let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;
+        println!(
+            "    ⟳ DNS: Processing chunk {}/{} ({} targets)...",
+            chunk_idx + 1,
+            total_chunks,
+            chunk.len()
+        );
 
-    // Cleanup temp file
-    let _ = fs::remove_file(&temp_file);
+        // Use a temporary file for targets to avoid pipe issues
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
+        fs::write(&temp_file, chunk.join("\n"))?;
 
-    if !output.status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("dnsx failed with status: {}", output.status),
-        ));
-    }
+        let output = Command::new("dnsx")
+            .args([
+                "-l", temp_file.to_str().unwrap(),
+                "-json", 
+                "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
+                "-silent"
+            ])
+            .output()?;
 
-    let mut observations = Vec::new();
-    let reader = BufReader::new(&output.stdout[..]);
+        let _ = fs::remove_file(&temp_file);
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
+        if !output.status.success() {
+            eprintln!("      ✗ DNS chunk failed");
             continue;
         }
 
-        match serde_json::from_str::<DnsxOutput>(&line) {
-            Ok(parsed) => {
-                let soa_strings = parsed.soa.unwrap_or_default().into_iter()
-                    .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
-                    .collect();
+        let mut observations = Vec::new();
+        let reader = BufReader::new(&output.stdout[..]);
 
-                let obs = DnsObservation {
-                    item_type: "dns_record".to_string(),
-                    id: Uuid::new_v4().to_string(),
-                    asset_type: "domain".to_string(),
-                    target: parsed.host,
-                    a: parsed.a,
-                    aaaa: parsed.aaaa,
-                    cname: parsed.cname,
-                    mx: parsed.mx,
-                    ns: parsed.ns,
-                    txt: parsed.txt,
-                    soa: soa_strings,
-                    checked_at: Utc::now(),
-                    source: "dnsx".to_string(),
-                };
-                storage.save(&obs)?;
-                observations.push(obs);
+        for line in reader.lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
             }
-            Err(e) => {
-                eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
+
+            match serde_json::from_str::<DnsxOutput>(&line) {
+                Ok(parsed) => {
+                    let soa_strings = parsed.soa.unwrap_or_default().into_iter()
+                        .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
+                        .collect();
+
+                    let obs = DnsObservation {
+                        item_type: "dns_record".to_string(),
+                        id: Uuid::new_v4().to_string(),
+                        asset_type: "domain".to_string(),
+                        target: parsed.host,
+                        a: parsed.a,
+                        aaaa: parsed.aaaa,
+                        cname: parsed.cname,
+                        mx: parsed.mx,
+                        ns: parsed.ns,
+                        txt: parsed.txt,
+                        soa: soa_strings,
+                        checked_at: Utc::now(),
+                        source: "dnsx".to_string(),
+                    };
+                    observations.push(obs);
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
+                }
             }
+        }
+
+        if !observations.is_empty() {
+            storage.save_batch(&observations)?;
+            all_observations.extend(observations);
         }
     }
 
-    Ok(observations)
+    Ok(all_observations)
 }
 
 pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
