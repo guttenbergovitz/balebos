@@ -1,6 +1,7 @@
 mod app;
 mod cli;
 mod domain;
+mod error;
 mod exit_codes;
 mod ignore;
 mod inventory;

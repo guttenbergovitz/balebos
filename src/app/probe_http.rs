@@ -1,7 +1,7 @@
+use crate::error::{ProbeError, Result};
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::io;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -150,27 +150,26 @@ fn categorize_httpx_error(error_msg: &str) -> HttpErrorKind {
 }
 
 /// Helper function to check if httpx is correctly installed from ProjectDiscovery.
-fn check_httpx_installation() -> Result<(), io::Error> {
+fn check_httpx_installation() -> Result<()> {
     let version_check = Command::new("httpx")
         .arg("-version")
         .output()
         .map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "httpx not found in PATH. Please install it from ProjectDiscovery: https://github.com/projectdiscovery/httpx",
-                )
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ProbeError::ToolNotFound {
+                    tool: "httpx".to_string(),
+                }
             } else {
-                e
+                ProbeError::Execution(e)
             }
         })?;
 
     if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery") 
         && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery") {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.",
-        ));
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.".to_string(),
+        }.into());
     }
     
     Ok(())
@@ -321,7 +320,7 @@ pub type ProgressCallback = Arc<dyn Fn(usize, usize, &str) + Send + Sync>;
 pub fn probe_http_batch(
     targets: &[String],
     storage: &JsonlStorage,
-) -> Result<Vec<HttpObservation>, io::Error> {
+) -> Result<Vec<HttpObservation>> {
     probe_http_batch_with_progress(targets, storage, None)
 }
 
@@ -330,7 +329,7 @@ pub fn probe_http_batch_with_progress(
     targets: &[String],
     storage: &JsonlStorage,
     on_progress: Option<ProgressCallback>,
-) -> Result<Vec<HttpObservation>, io::Error> {
+) -> Result<Vec<HttpObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -437,7 +436,7 @@ pub fn probe_http_batch_with_progress(
 }
 
 // Perform HTTP probe (single domain wrapper around batch)
-pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation, io::Error> {
+pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation> {
     check_httpx_installation()?;
     
     let clean_domain = domain
@@ -471,7 +470,10 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     let trimmed = stdout_str.trim();
 
     if trimmed.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::Other, "No output from httpx"));
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "No output from httpx".to_string(),
+        }.into());
     }
 
     // httpx might output multiple JSON lines if it probes multiple endpoints (e.g. root + www).
@@ -484,7 +486,10 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     }
 
     if results.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "No valid JSON records in httpx output"));
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "No valid JSON records in httpx output".to_string(),
+        }.into());
     }
 
     // Pick the best result: prefer 200, then any status code, then whatever matches input

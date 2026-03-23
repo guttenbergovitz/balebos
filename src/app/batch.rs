@@ -276,7 +276,7 @@ pub fn run_single_recon(
     domain: &str,
     storage: &JsonlStorage,
     ignore_patterns: &[String],
-) -> Result<(), io::Error> {
+) -> crate::error::Result<()> {
     if crate::ignore::is_ignored(domain, ignore_patterns) {
         return Ok(());
     }

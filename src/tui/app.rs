@@ -1113,11 +1113,13 @@ impl App {
     }
 
     pub fn role_assign_submit(&mut self, role: crate::org::Role) -> io::Result<()> {
-        let project_id = self.role_assign_project.ok_or_else(|| io::Error::other("No project selected"))?;
-        let target_id_str = self.role_assign_target.as_ref().ok_or_else(|| io::Error::other("No target selected"))?;
+        let project_id = self.role_assign_project
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No project selected"))?;
+        let target_id_str = self.role_assign_target.as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No target selected"))?;
 
         let person_id = target_id_str.parse::<crate::org::PersonId>()
-            .map_err(|_| io::Error::other("Invalid person ID"))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid person ID"))?;
         crate::app::org::assign_person_to_project(&self.storage, person_id, project_id, role)?;
 
         self.input_mode = InputMode::Normal;
@@ -1192,11 +1194,13 @@ impl App {
     }
 
     pub fn contractor_assign_submit(&mut self, role: crate::org::ContractorRole) -> io::Result<()> {
-        let project_id = self.contractor_assign_project.ok_or_else(|| io::Error::other("No project selected"))?;
-        let company_id_str = self.contractor_assign_company.as_ref().ok_or_else(|| io::Error::other("No company selected"))?;
+        let project_id = self.contractor_assign_project
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No project selected"))?;
+        let company_id_str = self.contractor_assign_company.as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No company selected"))?;
 
         let company_id = company_id_str.parse::<crate::org::CompanyId>()
-            .map_err(|_| io::Error::other("Invalid company ID"))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid company ID"))?;
         crate::app::org::assign_contractor_to_project(&self.storage, company_id, project_id, role)?;
 
         self.input_mode = InputMode::Normal;

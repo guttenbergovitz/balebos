@@ -1,22 +1,27 @@
+use crate::error::{ProbeError, Result};
 use crate::inventory::InventoryItem;
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use std::fs;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use uuid::Uuid;
 
-// Run subfinder to find subdomains
-fn run_subfinder(domain: &str) -> Result<String, io::Error> {
+fn run_subfinder(domain: &str) -> Result<String> {
     let output = Command::new("subfinder")
         .arg("-d")
         .arg(domain)
         .arg("-silent")
-        .output()?;
+        .output()
+        .map_err(ProbeError::Execution)?;
 
     if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        return Err(io::Error::other(format!("subfinder failed: {}", error)));
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(ProbeError::ToolFailed {
+            tool: "subfinder".to_string(),
+            stderr,
+        }
+        .into());
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -31,8 +36,7 @@ fn parse_subdomains(output: &str) -> Vec<String> {
         .collect()
 }
 
-// Probe for subdomains and add them to inventory
-pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
+pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<String>> {
     // Run subfinder to get subdomains
     let output = run_subfinder(domain)?;
 
@@ -64,7 +68,7 @@ pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<Stri
     Ok(subdomains)
 }
 
-fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result<Vec<String>> {
+fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec<String>> {
     let mut all_subdomains = Vec::new();
     let chunk_size = 10; // Frequent updates for better feedback
 
@@ -154,7 +158,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
 pub fn probe_subdomains_batch(
     domains: &[String],
     storage: &JsonlStorage,
-) -> Result<Vec<String>, io::Error> {
+) -> Result<Vec<String>> {
     if domains.is_empty() {
         return Ok(Vec::new());
     }

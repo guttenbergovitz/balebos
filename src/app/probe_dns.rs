@@ -1,8 +1,8 @@
+use crate::error::{ProbeError, Result};
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use uuid::Uuid;
@@ -59,18 +59,17 @@ struct DnsxOutput {
 }
 
 /// Helper function to check if dnsx is correctly installed.
-fn check_dnsx_installation() -> Result<(), io::Error> {
-    let _ = Command::new("dnsx")
+fn check_dnsx_installation() -> Result<()> {
+    Command::new("dnsx")
         .arg("-version")
         .output()
         .map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "dnsx not found in PATH. Please install it from ProjectDiscovery.",
-                )
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ProbeError::ToolNotFound {
+                    tool: "dnsx".to_string(),
+                }
             } else {
-                e
+                ProbeError::Execution(e)
             }
         })?;
     Ok(())
@@ -80,7 +79,7 @@ fn check_dnsx_installation() -> Result<(), io::Error> {
 pub fn probe_dns_batch(
     targets: &[String],
     storage: &JsonlStorage,
-) -> Result<Vec<DnsObservation>, io::Error> {
+) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -167,7 +166,7 @@ pub fn probe_dns_batch(
     Ok(all_observations)
 }
 
-pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
+pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation> {
     let targets = vec![target.to_string()];
     let mut results = probe_dns_batch(&targets, storage)?;
     
