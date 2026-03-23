@@ -1,8 +1,8 @@
 use crate::app::probe_dns::DnsObservation;
 use crate::app::probe_http::HttpObservation;
 use crate::org::{
-    BrandId, BrandRecord, CompanyId, CompanyRecord, PersonId, PersonRecord, ProjectId,
-    ProjectRecord, RoleAssignmentRecord,
+    BrandId, BrandRecord, CompanyId, CompanyRecord, DomainRegistration, PersonId, PersonRecord,
+    ProjectId, ProjectRecord, RoleAssignmentRecord,
 };
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{BTreeMap, HashMap};
@@ -23,6 +23,13 @@ pub struct CompanyWithRole {
     pub role: String,
 }
 
+/// External contractor company with their contractor role in a project
+#[derive(Debug, Clone)]
+pub struct ContractorWithRole {
+    pub name: String,
+    pub role: String,
+}
+
 /// Organizational context for an asset
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
@@ -39,6 +46,7 @@ pub struct AssetState {
     pub name: String,
     pub latest_dns: Option<DnsObservation>,
     pub latest_http: Option<HttpObservation>,
+    pub registration: Option<DomainRegistration>,
     pub project: Option<ProjectContext>,
 }
 
@@ -178,6 +186,8 @@ pub struct ProjectView {
     pub asset_count: usize,
     pub person_count: usize,
     pub company_count: usize,
+    pub importance: Option<u8>,
+    pub contractors: Vec<ContractorWithRole>,
     pub assigned_persons: Vec<PersonWithRole>,
     pub assigned_companies: Vec<CompanyWithRole>,
 }
@@ -287,6 +297,18 @@ impl OrgModel {
                 }
             }
 
+            let mut contractors = Vec::new();
+            for ca in &records.contractor_assignments {
+                if ca.project == project.id {
+                    if let Some(c) = companies_by_id.get(&ca.company) {
+                        contractors.push(ContractorWithRole {
+                            name: c.name.clone(),
+                            role: ca.role.to_string(),
+                        });
+                    }
+                }
+            }
+
             project_views.push(ProjectView {
                 id: project.id,
                 name: project.name.clone(),
@@ -295,6 +317,8 @@ impl OrgModel {
                 asset_count,
                 person_count,
                 company_count,
+                importance: project.importance,
+                contractors,
                 assigned_persons,
                 assigned_companies,
             });
@@ -401,15 +425,33 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
         })
     };
 
+    let mut domain_registrations: HashMap<String, DomainRegistration> = HashMap::new();
+    for reg in records.domain_registrations {
+        domain_registrations.insert(reg.domain.clone(), DomainRegistration {
+            domain: reg.domain,
+            registrar: reg.registrar,
+            registered_at: reg.registered_at,
+            expires_at: reg.expires_at,
+            updated_at: reg.updated_at,
+            status: reg.status,
+            registrant: reg.registrant,
+            admin: reg.admin,
+            tech: reg.tech,
+            source: reg.source,
+        });
+    }
+
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
 
     // 1. Collect all assets
     for item in records.items {
         let project = build_project_context(&item.name);
+        let registration = domain_registrations.get(&item.name).cloned();
         assets_map.entry(item.name.clone()).or_insert(AssetState {
             name: item.name,
             latest_dns: None,
             latest_http: None,
+            registration,
             project,
         });
     }
@@ -417,10 +459,12 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     for dns in records.dns_observations {
         let entry = assets_map.entry(dns.target.clone()).or_insert_with(|| {
             let project = build_project_context(&dns.target);
+            let registration = domain_registrations.get(&dns.target).cloned();
             AssetState {
                 name: dns.target.clone(),
                 latest_dns: None,
                 latest_http: None,
+                registration,
                 project,
             }
         });
@@ -434,10 +478,12 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     for http in records.http_observations {
         let entry = assets_map.entry(http.target.clone()).or_insert_with(|| {
             let project = build_project_context(&http.target);
+            let registration = domain_registrations.get(&http.target).cloned();
             AssetState {
                 name: http.target.clone(),
                 latest_dns: None,
                 latest_http: None,
+                registration,
                 project,
             }
         });

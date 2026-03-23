@@ -60,6 +60,8 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => handle_org_adding_mode(app, key.code),
                     InputMode::Assigning => handle_assigning_mode(app, key.code),
                     InputMode::RoleAssigning(_) => handle_role_assigning_mode(app, key.code),
+                    InputMode::ContractorAssigning(_) => handle_contractor_assigning_mode(app, key.code),
+                    InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
                 }
             }
         }
@@ -130,6 +132,12 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
             app.clear_marks();
         }
         KeyCode::Char(' ') | KeyCode::Enter => app.toggle_expand(),
+        KeyCode::Char('i') => {
+            if app.selected_asset().is_some() {
+                app.asset_details_scroll = 0;
+                app.input_mode = InputMode::AssetDetails;
+            }
+        }
         KeyCode::Down | KeyCode::Char('j') => app.next(),
         KeyCode::Up | KeyCode::Char('k') => app.previous(),
         _ => {}
@@ -227,6 +235,44 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         KeyCode::Char('r') => {
             app.start_role_assign();
         }
+        KeyCode::Char('c') => {
+            app.start_contractor_assign();
+        }
+        _ => {}
+    }
+}
+
+fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
+    use crate::tui::app::ContractorAssignStep;
+    use crate::org::ContractorRole;
+
+    match &app.input_mode {
+        InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany) => match code {
+            KeyCode::Esc => app.input_mode = InputMode::Normal,
+            KeyCode::Down => app.org_select_next(),
+            KeyCode::Up => app.org_select_prev(),
+            KeyCode::Enter => {
+                let _ = app.contractor_assign_pick_company();
+            }
+            KeyCode::Char(c) => {
+                app.input.push(c);
+                app.update_contractor_assign_matches();
+            }
+            KeyCode::Backspace => {
+                app.input.pop();
+                app.update_contractor_assign_matches();
+            }
+            _ => {}
+        },
+        InputMode::ContractorAssigning(ContractorAssignStep::SelectRole) => match code {
+            KeyCode::Esc => app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany),
+            KeyCode::Char('d') => { let _ = app.contractor_assign_submit(ContractorRole::Development); },
+            KeyCode::Char('o') => { let _ = app.contractor_assign_submit(ContractorRole::DevOps); },
+            KeyCode::Char('g') => { let _ = app.contractor_assign_submit(ContractorRole::Design); },
+            KeyCode::Char('c') => { let _ = app.contractor_assign_submit(ContractorRole::Consultancy); },
+            KeyCode::Char('s') => { let _ = app.contractor_assign_submit(ContractorRole::Security); },
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -364,6 +410,27 @@ fn handle_assigning_mode(app: &mut App, code: KeyCode) {
         }
         KeyCode::Backspace => {
             app.assign_pop_char();
+        }
+        _ => {}
+    }
+}
+
+fn handle_asset_details_mode(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter | KeyCode::Char('i') => {
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_add(1);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_sub(1);
+        }
+        KeyCode::PageDown => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_add(10);
+        }
+        KeyCode::PageUp => {
+            app.asset_details_scroll = app.asset_details_scroll.saturating_sub(10);
         }
         _ => {}
     }

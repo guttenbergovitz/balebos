@@ -6,6 +6,7 @@ pub mod org;
 pub mod probe;
 pub mod probe_dns;
 pub mod probe_http;
+pub mod probe_rdap;
 pub mod report;
 pub mod scan;
 pub mod stats;

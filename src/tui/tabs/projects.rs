@@ -31,7 +31,7 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
         .add_modifier(Modifier::REVERSED)
         .fg(Color::Yellow);
 
-    let header_cells = ["Project", "Brand", "Company", "Assets"]
+    let header_cells = ["Project", "Brand", "Company", "Assets", "Imp"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan)));
     let header = Row::new(header_cells)
@@ -57,6 +57,15 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
             Cell::from(project.brand_name.clone()),
             Cell::from(project.company_name.clone()),
             Cell::from(format!("{}", project.asset_count)),
+            Cell::from(
+                project.importance.map(|i| format!("★{}", i)).unwrap_or_else(|| "-".to_string())
+            ).style(match project.importance {
+                Some(5) => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Some(4) => Style::default().fg(Color::Yellow),
+                Some(3) => Style::default().fg(Color::Green),
+                Some(1..=2) => Style::default().fg(Color::DarkGray),
+                _ => Style::default().fg(Color::DarkGray),
+            }),
         ]));
 
         if is_expanded {
@@ -64,6 +73,7 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                 for asset in assets {
                     rows.push(Row::new(vec![
                         Cell::from(format!("  └─ {}", asset)).style(Style::default().fg(Color::DarkGray)),
+                        Cell::from(""),
                         Cell::from(""),
                         Cell::from(""),
                         Cell::from(""),
@@ -75,6 +85,7 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                     Cell::from(""),
                     Cell::from(""),
                     Cell::from(""),
+                    Cell::from(""),
                 ]));
             }
         }
@@ -83,10 +94,11 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let t = Table::new(
         rows,
         [
-            Constraint::Percentage(30),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(20),
+            Constraint::Percentage(28),
+            Constraint::Percentage(22),
+            Constraint::Percentage(22),
+            Constraint::Percentage(18),
+            Constraint::Percentage(10),
         ],
     )
     .header(header)
@@ -164,6 +176,21 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
             Span::styled("Company: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(project.company_name.clone()),
         ]),
+        Line::from(vec![
+            Span::styled("Importance: ", Style::default().add_modifier(Modifier::BOLD)),
+            match project.importance {
+                Some(i) => Span::styled(
+                    format!("{} {}", "★".repeat(i as usize), "☆".repeat(5 - i as usize)),
+                    match i {
+                        5 => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        4 => Style::default().fg(Color::Yellow),
+                        3 => Style::default().fg(Color::Green),
+                        _ => Style::default().fg(Color::DarkGray),
+                    },
+                ),
+                None => Span::styled("Not rated", Style::default().fg(Color::DarkGray)),
+            },
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             "Statistics:",
@@ -210,6 +237,25 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
             text.push(Line::from(vec![
                 Span::styled(format!("  • {} ", company.name), Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(format!("({})", company.role), Style::default().fg(Color::Yellow)),
+            ]));
+        }
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "External Contractors:",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::UNDERLINED),
+    )));
+
+    if project.contractors.is_empty() {
+        text.push(Line::from(Span::styled("  No contractors assigned", Style::default().fg(Color::DarkGray))));
+    } else {
+        for contractor in &project.contractors {
+            text.push(Line::from(vec![
+                Span::styled(format!("  • {} ", contractor.name), Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(format!("({})", contractor.role), Style::default().fg(Color::Magenta)),
             ]));
         }
     }

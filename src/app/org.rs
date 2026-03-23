@@ -3,8 +3,9 @@
 #![allow(dead_code)]
 
 use crate::org::{
-    AssetAssignmentRecord, BrandId, BrandRecord, CompanyId, CompanyRecord, CountryCode, PersonId,
-    PersonRecord, ProjectId, ProjectRecord, Role, RoleAssignmentRecord,
+    AssetAssignmentRecord, AssetImportanceRecord, BrandId, BrandRecord, CompanyId, CompanyRecord,
+    ContractorRole, CountryCode, ExternalContractorAssignment, PersonId, PersonRecord, ProjectId,
+    ProjectRecord, Role, RoleAssignmentRecord,
 };
 use crate::storage::{read_records, JsonlStorage};
 use std::io;
@@ -135,6 +136,19 @@ pub fn add_project(
     Ok(record)
 }
 
+pub fn add_project_with_importance(
+    storage: &JsonlStorage,
+    name: &str,
+    company_id: CompanyId,
+    importance: Option<u8>,
+) -> io::Result<ProjectRecord> {
+    let id = ProjectId::new(generate_id());
+    let record = ProjectRecord::new(id, name.to_string(), company_id)
+        .with_importance(importance);
+    storage.save(&record)?;
+    Ok(record)
+}
+
 pub fn update_project(
     storage: &JsonlStorage,
     id: ProjectId,
@@ -142,6 +156,19 @@ pub fn update_project(
     company_id: CompanyId,
 ) -> io::Result<ProjectRecord> {
     let record = ProjectRecord::new(id, name.to_string(), company_id);
+    storage.save(&record)?;
+    Ok(record)
+}
+
+pub fn set_project_importance(
+    storage: &JsonlStorage,
+    id: ProjectId,
+    name: &str,
+    company_id: CompanyId,
+    importance: Option<u8>,
+) -> io::Result<ProjectRecord> {
+    let record = ProjectRecord::new(id, name.to_string(), company_id)
+        .with_importance(importance);
     storage.save(&record)?;
     Ok(record)
 }
@@ -179,6 +206,16 @@ pub fn unassign_asset(storage: &JsonlStorage, host: &str) -> io::Result<bool> {
     Ok(true)
 }
 
+pub fn set_asset_importance(
+    storage: &JsonlStorage,
+    host: &str,
+    importance: u8,
+) -> io::Result<AssetImportanceRecord> {
+    let record = AssetImportanceRecord::new(host.to_string(), importance);
+    storage.save(&record)?;
+    Ok(record)
+}
+
 pub fn list_asset_assignments(storage: &JsonlStorage) -> io::Result<Vec<AssetAssignmentRecord>> {
     let records = read_records(storage)?;
     Ok(records.asset_assignments)
@@ -213,6 +250,21 @@ pub fn assign_company_to_project(
 pub fn list_role_assignments(storage: &JsonlStorage) -> io::Result<Vec<RoleAssignmentRecord>> {
     let records = read_records(storage)?;
     Ok(records.role_assignments)
+}
+
+// ---------------------------------------------------------------------------
+// External contractor operations
+// ---------------------------------------------------------------------------
+
+pub fn assign_contractor_to_project(
+    storage: &JsonlStorage,
+    company_id: CompanyId,
+    project_id: ProjectId,
+    role: ContractorRole,
+) -> io::Result<ExternalContractorAssignment> {
+    let record = ExternalContractorAssignment::new(project_id, company_id, role);
+    storage.save(&record)?;
+    Ok(record)
 }
 
 // ---------------------------------------------------------------------------

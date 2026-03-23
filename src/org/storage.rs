@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use isocountry::CountryCode;
 use serde::{Deserialize, Serialize};
 
-use super::{BrandId, CompanyId, PersonId, ProjectId, Role};
+use super::{BrandId, CompanyId, ContractorRole, DomainContact, PersonId, ProjectId, Role};
 
 // ---------------------------------------------------------------------------
 // Person Record
@@ -111,6 +111,10 @@ pub struct ProjectRecord {
     pub id: ProjectId,
     pub name: String,
     pub company: CompanyId,
+    /// Importance rating from 1 (low) to 5 (critical). None if not rated.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub importance: Option<u8>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -121,8 +125,15 @@ impl ProjectRecord {
             id,
             name,
             company,
+            importance: None,
             created_at: Utc::now(),
         }
+    }
+
+    /// Builder method to set the importance rating.
+    pub fn with_importance(mut self, importance: Option<u8>) -> Self {
+        self.importance = importance;
+        self
     }
 }
 
@@ -145,6 +156,30 @@ impl AssetAssignmentRecord {
             item_type: "org_asset_assignment".to_string(),
             host,
             project,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Asset Importance Record
+// ---------------------------------------------------------------------------
+
+/// Sets the importance rating for a host (domain/subdomain).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetImportanceRecord {
+    pub item_type: String,
+    pub host: String,
+    pub importance: u8,
+    pub created_at: DateTime<Utc>,
+}
+
+impl AssetImportanceRecord {
+    pub fn new(host: String, importance: u8) -> Self {
+        Self {
+            item_type: "org_asset_importance".to_string(),
+            host,
+            importance,
             created_at: Utc::now(),
         }
     }
@@ -184,6 +219,71 @@ impl RoleAssignmentRecord {
             role,
             person: None,
             company: Some(company),
+            created_at: Utc::now(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Domain Registration Record
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainRegistrationRecord {
+    pub item_type: String,
+    pub domain: String,
+    pub registrar: Option<String>,
+    pub registered_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub status: Vec<String>,
+    pub registrant: Option<DomainContact>,
+    pub admin: Option<DomainContact>,
+    pub tech: Option<DomainContact>,
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl DomainRegistrationRecord {
+    pub fn new(domain: String, source: String) -> Self {
+        Self {
+            item_type: "org_domain_registration".to_string(),
+            domain,
+            registrar: None,
+            registered_at: None,
+            expires_at: None,
+            updated_at: None,
+            status: Vec::new(),
+            registrant: None,
+            admin: None,
+            tech: None,
+            source,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// External Contractor Assignment Record
+// ---------------------------------------------------------------------------
+
+/// Assigns an external company to a project with a contractor role.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalContractorAssignment {
+    pub item_type: String,
+    pub project: ProjectId,
+    pub company: CompanyId,
+    pub role: ContractorRole,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ExternalContractorAssignment {
+    pub fn new(project: ProjectId, company: CompanyId, role: ContractorRole) -> Self {
+        Self {
+            item_type: "org_contractor_assignment".to_string(),
+            project,
+            company,
+            role,
             created_at: Utc::now(),
         }
     }
@@ -278,5 +378,51 @@ mod tests {
         assert!(json.contains("\"item_type\":\"org_role_assignment\""));
         assert!(json.contains("\"company\":20"));
         assert!(json.contains("\"person\":null"));
+    }
+
+    #[test]
+    fn test_project_record_importance_defaults_to_none() {
+        let rec = ProjectRecord::new(
+            ProjectId::new(1),
+            "Website".to_string(),
+            CompanyId::new(20),
+        );
+        assert_eq!(rec.importance, None);
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(!json.contains("importance"));
+    }
+
+    #[test]
+    fn test_project_record_with_importance() {
+        let rec = ProjectRecord::new(
+            ProjectId::new(1),
+            "Website".to_string(),
+            CompanyId::new(20),
+        )
+        .with_importance(Some(3));
+        assert_eq!(rec.importance, Some(3));
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("\"importance\":3"));
+    }
+
+    #[test]
+    fn test_project_record_deserializes_without_importance() {
+        let json = r#"{"item_type":"org_project","id":1,"name":"Test","company":20,"created_at":"2024-01-01T00:00:00Z"}"#;
+        let rec: ProjectRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.importance, None);
+    }
+
+    #[test]
+    fn test_contractor_assignment_serializes() {
+        let rec = ExternalContractorAssignment::new(
+            ProjectId::new(1),
+            CompanyId::new(30),
+            ContractorRole::DevOps,
+        );
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("\"item_type\":\"org_contractor_assignment\""));
+        assert!(json.contains("\"project\":1"));
+        assert!(json.contains("\"company\":30"));
+        assert!(json.contains("\"role\":\"DevOps\""));
     }
 }
