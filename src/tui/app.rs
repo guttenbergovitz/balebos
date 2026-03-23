@@ -135,6 +135,7 @@ pub enum InputMode {
     Assigning,
     RoleAssigning(RoleAssignStep),
     ContractorAssigning(ContractorAssignStep),
+    AssetDetails,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +202,8 @@ pub struct App {
     pub contractor_assign_company: Option<String>, // CompanyId string
     pub contractor_assign_role: Option<crate::org::ContractorRole>,
 
+    pub asset_details_scroll: u16,
+
     // Scanning state
     pub is_scanning: Arc<Mutex<bool>>,
     pub scan_status: Arc<Mutex<String>>,
@@ -256,6 +259,8 @@ impl App {
             contractor_assign_project: None,
             contractor_assign_company: None,
             contractor_assign_role: None,
+
+            asset_details_scroll: 0,
 
             // Scanning state
             is_scanning: Arc::new(Mutex::new(false)),

@@ -182,7 +182,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
+pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
     let mut text = vec![
         Line::from(vec![
             Span::styled("Target: ", Style::default().add_modifier(Modifier::BOLD)),
