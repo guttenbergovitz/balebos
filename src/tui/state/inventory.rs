@@ -94,10 +94,6 @@ impl InventoryState {
     }
 
     /// Get the currently selected row index.
-    pub fn selected(&self) -> Option<usize> {
-        self.table_state.selected()
-    }
-
     /// Get the currently selected asset from the model.
     ///
     /// Returns None if no item is selected or the item cannot be found.
@@ -123,16 +119,6 @@ impl InventoryState {
         None
     }
 
-    /// Mark the currently selected asset.
-    pub fn mark(&mut self, asset_name: String) {
-        self.marked_assets.insert(asset_name);
-    }
-
-    /// Unmark the currently selected asset.
-    pub fn unmark(&mut self, asset_name: &str) {
-        self.marked_assets.remove(asset_name);
-    }
-
     /// Toggle the mark state of an asset.
     pub fn toggle_mark(&mut self, asset_name: String) {
         if self.marked_assets.contains(&asset_name) {
@@ -145,11 +131,6 @@ impl InventoryState {
     /// Clear all marked assets.
     pub fn clear_marks(&mut self) {
         self.marked_assets.clear();
-    }
-
-    /// Check if an asset is marked.
-    pub fn is_marked(&self, asset_name: &str) -> bool {
-        self.marked_assets.contains(asset_name)
     }
 
     /// Update visible items list based on filter and expansion state.
@@ -239,14 +220,14 @@ mod tests {
         ];
 
         state.next();
-        assert_eq!(state.selected(), Some(0));
+        assert_eq!(state.table_state.selected(), Some(0));
 
         state.next();
-        assert_eq!(state.selected(), Some(1));
+        assert_eq!(state.table_state.selected(), Some(1));
 
         // Wrap around
         state.next();
-        assert_eq!(state.selected(), Some(0));
+        assert_eq!(state.table_state.selected(), Some(0));
     }
 
     #[test]
@@ -258,14 +239,14 @@ mod tests {
         ];
 
         state.previous();
-        assert_eq!(state.selected(), Some(0));
+        assert_eq!(state.table_state.selected(), Some(0));
 
         state.table_state.select(Some(1));
         state.previous();
-        assert_eq!(state.selected(), Some(0));
+        assert_eq!(state.table_state.selected(), Some(0));
 
         state.previous();
-        assert_eq!(state.selected(), Some(1));
+        assert_eq!(state.table_state.selected(), Some(1));
     }
 
     #[test]
@@ -291,30 +272,20 @@ mod tests {
     }
 
     #[test]
-    fn test_mark_unmark() {
-        let mut state = InventoryState::new();
-        state.mark("example.com".to_string());
-        assert!(state.is_marked("example.com"));
-
-        state.unmark("example.com");
-        assert!(!state.is_marked("example.com"));
-    }
-
-    #[test]
     fn test_toggle_mark() {
         let mut state = InventoryState::new();
         state.toggle_mark("example.com".to_string());
-        assert!(state.is_marked("example.com"));
+        assert!(state.marked_assets.contains("example.com"));
 
         state.toggle_mark("example.com".to_string());
-        assert!(!state.is_marked("example.com"));
+        assert!(!state.marked_assets.contains("example.com"));
     }
 
     #[test]
     fn test_clear_marks() {
         let mut state = InventoryState::new();
-        state.mark("example.com".to_string());
-        state.mark("test.com".to_string());
+        state.toggle_mark("example.com".to_string());
+        state.toggle_mark("test.com".to_string());
         assert_eq!(state.marked_assets.len(), 2);
 
         state.clear_marks();

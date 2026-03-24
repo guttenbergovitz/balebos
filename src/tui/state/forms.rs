@@ -156,11 +156,6 @@ impl FormState {
     pub fn get_field_value(&self, index: usize) -> Option<&str> {
         self.fields.get(index).map(|s| s.as_str())
     }
-
-    /// Total number of fields
-    pub fn field_count(&self) -> usize {
-        self.fields.len()
-    }
 }
 
 impl Default for FormState {
@@ -176,7 +171,6 @@ mod tests {
     #[test]
     fn test_new() {
         let form = FormState::new(3);
-        assert_eq!(form.field_count(), 3);
         assert_eq!(form.field_index, 0);
         assert!(form.fields.iter().all(|f| f.is_empty()));
     }

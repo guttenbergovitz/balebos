@@ -77,10 +77,6 @@ impl OrgState {
     }
 
     /// Get the current pane.
-    pub fn current_pane(&self) -> OrgPane {
-        self.pane
-    }
-
     /// Update the table selection based on current item count.
     ///
     /// Ensures the selection stays within bounds when the number of items changes.
@@ -96,16 +92,6 @@ impl OrgState {
         } else {
             self.table_state.select(None);
         }
-    }
-
-    /// Get the currently selected row index.
-    pub fn selected(&self) -> Option<usize> {
-        self.table_state.selected()
-    }
-
-    /// Set the selected row index.
-    pub fn select(&mut self, index: Option<usize>) {
-        self.table_state.select(index);
     }
 }
 
@@ -146,7 +132,7 @@ mod tests {
     fn test_org_state_new() {
         let state = OrgState::new();
         assert_eq!(state.pane, OrgPane::Persons);
-        assert_eq!(state.selected(), None);
+        assert_eq!(state.table_state.selected(), None);
     }
 
     #[test]
@@ -162,13 +148,13 @@ mod tests {
     fn test_org_state_selection_update() {
         let mut state = OrgState::new();
         state.update_selection(5);
-        assert_eq!(state.selected(), Some(0));
+        assert_eq!(state.table_state.selected(), Some(0));
 
-        state.select(Some(3));
+        state.table_state.select(Some(3));
         state.update_selection(2);
-        assert_eq!(state.selected(), Some(1));
+        assert_eq!(state.table_state.selected(), Some(1));
 
         state.update_selection(0);
-        assert_eq!(state.selected(), None);
+        assert_eq!(state.table_state.selected(), None);
     }
 }

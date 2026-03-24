@@ -1,6 +1,6 @@
 //! Role assignment workflow state management.
 
-use crate::org::{PersonId, ProjectId, Role};
+use crate::org::{ProjectId, Role};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoleAssignStep {

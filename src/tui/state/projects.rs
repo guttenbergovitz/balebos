@@ -108,11 +108,6 @@ impl ProjectsState {
     pub fn collapse(&mut self, project_id: &str) {
         self.expanded_projects.remove(project_id);
     }
-
-    /// Clear all expanded projects
-    pub fn collapse_all(&mut self) {
-        self.expanded_projects.clear();
-    }
 }
 
 impl Default for ProjectsState {
@@ -169,15 +164,5 @@ mod tests {
         assert!(state.is_expanded("proj1"));
         state.collapse("proj1");
         assert!(!state.is_expanded("proj1"));
-    }
-
-    #[test]
-    fn test_collapse_all() {
-        let mut state = ProjectsState::new();
-        state.expand("proj1".to_string());
-        state.expand("proj2".to_string());
-        assert_eq!(state.expanded_projects.len(), 2);
-        state.collapse_all();
-        assert!(state.expanded_projects.is_empty());
     }
 }
