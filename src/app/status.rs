@@ -37,7 +37,6 @@ use crate::error::Result;
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
 
-
 #[derive(Clone, Debug)]
 struct HttpCheck {
     target: String,
@@ -69,7 +68,7 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport> {
     for obs in observations {
         let redirect_count = obs.redirect_chain.len();
         let first_redirect_status = obs.redirect_chain.first().map(|h| h.status);
-        
+
         let check = HttpCheck {
             target: obs.target,
             status: obs.status,
@@ -239,8 +238,9 @@ pub fn display_domain_status(storage: &JsonlStorage) -> Result<()> {
 pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
 
-    let mut csv_lines =
-        vec!["target,status,http_code,response_time_ms,redirects,error_kind,checked_at".to_string()];
+    let mut csv_lines = vec![
+        "target,status,http_code,response_time_ms,redirects,error_kind,checked_at".to_string(),
+    ];
 
     // Collect all checks
     let mut all_checks = Vec::new();
@@ -334,7 +334,11 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
         md.push_str("|--------|-------------------|-----------|\n");
         for check in &report.alive {
             let redirects = if check.redirect_count > 0 {
-                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+                format!(
+                    "{} (via {})",
+                    check.redirect_count,
+                    check.first_redirect_status.unwrap_or(0)
+                )
             } else {
                 "-".to_string()
             };
@@ -478,10 +482,16 @@ pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<(
             report.alive.len()
         ));
         html.push_str("    <table>\n");
-        html.push_str("      <tr><th>Domain</th><th>Response Time (ms)</th><th>Redirects</th></tr>\n");
+        html.push_str(
+            "      <tr><th>Domain</th><th>Response Time (ms)</th><th>Redirects</th></tr>\n",
+        );
         for check in &report.alive {
             let redirects = if check.redirect_count > 0 {
-                format!("{} (via {})", check.redirect_count, check.first_redirect_status.unwrap_or(0))
+                format!(
+                    "{} (via {})",
+                    check.redirect_count,
+                    check.first_redirect_status.unwrap_or(0)
+                )
             } else {
                 "-".to_string()
             };

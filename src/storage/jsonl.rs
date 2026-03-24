@@ -50,8 +50,7 @@ impl JsonlStorage {
         let mut writer = BufWriter::new(file);
 
         // Serialize to JSON and write with newline
-        let json = serde_json::to_string(data)
-            .map_err(crate::error::StorageError::from)?;
+        let json = serde_json::to_string(data).map_err(crate::error::StorageError::from)?;
         writeln!(writer, "{}", json)?;
 
         Ok(())
@@ -79,8 +78,7 @@ impl JsonlStorage {
         let mut writer = BufWriter::new(file);
 
         for item in data {
-            let json = serde_json::to_string(item)
-                .map_err(crate::error::StorageError::from)?;
+            let json = serde_json::to_string(item).map_err(crate::error::StorageError::from)?;
             writeln!(writer, "{}", json)?;
         }
 

@@ -29,7 +29,6 @@ use crate::inventory::ItemType;
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
 
-
 // Tree node representing a domain or subdomain with its children
 #[derive(Debug, Clone)]
 struct TreeNode {

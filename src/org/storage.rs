@@ -346,11 +346,7 @@ mod tests {
 
     #[test]
     fn test_project_record_serializes() {
-        let rec = ProjectRecord::new(
-            ProjectId::new(1),
-            "Website".to_string(),
-            CompanyId::new(20),
-        );
+        let rec = ProjectRecord::new(ProjectId::new(1), "Website".to_string(), CompanyId::new(20));
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"item_type\":\"org_project\""));
         assert!(json.contains("\"company\":20"));
@@ -366,7 +362,8 @@ mod tests {
 
     #[test]
     fn test_role_assignment_person_serializes() {
-        let rec = RoleAssignmentRecord::new_person(ProjectId::new(1), PersonId::new(10), Role::Owner);
+        let rec =
+            RoleAssignmentRecord::new_person(ProjectId::new(1), PersonId::new(10), Role::Owner);
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"item_type\":\"org_role_assignment\""));
         assert!(json.contains("\"person\":10"));
@@ -375,7 +372,11 @@ mod tests {
 
     #[test]
     fn test_role_assignment_company_serializes() {
-        let rec = RoleAssignmentRecord::new_company(ProjectId::new(1), CompanyId::new(20), Role::Technician);
+        let rec = RoleAssignmentRecord::new_company(
+            ProjectId::new(1),
+            CompanyId::new(20),
+            Role::Technician,
+        );
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"item_type\":\"org_role_assignment\""));
         assert!(json.contains("\"company\":20"));
@@ -384,11 +385,7 @@ mod tests {
 
     #[test]
     fn test_project_record_importance_defaults_to_none() {
-        let rec = ProjectRecord::new(
-            ProjectId::new(1),
-            "Website".to_string(),
-            CompanyId::new(20),
-        );
+        let rec = ProjectRecord::new(ProjectId::new(1), "Website".to_string(), CompanyId::new(20));
         assert_eq!(rec.importance, None);
         let json = serde_json::to_string(&rec).unwrap();
         assert!(!json.contains("importance"));
@@ -396,12 +393,8 @@ mod tests {
 
     #[test]
     fn test_project_record_with_importance() {
-        let rec = ProjectRecord::new(
-            ProjectId::new(1),
-            "Website".to_string(),
-            CompanyId::new(20),
-        )
-        .with_importance(Some(3));
+        let rec = ProjectRecord::new(ProjectId::new(1), "Website".to_string(), CompanyId::new(20))
+            .with_importance(Some(3));
         assert_eq!(rec.importance, Some(3));
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("\"importance\":3"));

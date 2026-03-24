@@ -35,10 +35,7 @@ fn get_time_threshold(days_ago: Option<&str>) -> SystemTime {
         .unwrap_or_else(SystemTime::now)
 }
 
-pub fn get_inventory_diff(
-    storage: &JsonlStorage,
-    days_ago: Option<&str>,
-) -> Result<InventoryDiff> {
+pub fn get_inventory_diff(storage: &JsonlStorage, days_ago: Option<&str>) -> Result<InventoryDiff> {
     let items = read_records(storage)?.items;
 
     // Threshold time for recent vs past

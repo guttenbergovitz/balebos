@@ -43,7 +43,10 @@ fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
     let mut domain_latest: HashMap<&String, DateTime<Utc>> = HashMap::new();
 
     // Find the latest timestamp for each domain
-    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
+    for item in items
+        .iter()
+        .filter(|item| item.item_type == ItemType::Domain)
+    {
         let entry = domain_latest
             .entry(&item.name)
             .or_insert(item.discovered_at);
@@ -75,7 +78,10 @@ fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
     // Count occurrences of each domain
     let mut domain_counts: HashMap<&String, u32> = HashMap::new();
 
-    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
+    for item in items
+        .iter()
+        .filter(|item| item.item_type == ItemType::Domain)
+    {
         *domain_counts.entry(&item.name).or_insert(0) += 1;
     }
 
@@ -119,7 +125,10 @@ fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
 fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
     let mut issues = Vec::new();
 
-    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
+    for item in items
+        .iter()
+        .filter(|item| item.item_type == ItemType::Domain)
+    {
         // Check if domain is properly normalized
         let normalized = normalize_domain(&item.name);
         if normalized != item.name {
@@ -135,7 +144,6 @@ fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
             let message = format!("Domain {} contains uppercase characters", item.name);
             issues.push(Issue::warning(&message));
         }
-
     }
 
     issues
@@ -151,7 +159,10 @@ fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
 
     let mut issues = Vec::new();
 
-    for item in items.iter().filter(|item| item.item_type == ItemType::Subdomain) {
+    for item in items
+        .iter()
+        .filter(|item| item.item_type == ItemType::Subdomain)
+    {
         // Check if subdomain starts with any allowed pattern
         let subdomain_parts: Vec<&str> = item.name.split('.').collect();
 
@@ -264,17 +275,22 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
             if days_until_expiry < 0 {
                 issues.push(Issue::critical(&format!(
                     "Domain {} - TLS certificate EXPIRED on {}",
-                    domain, tls.not_after.format("%Y-%m-%d")
+                    domain,
+                    tls.not_after.format("%Y-%m-%d")
                 )));
             } else if days_until_expiry < 14 {
                 issues.push(Issue::critical(&format!(
                     "Domain {} - TLS certificate expires in {} days ({})",
-                    domain, days_until_expiry, tls.not_after.format("%Y-%m-%d")
+                    domain,
+                    days_until_expiry,
+                    tls.not_after.format("%Y-%m-%d")
                 )));
             } else if days_until_expiry < 30 {
                 issues.push(Issue::warning(&format!(
                     "Domain {} - TLS certificate expires in {} days ({})",
-                    domain, days_until_expiry, tls.not_after.format("%Y-%m-%d")
+                    domain,
+                    days_until_expiry,
+                    tls.not_after.format("%Y-%m-%d")
                 )));
             }
         }
@@ -318,10 +334,7 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
 }
 
 // Run all checks and collect issues
-pub fn check_inventory(
-    storage: &JsonlStorage,
-    ignore_patterns: &[String],
-) -> Result<Vec<Issue>> {
+pub fn check_inventory(storage: &JsonlStorage, ignore_patterns: &[String]) -> Result<Vec<Issue>> {
     let records = read_records(storage)?;
     let items = records.items;
     let http_observations = records.http_observations;
@@ -456,7 +469,12 @@ mod tests {
 
     #[test]
     fn test_suspicious_subdomain() {
-        let items = vec![make_item("xyzrandom.example.com", ItemType::Subdomain, "subfinder", 1)];
+        let items = vec![make_item(
+            "xyzrandom.example.com",
+            ItemType::Subdomain,
+            "subfinder",
+            1,
+        )];
         let issues = check_subdomain_patterns(&items);
         assert_eq!(issues.len(), 1);
         assert!(issues[0].message.contains("Suspicious"));
@@ -464,7 +482,12 @@ mod tests {
 
     #[test]
     fn test_allowed_subdomain_pattern() {
-        let items = vec![make_item("api.example.com", ItemType::Subdomain, "subfinder", 1)];
+        let items = vec![make_item(
+            "api.example.com",
+            ItemType::Subdomain,
+            "subfinder",
+            1,
+        )];
         let issues = check_subdomain_patterns(&items);
         assert!(issues.is_empty());
     }

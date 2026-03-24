@@ -535,7 +535,7 @@ pub fn load_tui_model(storage: &JsonlStorage) -> crate::error::Result<TuiModel> 
     for group in &final_groups {
         update_stats(&mut stats, &group.root);
         for sub in &group.subdomains {
-            update_stats(&mut stats, &sub);
+            update_stats(&mut stats, sub);
         }
     }
 

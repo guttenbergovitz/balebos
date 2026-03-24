@@ -145,8 +145,7 @@ pub fn add_project_with_importance(
     importance: Option<u8>,
 ) -> Result<ProjectRecord> {
     let id = ProjectId::new(generate_id());
-    let record = ProjectRecord::new(id, name.to_string(), company_id)
-        .with_importance(importance);
+    let record = ProjectRecord::new(id, name.to_string(), company_id).with_importance(importance);
     storage.save(&record)?;
     Ok(record)
 }
@@ -169,8 +168,7 @@ pub fn set_project_importance(
     company_id: CompanyId,
     importance: Option<u8>,
 ) -> Result<ProjectRecord> {
-    let record = ProjectRecord::new(id, name.to_string(), company_id)
-        .with_importance(importance);
+    let record = ProjectRecord::new(id, name.to_string(), company_id).with_importance(importance);
     storage.save(&record)?;
     Ok(record)
 }
@@ -278,10 +276,7 @@ pub fn find_person_by_id(storage: &JsonlStorage, id: PersonId) -> Result<Option<
     Ok(records.persons.into_iter().find(|p| p.id == id))
 }
 
-pub fn find_company_by_id(
-    storage: &JsonlStorage,
-    id: CompanyId,
-) -> Result<Option<CompanyRecord>> {
+pub fn find_company_by_id(storage: &JsonlStorage, id: CompanyId) -> Result<Option<CompanyRecord>> {
     let records = read_records(storage)?;
     Ok(records.companies.into_iter().find(|c| c.id == id))
 }
@@ -291,10 +286,7 @@ pub fn find_brand_by_id(storage: &JsonlStorage, id: BrandId) -> Result<Option<Br
     Ok(records.brands.into_iter().find(|b| b.id == id))
 }
 
-pub fn find_project_by_id(
-    storage: &JsonlStorage,
-    id: ProjectId,
-) -> Result<Option<ProjectRecord>> {
+pub fn find_project_by_id(storage: &JsonlStorage, id: ProjectId) -> Result<Option<ProjectRecord>> {
     let records = read_records(storage)?;
     Ok(records.projects.into_iter().find(|p| p.id == id))
 }

@@ -94,7 +94,7 @@ pub fn batch_process(
 
     // Step 1: Scan all domains (Parallel)
     println!("🔍 Step 1/5: Scanning domains and RDAP info (parallel)...");
-    
+
     // Process domains in parallel
     let results: Vec<_> = domains
         .par_iter()
@@ -112,7 +112,14 @@ pub fn batch_process(
                     } else {
                         probe::run_rdap_probe_no_save(domain).ok()
                     };
-                    (idx, domain.clone(), Some(item), rdap_result, None, skip_rdap)
+                    (
+                        idx,
+                        domain.clone(),
+                        Some(item),
+                        rdap_result,
+                        None,
+                        skip_rdap,
+                    )
                 }
                 Err(e) => (idx, domain.clone(), None, None, Some(e.to_string()), false),
             }
@@ -127,7 +134,13 @@ pub fn batch_process(
 
     for (idx, domain, item_opt, rdap_opt, err_opt, skipped) in results {
         if let Some(err) = err_opt {
-            println!("  ✗ [{}/{}] {} (error: {})", idx + 1, domains.len(), domain, err);
+            println!(
+                "  ✗ [{}/{}] {} (error: {})",
+                idx + 1,
+                domains.len(),
+                domain,
+                err
+            );
             stats.domains_failed += 1;
         } else if let Some(item) = item_opt {
             let status = if skipped {
@@ -148,7 +161,10 @@ pub fn batch_process(
     }
 
     if skipped_rdap_count > 0 {
-        println!("  ℹ Skipped {} RDAP checks (already up to date today)", skipped_rdap_count);
+        println!(
+            "  ℹ Skipped {} RDAP checks (already up to date today)",
+            skipped_rdap_count
+        );
     }
 
     if !new_items.is_empty() {
@@ -171,7 +187,10 @@ pub fn batch_process(
     if valid_domains.is_empty() {
         println!("  → No domains to check");
     } else {
-        print!("  ⟳ Running subfinder for {} domains ... ", valid_domains.len());
+        print!(
+            "  ⟳ Running subfinder for {} domains ... ",
+            valid_domains.len()
+        );
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
@@ -192,21 +211,21 @@ pub fn batch_process(
 
     // Step 3: Probe DNS for all domains and subdomains
     println!("📡 Step 3/5: Resolving DNS records...");
-    
+
     let mut dns_targets = Vec::new();
     for asset in &all_assets {
         if !crate::ignore::is_ignored(asset, ignore_patterns) {
             dns_targets.push(asset.clone());
         }
     }
-    
+
     if dns_targets.is_empty() {
         println!("  → No targets to check");
     } else {
         print!("  ⟳ Resolving {} targets in batch ", dns_targets.len());
         use std::io::Write;
         let _ = std::io::stdout().flush();
-        
+
         match probe::probe_dns_batch(&dns_targets, storage) {
             Ok(observations) => {
                 println!(" ✓");
@@ -223,7 +242,7 @@ pub fn batch_process(
 
     // Step 4: Probe HTTP for all domains and subdomains
     println!("🌐 Step 4/5: Checking HTTP status...");
-    
+
     let mut http_targets = Vec::new();
     for asset in &all_assets {
         if !crate::ignore::is_ignored(asset, ignore_patterns) {
@@ -242,7 +261,7 @@ pub fn batch_process(
             Ok(observations) => {
                 println!(" ✓");
                 println!("  → Recorded {} HTTP observations", observations.len());
-                
+
                 // For batch stats, we estimate based on observations returned
                 for obs in observations {
                     if obs.status.is_some() {
@@ -286,10 +305,7 @@ pub fn run_single_recon(
     let _ = probe::run_rdap_probe(storage, domain);
 
     // 3. Discover subdomains
-    let subdomains = match probe::probe_subdomains(domain, storage) {
-        Ok(subs) => subs,
-        Err(_) => Vec::<String>::new(),
-    };
+    let subdomains = probe::probe_subdomains(domain, storage).unwrap_or_default();
 
     // 4. Prepare targets for batch probes (domain + subdomains)
     let mut targets = vec![domain.to_string()];
@@ -338,7 +354,10 @@ fn print_summary(stats: &BatchStats, domains: &[String]) {
     println!("║ Successfully scanned: {:>22} ║", stats.domains_added);
     println!("║ Failed to scan:       {:>22} ║", stats.domains_failed);
     println!("║ Subdomains found:     {:>22} ║", stats.subdomains_found);
-    println!("║ DNS checks:           {:>22} ║", stats.dns_checks_completed);
+    println!(
+        "║ DNS checks:           {:>22} ║",
+        stats.dns_checks_completed
+    );
     println!(
         "║ HTTP checks:          {:>22} ║",
         stats.http_checks_completed

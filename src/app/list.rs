@@ -2,7 +2,6 @@ use crate::error::Result;
 use crate::inventory::ItemType;
 use crate::storage::{read_records, JsonlStorage};
 
-
 pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>> {
     let mut domains: Vec<String> = read_records(storage)?
         .items

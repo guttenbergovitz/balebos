@@ -31,10 +31,7 @@ pub fn validate_domain(domain: &str) -> Result<(), String> {
             return Err(format!("label '{}' starts or ends with hyphen", label));
         }
 
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return Err(format!("label '{}' contains invalid characters", label));
         }
     }
@@ -109,10 +106,7 @@ mod tests {
 
     #[test]
     fn test_combined() {
-        assert_eq!(
-            normalize_domain("HTTPS://WWW.Example.Com/"),
-            "example.com"
-        );
+        assert_eq!(normalize_domain("HTTPS://WWW.Example.Com/"), "example.com");
     }
 
     #[test]

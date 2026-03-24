@@ -1,7 +1,6 @@
-use crate::error::Result;
 use crate::app::{check_inventory, get_domain_stats, get_inventory_diff, Severity};
+use crate::error::Result;
 use crate::storage::JsonlStorage;
-
 
 pub struct Report {
     // Stats
@@ -35,10 +34,7 @@ pub struct Report {
     pub needs_attention: bool,
 }
 
-pub fn generate_report(
-    storage: &JsonlStorage,
-    ignore_patterns: &[String],
-) -> Result<Report> {
+pub fn generate_report(storage: &JsonlStorage, ignore_patterns: &[String]) -> Result<Report> {
     // Get stats
     let stats = get_domain_stats(storage)?;
 

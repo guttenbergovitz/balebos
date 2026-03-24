@@ -2,7 +2,6 @@ use crate::error::Result;
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{HashMap, HashSet};
 
-
 pub struct DomainStats {
     pub total_entries: usize,
     pub unique_domains: usize,

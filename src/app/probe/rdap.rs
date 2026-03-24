@@ -130,7 +130,7 @@ fn parse_vcard(vcard: &Option<serde_json::Value>) -> Option<DomainContact> {
 
     for prop in properties {
         let prop_arr = prop.as_array()?;
-        let tag = prop_arr.get(0)?.as_str()?;
+        let tag = prop_arr.first()?.as_str()?;
         let value = prop_arr.get(3)?.as_str()?;
 
         match tag {
