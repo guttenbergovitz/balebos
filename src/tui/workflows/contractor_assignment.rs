@@ -44,6 +44,7 @@ impl ContractorAssignWorkflow {
     }
 
     /// Move to next step
+    #[allow(dead_code)]
     pub fn next_step(&mut self) -> bool {
         match self.step {
             ContractorAssignStep::SelectCompany if self.company.is_some() => {
@@ -55,6 +56,7 @@ impl ContractorAssignWorkflow {
     }
 
     /// Move to previous step
+    #[allow(dead_code)]
     pub fn prev_step(&mut self) -> bool {
         match self.step {
             ContractorAssignStep::SelectRole => {
@@ -66,11 +68,13 @@ impl ContractorAssignWorkflow {
     }
 
     /// Check if workflow is complete and ready to submit
+    #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         self.project.is_some() && self.company.is_some() && self.role.is_some()
     }
 
     /// Get company ID from string
+    #[allow(dead_code)]
     pub fn company_id(&self) -> Option<CompanyId> {
         self.company
             .as_ref()

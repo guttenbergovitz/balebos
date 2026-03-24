@@ -49,6 +49,7 @@ impl RoleAssignWorkflow {
     }
 
     /// Move to next step
+    #[allow(dead_code)]
     pub fn next_step(&mut self) -> bool {
         match self.step {
             RoleAssignStep::SelectTarget if self.target.is_some() => {
@@ -60,6 +61,7 @@ impl RoleAssignWorkflow {
     }
 
     /// Move to previous step
+    #[allow(dead_code)]
     pub fn prev_step(&mut self) -> bool {
         match self.step {
             RoleAssignStep::SelectRole => {
@@ -71,6 +73,7 @@ impl RoleAssignWorkflow {
     }
 
     /// Check if workflow is complete and ready to submit
+    #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         self.project.is_some() && self.target.is_some() && self.role.is_some()
     }

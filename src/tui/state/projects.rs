@@ -62,6 +62,7 @@ impl ProjectsState {
 
     /// Toggle expansion of a project at the given row index
     /// Returns the project ID if a project row was toggled, None if an asset row was selected
+    #[allow(dead_code)]
     pub fn toggle_expand_at_index(
         &mut self,
         idx: usize,
