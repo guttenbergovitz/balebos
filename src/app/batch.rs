@@ -1,7 +1,4 @@
 use crate::app::probe;
-use crate::app::probe_dns;
-use crate::app::probe_http;
-use crate::app::probe_rdap;
 use crate::domain::normalize_domain;
 use crate::error::Result;
 use crate::storage::JsonlStorage;
@@ -113,7 +110,7 @@ pub fn batch_process(
                     let rdap_result = if skip_rdap {
                         None
                     } else {
-                        probe_rdap::run_rdap_probe_no_save(domain).ok()
+                        probe::run_rdap_probe_no_save(domain).ok()
                     };
                     (idx, domain.clone(), Some(item), rdap_result, None, skip_rdap)
                 }
@@ -210,7 +207,7 @@ pub fn batch_process(
         use std::io::Write;
         let _ = std::io::stdout().flush();
         
-        match probe_dns::probe_dns_batch(&dns_targets, storage) {
+        match probe::probe_dns_batch(&dns_targets, storage) {
             Ok(observations) => {
                 println!(" ✓");
                 println!("  → Recorded {} DNS observations", observations.len());
@@ -241,7 +238,7 @@ pub fn batch_process(
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
-        match probe_http::probe_http_batch(&http_targets, storage) {
+        match probe::probe_http_batch(&http_targets, storage) {
             Ok(observations) => {
                 println!(" ✓");
                 println!("  → Recorded {} HTTP observations", observations.len());
@@ -286,7 +283,7 @@ pub fn run_single_recon(
     crate::app::scan::scan_domain(domain, storage)?;
 
     // 2. Run RDAP probe (apex domain)
-    let _ = probe_rdap::run_rdap_probe(storage, domain);
+    let _ = probe::run_rdap_probe(storage, domain);
 
     // 3. Discover subdomains
     let subdomains = match probe::probe_subdomains(domain, storage) {
@@ -303,10 +300,10 @@ pub fn run_single_recon(
     }
 
     // 5. Batch DNS Probe
-    let _ = probe_dns::probe_dns_batch(&targets, storage);
+    let _ = probe::probe_dns_batch(&targets, storage);
 
     // 6. Batch HTTP Probe
-    let _ = probe_http::probe_http_batch(&targets, storage);
+    let _ = probe::probe_http_batch(&targets, storage);
 
     Ok(())
 }

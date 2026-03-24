@@ -110,7 +110,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec
             if trimmed.is_empty() {
                 continue;
             }
-            
+
             found_in_chunk += 1;
             print!("\r      → Found {} subdomains in current chunk...", found_in_chunk);
             use std::io::Write;
@@ -152,7 +152,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec
 
         let _ = child.wait();
         let _ = fs::remove_file(&temp_file);
-        
+
         all_subdomains.extend(chunk_subdomains);
     }
 

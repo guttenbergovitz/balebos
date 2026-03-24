@@ -1,4 +1,4 @@
-use crate::app::probe_http::{HttpErrorKind, HttpObservation};
+use crate::app::probe::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::error::Result;
 use crate::inventory::{InventoryItem, ItemType};

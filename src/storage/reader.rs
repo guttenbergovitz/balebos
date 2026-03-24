@@ -1,5 +1,4 @@
-use crate::app::probe_dns::DnsObservation;
-use crate::app::probe_http::HttpObservation;
+use crate::app::probe::{DnsObservation, HttpObservation};
 use crate::error::Result;
 use crate::inventory::{InventoryItem, ItemType};
 use crate::org::{

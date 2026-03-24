@@ -1,5 +1,4 @@
-use crate::app::probe_dns::DnsObservation;
-use crate::app::probe_http::HttpObservation;
+use crate::app::probe::{DnsObservation, HttpObservation};
 use crate::org::{
     BrandId, BrandRecord, CompanyId, CompanyRecord, DomainRegistration, PersonId, PersonRecord,
     ProjectId, ProjectRecord, RoleAssignmentRecord,
@@ -694,7 +693,7 @@ mod tests {
 
     #[test]
     fn test_external_redirect_via_chain_fallback() {
-        use crate::app::probe_http::RedirectHop;
+        use crate::app::probe::RedirectHop;
 
         // Simulates josera-estonia.com: final_url is wrongly set to self,
         // but redirect_chain shows a 301 to josera.com/et
@@ -736,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_external_redirect_chain_only_no_final_url() {
-        use crate::app::probe_http::RedirectHop;
+        use crate::app::probe::RedirectHop;
 
         // final_url is None, but redirect_chain has the data
         let asset = AssetState {
