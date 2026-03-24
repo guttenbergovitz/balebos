@@ -8,6 +8,7 @@ use crate::org::BrandId;
 use crate::storage::JsonlStorage;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
 use crate::tui::state::{FormState, InventoryState, OrgPane, OrgState, ProjectsState};
+use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -100,17 +101,8 @@ pub enum InputMode {
     AssetDetails,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RoleAssignStep {
-    SelectTarget, // Person
-    SelectRole,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ContractorAssignStep {
-    SelectCompany,
-    SelectRole,
-}
+// Re-export workflow step types for convenience
+pub use crate::tui::workflows::{ContractorAssignStep, RoleAssignStep};
 
 /// Visible items in Inventory table (tree structure)
 pub struct App {
@@ -135,16 +127,9 @@ pub struct App {
     // Form state for OrgAdding mode
     pub form: FormState,
 
-    // Role assignment state
-    pub role_assign_project: Option<crate::org::ProjectId>,
-    pub role_assign_type: Option<bool>, // true=Person, false=Company
-    pub role_assign_target: Option<String>, // ID string
-    pub role_assign_role: Option<crate::org::Role>,
-
-    // Contractor assignment state
-    pub contractor_assign_project: Option<crate::org::ProjectId>,
-    pub contractor_assign_company: Option<String>, // CompanyId string
-    pub contractor_assign_role: Option<crate::org::ContractorRole>,
+    // Workflow states for complex multi-step operations
+    pub role_assign_workflow: RoleAssignWorkflow,
+    pub contractor_assign_workflow: ContractorAssignWorkflow,
 
     pub asset_details_scroll: u16,
 
@@ -182,14 +167,9 @@ impl App {
             // Form state
             form: FormState::new(0),
 
-            role_assign_project: None,
-            role_assign_type: None,
-            role_assign_target: None,
-            role_assign_role: None,
-
-            contractor_assign_project: None,
-            contractor_assign_company: None,
-            contractor_assign_role: None,
+            // Workflow states
+            role_assign_workflow: RoleAssignWorkflow::new(),
+            contractor_assign_workflow: ContractorAssignWorkflow::new(),
 
             asset_details_scroll: 0,
 
@@ -855,10 +835,7 @@ impl App {
             }
 
             if let Some(project) = selected_project {
-                self.role_assign_project = Some(project.id);
-                self.role_assign_type = Some(true); // Always Person
-                self.role_assign_target = None;
-                self.role_assign_role = None;
+                self.role_assign_workflow.start(project.id);
                 self.input.clear();
                 self.form.select_index = None;
                 self.update_role_assign_matches();
@@ -888,7 +865,7 @@ impl App {
 
     pub fn role_assign_pick_target(&mut self) -> bool {
         if let Some((_, id)) = self.form.selected_match() {
-            self.role_assign_target = Some(id.clone());
+            self.role_assign_workflow.target = Some(id.clone());
             self.form.select_index = Some(0); // For role selection
             self.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectRole);
             return true;
@@ -898,10 +875,12 @@ impl App {
 
     pub fn role_assign_submit(&mut self, role: crate::org::Role) -> Result<(), BalebosError> {
         let project_id = self
-            .role_assign_project
+            .role_assign_workflow
+            .project
             .ok_or(BalebosError::MissingField("project".to_string()))?;
         let target_id_str = self
-            .role_assign_target
+            .role_assign_workflow
+            .target
             .as_ref()
             .ok_or(BalebosError::MissingField("target".to_string()))?;
 
@@ -912,6 +891,7 @@ impl App {
 
         self.input_mode = InputMode::Normal;
         self.input.clear();
+        self.role_assign_workflow.reset();
         self.refresh()?;
         Ok(())
     }
@@ -940,9 +920,7 @@ impl App {
             }
 
             if let Some(project) = selected_project {
-                self.contractor_assign_project = Some(project.id);
-                self.contractor_assign_company = None;
-                self.contractor_assign_role = None;
+                self.contractor_assign_workflow.start(project.id);
                 self.input.clear();
                 self.form.select_index = None;
                 self.update_contractor_assign_matches();
@@ -969,7 +947,7 @@ impl App {
 
     pub fn contractor_assign_pick_company(&mut self) -> bool {
         if let Some((_, id)) = self.form.selected_match() {
-            self.contractor_assign_company = Some(id.clone());
+            self.contractor_assign_workflow.company = Some(id.clone());
             self.form.select_index = Some(0);
             self.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectRole);
             return true;
@@ -982,10 +960,12 @@ impl App {
         role: crate::org::ContractorRole,
     ) -> Result<(), BalebosError> {
         let project_id = self
-            .contractor_assign_project
+            .contractor_assign_workflow
+            .project
             .ok_or(BalebosError::MissingField("project".to_string()))?;
         let company_id_str = self
-            .contractor_assign_company
+            .contractor_assign_workflow
+            .company
             .as_ref()
             .ok_or(BalebosError::MissingField("company".to_string()))?;
 
@@ -996,6 +976,7 @@ impl App {
 
         self.input_mode = InputMode::Normal;
         self.input.clear();
+        self.contractor_assign_workflow.reset();
         self.refresh()?;
         Ok(())
     }
