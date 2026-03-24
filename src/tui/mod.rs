@@ -3,6 +3,7 @@ pub mod model;
 pub mod state;
 pub mod tabs;
 pub mod ui;
+pub mod workflows;
 
 use crate::storage::JsonlStorage;
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
@@ -207,7 +208,7 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('e') => {
             // Edit project (must resolve actual project index from selected row)
-            if let Some(idx) = app.projects_table_state.selected() {
+            if let Some(idx) = app.projects.table_state.selected() {
                 let mut current_idx = 0;
                 let mut project_idx = None;
                 for (i, project) in app.org_model.project_views.iter().enumerate() {
@@ -216,7 +217,11 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
                         break;
                     }
                     current_idx += 1;
-                    if app.expanded_projects.contains(&project.id.to_string()) {
+                    if app
+                        .projects
+                        .expanded_projects
+                        .contains(&project.id.to_string())
+                    {
                         if let Some(assets) = app.org_model.assets_by_project.get(&project.id) {
                             current_idx += assets.len();
                         } else {
@@ -381,14 +386,14 @@ fn handle_org_adding_mode(app: &mut App, code: KeyCode) {
             app.form_prev_field();
         }
         KeyCode::Down => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_next();
             } else {
                 app.form_next_field();
             }
         }
         KeyCode::Up => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_prev();
             } else {
                 app.form_prev_field();
@@ -413,19 +418,19 @@ fn handle_assigning_mode(app: &mut App, code: KeyCode) {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.input.clear();
-            app.org_select_index = None;
-            app.org_select_matches.clear();
+            app.form.select_index = None;
+            app.form.select_matches.clear();
         }
         KeyCode::Enter => {
             let _ = app.submit_asset_assignment();
         }
         KeyCode::Down => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_next();
             }
         }
         KeyCode::Up => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_prev();
             }
         }

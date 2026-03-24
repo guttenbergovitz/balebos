@@ -330,14 +330,14 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
             .add_modifier(Modifier::BOLD),
     ))];
 
-    if app.org_select_matches.is_empty() {
+    if app.form.select_matches.is_empty() {
         project_lines.push(Line::from(Span::styled(
             "  No matching projects found.",
             Style::default().fg(Color::Red),
         )));
     } else {
-        for (i, (display, id)) in app.org_select_matches.iter().enumerate().take(8) {
-            let is_selected = Some(i) == app.org_select_index;
+        for (i, (display, id)) in app.form.select_matches.iter().enumerate().take(8) {
+            let is_selected = Some(i) == app.form.select_index;
             let style = if is_selected {
                 Style::default()
                     .bg(Color::Blue)
@@ -354,9 +354,9 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
             ]));
         }
 
-        if app.org_select_matches.len() > 8 {
+        if app.form.select_matches.len() > 8 {
             project_lines.push(Line::from(Span::styled(
-                format!("  ... and {} more", app.org_select_matches.len() - 8),
+                format!("  ... and {} more", app.form.select_matches.len() - 8),
                 Style::default().fg(Color::DarkGray),
             )));
         }
@@ -377,7 +377,7 @@ fn draw_assign_modal(f: &mut Frame, app: &App) {
 
 fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
     let fields = add_type.fields();
-    let has_selection = !app.org_select_matches.is_empty();
+    let has_selection = !app.form.select_matches.is_empty();
 
     let title = match app.input_mode {
         InputMode::OrgEditing(_, _) => format!(" Edit {} ", add_type.title().replace("Add ", "")),
@@ -434,8 +434,8 @@ fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
         .split(main_chunks[0]);
 
     for (i, field_name) in fields.iter().enumerate() {
-        let is_active = i == app.form_field_index;
-        let value = app.form_fields.get(i).map(|s| s.as_str()).unwrap_or("");
+        let is_active = i == app.form.field_index;
+        let value = app.form.fields.get(i).map(|s| s.as_str()).unwrap_or("");
 
         let border_style = if is_active {
             Style::default().fg(Color::Yellow)
@@ -491,8 +491,8 @@ fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
                 .add_modifier(Modifier::BOLD),
         ))];
 
-        for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(5) {
-            let is_selected = Some(i) == app.org_select_index;
+        for (i, (name, id)) in app.form.select_matches.iter().enumerate().take(5) {
+            let is_selected = Some(i) == app.form.select_index;
             let style = if is_selected {
                 Style::default()
                     .bg(Color::Blue)
@@ -512,9 +512,9 @@ fn draw_org_add_modal(f: &mut Frame, app: &App, add_type: OrgAddType) {
             ]));
         }
 
-        if app.org_select_matches.len() > 5 {
+        if app.form.select_matches.len() > 5 {
             list_items.push(Line::from(Span::styled(
-                format!("  ... and {} more", app.org_select_matches.len() - 5),
+                format!("  ... and {} more", app.form.select_matches.len() - 5),
                 Style::default().fg(Color::DarkGray),
             )));
         }
@@ -628,8 +628,8 @@ fn draw_role_assign_modal(f: &mut Frame, app: &App, step: &RoleAssignStep) {
                 "Select person:",
                 Style::default().fg(Color::Cyan),
             ))];
-            for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(10) {
-                let is_selected = Some(i) == app.org_select_index;
+            for (i, (name, id)) in app.form.select_matches.iter().enumerate().take(10) {
+                let is_selected = Some(i) == app.form.select_index;
                 let style = if is_selected {
                     Style::default().bg(Color::Blue).fg(Color::White)
                 } else {
@@ -733,8 +733,8 @@ fn draw_contractor_assign_modal(f: &mut Frame, app: &App, step: &ContractorAssig
                 "Select external company:",
                 Style::default().fg(Color::Cyan),
             ))];
-            for (i, (name, id)) in app.org_select_matches.iter().enumerate().take(10) {
-                let is_selected = Some(i) == app.org_select_index;
+            for (i, (name, id)) in app.form.select_matches.iter().enumerate().take(10) {
+                let is_selected = Some(i) == app.form.select_index;
                 let style = if is_selected {
                     Style::default().bg(Color::Blue).fg(Color::White)
                 } else {

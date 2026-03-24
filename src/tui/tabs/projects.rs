@@ -41,7 +41,10 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut rows = Vec::new();
     for project in &app.org_model.project_views {
-        let is_expanded = app.expanded_projects.contains(&project.id.to_string());
+        let is_expanded = app
+            .projects
+            .expanded_projects
+            .contains(&project.id.to_string());
         let prefix = if is_expanded { "[-] " } else { "[+] " };
 
         rows.push(Row::new(vec![
@@ -117,7 +120,7 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     )))
     .row_highlight_style(selected_style);
 
-    f.render_stateful_widget(t, area, &mut app.projects_table_state);
+    f.render_stateful_widget(t, area, &mut app.projects.table_state);
 }
 
 fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
@@ -125,7 +128,7 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .title(" Project Details ");
 
-    let idx = match app.projects_table_state.selected() {
+    let idx = match app.projects.table_state.selected() {
         Some(i) => i,
         None => {
             let details = Paragraph::new("Select a project to see details").block(block);
@@ -144,7 +147,11 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
             break;
         }
         current_idx += 1;
-        if app.expanded_projects.contains(&project.id.to_string()) {
+        if app
+            .projects
+            .expanded_projects
+            .contains(&project.id.to_string())
+        {
             if let Some(assets) = app.org_model.assets_by_project.get(&project.id) {
                 current_idx += assets.len();
             } else {
@@ -325,7 +332,10 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
     ]));
 
     // Show hint about expansion
-    let is_expanded = app.expanded_projects.contains(&project.id.to_string());
+    let is_expanded = app
+        .projects
+        .expanded_projects
+        .contains(&project.id.to_string());
     if project.asset_count > 0 {
         text.push(Line::from(""));
         if is_expanded {
