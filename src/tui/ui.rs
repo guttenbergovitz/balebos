@@ -69,8 +69,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let stats = &app.model.stats;
-    let is_scanning = *app.is_scanning.lock().unwrap();
-    let scan_status = app.scan_status.lock().unwrap().clone();
+    let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
+    let scan_status = app.scan_status.lock().unwrap_or_else(|p| p.into_inner()).clone();
 
     let scanning_span = if is_scanning {
         let label = if scan_status.is_empty() {

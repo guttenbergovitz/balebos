@@ -85,15 +85,19 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec
         let temp_file = temp_dir.join(format!("balebos_subfinder_{}.txt", Uuid::new_v4()));
         fs::write(&temp_file, chunk.join("\n"))?;
 
+        let temp_file_str = temp_file.to_string_lossy();
         let mut child = Command::new("subfinder")
             .arg("-dL")
-            .arg(temp_file.to_str().unwrap())
+            .arg(temp_file_str.as_ref())
             .arg("-silent")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => continue,
+        };
         let reader = BufReader::new(stdout);
         let now = Utc::now();
         let mut chunk_items = Vec::new();

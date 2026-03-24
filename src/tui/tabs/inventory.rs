@@ -40,15 +40,14 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         .height(1)
         .bottom_margin(1);
 
-    let rows = app.visible_items.iter().map(|item| {
+    let rows: Vec<_> = app.visible_items.iter().filter_map(|item| {
         let (asset, is_subdomain, has_children, is_expanded) = match item {
             VisibleItem::Root(name) => {
                 let group = app
                     .model
                     .groups
                     .iter()
-                    .find(|g| g.root.name == *name)
-                    .unwrap();
+                    .find(|g| g.root.name == *name)?;
                 (
                     &group.root,
                     false,
@@ -61,13 +60,11 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                     .model
                     .groups
                     .iter()
-                    .find(|g| g.root.name == *root_name)
-                    .unwrap();
+                    .find(|g| g.root.name == *root_name)?;
                 let asset = group
                     .subdomains
                     .iter()
-                    .find(|s| s.name == *sub_name)
-                    .unwrap();
+                    .find(|s| s.name == *sub_name)?;
                 (asset, true, false, false)
             }
         };
@@ -137,7 +134,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         let is_marked = app.marked_assets.contains(&asset.name);
         let mark_prefix = if is_marked { "[x] " } else { "[ ] " };
 
-        Row::new(vec![
+        Some(Row::new(vec![
             Cell::from(Line::from(vec![
                 Span::raw(prefix),
                 Span::styled(mark_prefix, if is_marked { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) }),
@@ -145,8 +142,8 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
             ])),
             Cell::from(status_text).style(status_style),
             Cell::from(tech),
-        ])
-    });
+        ]))
+    }).collect();
 
     let t = Table::new(
         rows,

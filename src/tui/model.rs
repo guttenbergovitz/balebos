@@ -503,11 +503,9 @@ pub fn load_tui_model(storage: &JsonlStorage) -> crate::error::Result<TuiModel> 
         let mut found_parent = false;
         for root_name in groups.keys().cloned().collect::<Vec<_>>() {
             if asset.name.ends_with(&format!(".{}", root_name)) {
-                groups
-                    .get_mut(&root_name)
-                    .unwrap()
-                    .subdomains
-                    .push(asset.clone());
+                if let Some(group) = groups.get_mut(&root_name) {
+                    group.subdomains.push(asset.clone());
+                }
                 found_parent = true;
                 break;
             }

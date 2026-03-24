@@ -373,7 +373,10 @@ pub fn probe_http_batch_with_progress(
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        let mut stdin = child.stdin.take().ok_or(ProbeError::ToolFailed {
+            tool: "httpx".to_string(),
+            stderr: "failed to open stdin pipe".to_string(),
+        })?;
         
         let mut clean_targets = Vec::new();
         for target in chunk {
@@ -390,7 +393,10 @@ pub fn probe_http_batch_with_progress(
             let _ = stdin.write_all(targets_string.as_bytes());
         });
 
-        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let stdout = child.stdout.take().ok_or(ProbeError::ToolFailed {
+            tool: "httpx".to_string(),
+            stderr: "failed to open stdout pipe".to_string(),
+        })?;
         let reader = BufReader::new(stdout);
         let mut observations = Vec::new();
 

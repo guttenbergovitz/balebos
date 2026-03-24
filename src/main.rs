@@ -749,7 +749,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 Ok(rec) => {
                     println!(
                         "Person {} assigned to project {} as {}",
-                        rec.person.unwrap(),
+                        person,
                         rec.project,
                         rec.role
                     );
@@ -793,7 +793,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 Ok(rec) => {
                     println!(
                         "Company {} assigned to project {} as {}",
-                        rec.company.unwrap(),
+                        company,
                         rec.project,
                         rec.role
                     );

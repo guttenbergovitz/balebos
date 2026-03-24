@@ -106,7 +106,7 @@ pub fn probe_dns_batch(
 
         let output = Command::new("dnsx")
             .args([
-                "-l", temp_file.to_str().unwrap(),
+                "-l", &temp_file.to_string_lossy(),
                 "-json", 
                 "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
                 "-silent"

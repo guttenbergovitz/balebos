@@ -67,7 +67,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
         }
 
         // Detect transition from scanning to finished
-        let is_scanning = *app.is_scanning.lock().unwrap();
+        let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
         if last_scan_state && !is_scanning {
             // Scan just finished, auto-refresh
             let _ = app.refresh();

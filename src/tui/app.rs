@@ -294,14 +294,14 @@ impl App {
 
     pub fn next_tab(&mut self) {
         let tabs = Tab::all();
-        let current_idx = tabs.iter().position(|t| *t == self.active_tab).unwrap();
+        let current_idx = tabs.iter().position(|t| *t == self.active_tab).unwrap_or(0);
         let next_idx = (current_idx + 1) % tabs.len();
         self.set_tab(tabs[next_idx]);
     }
 
     pub fn prev_tab(&mut self) {
         let tabs = Tab::all();
-        let current_idx = tabs.iter().position(|t| *t == self.active_tab).unwrap();
+        let current_idx = tabs.iter().position(|t| *t == self.active_tab).unwrap_or(0);
         let prev_idx = if current_idx == 0 {
             tabs.len() - 1
         } else {
@@ -389,10 +389,12 @@ impl App {
         if self.active_tab == Tab::Organization {
             let count = self.org_item_count();
             if count > 0 {
-                if self.org_table_state.selected().is_none() {
+                if let Some(selected) = self.org_table_state.selected() {
+                    if selected >= count {
+                        self.org_table_state.select(Some(count - 1));
+                    }
+                } else {
                     self.org_table_state.select(Some(0));
-                } else if self.org_table_state.selected().unwrap() >= count {
-                    self.org_table_state.select(Some(count - 1));
                 }
             } else {
                 self.org_table_state.select(None);
@@ -1229,14 +1231,14 @@ impl App {
 
         std::thread::spawn(move || {
             {
-                let mut s = is_scanning.lock().unwrap();
+                let mut s = is_scanning.lock().unwrap_or_else(|p| p.into_inner());
                 *s = true;
             }
             
             let res = crate::app::run_single_recon(&target, &storage, &ignore_patterns);
             
             {
-                let mut s = is_scanning.lock().unwrap();
+                let mut s = is_scanning.lock().unwrap_or_else(|p| p.into_inner());
                 *s = false;
             }
 
