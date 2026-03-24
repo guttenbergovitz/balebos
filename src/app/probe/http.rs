@@ -84,7 +84,8 @@ fn check_httpx_installation() -> Result<()> {
         })?;
 
     if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery")
-        && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery") {
+        && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery")
+    {
         return Err(ProbeError::InvalidOutput {
             tool: "httpx".to_string(),
             reason: "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.".to_string(),
@@ -97,14 +98,17 @@ fn check_httpx_installation() -> Result<()> {
 /// Helper to extract URL from httpx raw request string
 fn extract_url_from_raw_request(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    if lines.is_empty() { return "unknown".to_string(); }
+    if lines.is_empty() {
+        return "unknown".to_string();
+    }
 
     // Line 0 is usually "GET /path HTTP/1.1"
     let first_line = lines[0];
     let path = first_line.split_whitespace().nth(1).unwrap_or("/");
 
     // Find Host header
-    let host = lines.iter()
+    let host = lines
+        .iter()
         .find(|l| l.to_lowercase().starts_with("host: "))
         .map(|l| l[6..].trim())
         .unwrap_or("unknown");
@@ -135,11 +139,12 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
         // If there are N redirects, there are N+1 items in the chain.
         for (i, &code) in codes.iter().enumerate() {
             if i < chain.len() {
-                let current_url = extract_url_from_raw_request(chain[i].request.as_deref().unwrap_or(""));
+                let current_url =
+                    extract_url_from_raw_request(chain[i].request.as_deref().unwrap_or(""));
 
                 // The next item in the chain is where we redirected TO
                 let next_url = if i + 1 < chain.len() {
-                    extract_url_from_raw_request(chain[i+1].request.as_deref().unwrap_or(""))
+                    extract_url_from_raw_request(chain[i + 1].request.as_deref().unwrap_or(""))
                 } else {
                     parsed.url.clone().unwrap_or_else(|| "unknown".to_string())
                 };
@@ -199,7 +204,8 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
         // Determine the true final URL: if there's a redirect chain with 3xx hops,
         // use the redirect_to of the last 3xx hop (where we actually ended up).
         // parsed.url is just the probed input URL, NOT the final destination.
-        let final_url = redirect_chain.iter()
+        let final_url = redirect_chain
+            .iter()
             .rev()
             .find(|hop| (300..400).contains(&(hop.status as u32)))
             .map(|hop| hop.redirect_to.clone())
@@ -298,10 +304,7 @@ pub fn probe_http_batch_with_progress(
 
         let mut clean_targets = Vec::new();
         for target in chunk {
-            let clean = target
-                .trim()
-                .replace("http://", "")
-                .replace("https://", "");
+            let clean = target.trim().replace("http://", "").replace("https://", "");
             clean_targets.push(clean);
         }
 
@@ -328,11 +331,10 @@ pub fn probe_http_batch_with_progress(
                 let input_from_httpx = parsed.input.clone();
 
                 // Match input to the original target to preserve its casing/format
-                let original = chunk.iter()
+                let original = chunk
+                    .iter()
                     .find(|&t| {
-                        let clean = t.trim()
-                            .replace("http://", "")
-                            .replace("https://", "");
+                        let clean = t.trim().replace("http://", "").replace("https://", "");
                         clean == input_from_httpx
                     })
                     .map(|s| s.as_str())
@@ -364,10 +366,7 @@ pub fn probe_http_batch_with_progress(
 pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation> {
     check_httpx_installation()?;
 
-    let clean_domain = domain
-        .trim()
-        .replace("http://", "")
-        .replace("https://", "");
+    let clean_domain = domain.trim().replace("http://", "").replace("https://", "");
 
     let output = Command::new("httpx")
         .args([
@@ -398,7 +397,8 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
         return Err(ProbeError::InvalidOutput {
             tool: "httpx".to_string(),
             reason: "No output from httpx".to_string(),
-        }.into());
+        }
+        .into());
     }
 
     // httpx might output multiple JSON lines if it probes multiple endpoints (e.g. root + www).
@@ -414,11 +414,13 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
         return Err(ProbeError::InvalidOutput {
             tool: "httpx".to_string(),
             reason: "No valid JSON records in httpx output".to_string(),
-        }.into());
+        }
+        .into());
     }
 
     // Pick the best result: prefer 200, then any status code, then whatever matches input
-    let parsed = results.iter()
+    let parsed = results
+        .iter()
         .find(|r| r.status_code == Some(200))
         .or_else(|| results.iter().find(|r| r.status_code.is_some()))
         .unwrap_or(&results[results.len() - 1]);

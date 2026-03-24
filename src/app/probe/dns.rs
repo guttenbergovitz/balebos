@@ -36,26 +36,20 @@ struct DnsxOutput {
 
 /// Helper function to check if dnsx is correctly installed.
 fn check_dnsx_installation() -> Result<()> {
-    Command::new("dnsx")
-        .arg("-version")
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ProbeError::ToolNotFound {
-                    tool: "dnsx".to_string(),
-                }
-            } else {
-                ProbeError::Execution(e)
+    Command::new("dnsx").arg("-version").output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ProbeError::ToolNotFound {
+                tool: "dnsx".to_string(),
             }
-        })?;
+        } else {
+            ProbeError::Execution(e)
+        }
+    })?;
     Ok(())
 }
 
 /// Run a batch DNS probe using a single dnsx process for efficiency.
-pub fn probe_dns_batch(
-    targets: &[String],
-    storage: &JsonlStorage,
-) -> Result<Vec<DnsObservation>> {
+pub fn probe_dns_batch(targets: &[String], storage: &JsonlStorage) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -81,10 +75,17 @@ pub fn probe_dns_batch(
 
         let output = Command::new("dnsx")
             .args([
-                "-l", &temp_file.to_string_lossy(),
+                "-l",
+                &temp_file.to_string_lossy(),
                 "-json",
-                "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa",
-                "-silent"
+                "-a",
+                "-aaaa",
+                "-cname",
+                "-mx",
+                "-ns",
+                "-txt",
+                "-soa",
+                "-silent",
             ])
             .output()?;
 
@@ -106,8 +107,17 @@ pub fn probe_dns_batch(
 
             match serde_json::from_str::<DnsxOutput>(&line) {
                 Ok(parsed) => {
-                    let soa_strings = parsed.soa.unwrap_or_default().into_iter()
-                        .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
+                    let soa_strings = parsed
+                        .soa
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|s| {
+                            format!(
+                                "ns:{} mailbox:{}",
+                                s.ns.unwrap_or_default(),
+                                s.mailbox.unwrap_or_default()
+                            )
+                        })
                         .collect();
 
                     let obs = DnsObservation {

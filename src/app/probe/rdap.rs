@@ -55,8 +55,8 @@ fn perform_rdap_query(domain: &str) -> Result<DomainRegistrationRecord> {
         return Err(ProbeError::RdapFailed.into());
     }
 
-    let parsed: RdapOutput = serde_json::from_slice(&output.stdout)
-        .map_err(ProbeError::ParseError)?;
+    let parsed: RdapOutput =
+        serde_json::from_slice(&output.stdout).map_err(ProbeError::ParseError)?;
 
     let mut record = DomainRegistrationRecord::new(domain.to_string(), "rdap".to_string());
 
@@ -171,11 +171,19 @@ fn perform_whois_query(domain: &str) -> Result<DomainRegistrationRecord> {
         }
         // Basic registrant info from WHOIS if available
         else if lower.starts_with("registrant name:") {
-            let mut c = record.registrant.take().unwrap_or(DomainContact { name: None, organization: None, email: None });
+            let mut c = record.registrant.take().unwrap_or(DomainContact {
+                name: None,
+                organization: None,
+                email: None,
+            });
             c.name = line.split(':').nth(1).map(|s| s.trim().to_string());
             record.registrant = Some(c);
         } else if lower.starts_with("registrant email:") {
-            let mut c = record.registrant.take().unwrap_or(DomainContact { name: None, organization: None, email: None });
+            let mut c = record.registrant.take().unwrap_or(DomainContact {
+                name: None,
+                organization: None,
+                email: None,
+            });
             c.email = line.split(':').nth(1).map(|s| s.trim().to_string());
             record.registrant = Some(c);
         }
