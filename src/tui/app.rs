@@ -1,15 +1,13 @@
 //! TUI application state and logic.
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::error::BalebosError;
-use ratatui::widgets::TableState;
 
 use crate::org::BrandId;
 use crate::storage::JsonlStorage;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
-use crate::tui::state::{InventoryState, OrgPane, OrgState};
+use crate::tui::state::{FormState, InventoryState, OrgPane, OrgState, ProjectsState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -127,10 +125,7 @@ pub struct App {
     // Composed state components
     pub inventory: InventoryState,
     pub organization: OrgState,
-
-    // Projects tab state (not yet extracted)
-    pub projects_table_state: TableState,
-    pub expanded_projects: HashSet<String>,
+    pub projects: ProjectsState,
 
     // Input handling
     pub input: String,
@@ -138,10 +133,7 @@ pub struct App {
     pub input_mode: InputMode,
 
     // Form state for OrgAdding mode
-    pub form_fields: Vec<String>,
-    pub form_field_index: usize,
-    pub org_select_index: Option<usize>,
-    pub org_select_matches: Vec<(String, String)>, // (Name, ID)
+    pub form: FormState,
 
     // Role assignment state
     pub role_assign_project: Option<crate::org::ProjectId>,
@@ -180,10 +172,7 @@ impl App {
             // State components
             inventory: InventoryState::new(),
             organization: OrgState::new(),
-
-            // Projects tab state
-            projects_table_state: TableState::default(),
-            expanded_projects: HashSet::new(),
+            projects: ProjectsState::new(),
 
             // Input handling
             input: String::new(),
@@ -191,10 +180,7 @@ impl App {
             input_mode: InputMode::default(),
 
             // Form state
-            form_fields: Vec::new(),
-            form_field_index: 0,
-            org_select_index: None,
-            org_select_matches: Vec::new(),
+            form: FormState::new(0),
 
             role_assign_project: None,
             role_assign_type: None,
@@ -265,7 +251,7 @@ impl App {
     }
 
     pub fn toggle_project_expand(&mut self) {
-        if let Some(idx) = self.projects_table_state.selected() {
+        if let Some(idx) = self.projects.table_state.selected() {
             let mut current_idx = 0;
             let mut target_project_id = None;
 
@@ -275,7 +261,7 @@ impl App {
                     break;
                 }
                 current_idx += 1;
-                if self.expanded_projects.contains(&project.id.to_string()) {
+                if self.projects.is_expanded(&project.id.to_string()) {
                     if let Some(assets) = self.org_model.assets_by_project.get(&project.id) {
                         current_idx += assets.len();
                     } else {
@@ -285,10 +271,10 @@ impl App {
             }
 
             if let Some(id_str) = target_project_id {
-                if self.expanded_projects.contains(&id_str) {
-                    self.expanded_projects.remove(&id_str);
+                if self.projects.is_expanded(&id_str) {
+                    self.projects.collapse(&id_str);
                 } else {
-                    self.expanded_projects.insert(id_str);
+                    self.projects.expand(id_str);
                 }
             }
         }
@@ -296,45 +282,19 @@ impl App {
 
     pub fn projects_next(&mut self) {
         let total_rows = self.projects_total_rows();
-        if total_rows == 0 {
-            return;
-        }
-        let i = match self.projects_table_state.selected() {
-            Some(i) => {
-                if i >= total_rows - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.projects_table_state.select(Some(i));
+        self.projects.next(total_rows);
     }
 
     pub fn projects_previous(&mut self) {
         let total_rows = self.projects_total_rows();
-        if total_rows == 0 {
-            return;
-        }
-        let i = match self.projects_table_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    total_rows - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.projects_table_state.select(Some(i));
+        self.projects.previous(total_rows);
     }
 
     fn projects_total_rows(&self) -> usize {
         let mut count = 0;
         for project in &self.org_model.project_views {
             count += 1;
-            if self.expanded_projects.contains(&project.id.to_string()) {
+            if self.projects.is_expanded(&project.id.to_string()) {
                 if let Some(assets) = self.org_model.assets_by_project.get(&project.id) {
                     count += assets.len();
                 } else {
@@ -366,55 +326,51 @@ impl App {
 
     pub fn start_org_add(&mut self, add_type: OrgAddType) {
         let field_count = add_type.fields().len();
-        self.form_fields = vec![String::new(); field_count];
-        self.form_field_index = 0;
-        self.org_select_index = None;
-        self.org_select_matches = Vec::new();
+        self.form = FormState::new(field_count);
         self.input_mode = InputMode::OrgAdding(add_type);
         self.update_select_matches();
     }
 
     pub fn start_org_edit(&mut self, add_type: OrgAddType, index: usize) {
+        let mut form = FormState::new(add_type.fields().len());
         match add_type {
             OrgAddType::Person => {
                 if let Some(p) = self.org_model.persons.get(index) {
-                    self.form_fields = vec![
-                        p.first_name.clone(),
-                        p.last_name.clone(),
-                        p.email.clone(),
-                        p.phone.clone().unwrap_or_default(),
-                    ];
+                    form.set_field_value(0, p.first_name.clone());
+                    form.set_field_value(1, p.last_name.clone());
+                    form.set_field_value(2, p.email.clone());
+                    form.set_field_value(3, p.phone.clone().unwrap_or_default());
                 }
             }
             OrgAddType::Company => {
                 if let Some(c) = self.org_model.companies.get(index) {
-                    self.form_fields = vec![
-                        c.name.clone(),
-                        c.country.alpha2().to_string(),
+                    form.set_field_value(0, c.name.clone());
+                    form.set_field_value(1, c.country.alpha2().to_string());
+                    form.set_field_value(
+                        2,
                         c.brand
                             .map(|id: BrandId| id.to_string())
                             .unwrap_or_default(),
-                    ];
+                    );
                 }
             }
             OrgAddType::Brand => {
                 if let Some(b) = self.org_model.brands.get(index) {
-                    self.form_fields = vec![b.name.clone()];
+                    form.set_field_value(0, b.name.clone());
                 }
             }
             OrgAddType::Project => {
                 if let Some(p) = self.org_model.projects.get(index) {
-                    self.form_fields = vec![
-                        p.name.clone(),
-                        p.company.to_string(),
+                    form.set_field_value(0, p.name.clone());
+                    form.set_field_value(1, p.company.to_string());
+                    form.set_field_value(
+                        2,
                         p.importance.map(|i: u8| i.to_string()).unwrap_or_default(),
-                    ];
+                    );
                 }
             }
         }
-        self.form_field_index = 0;
-        self.org_select_index = None;
-        self.org_select_matches = Vec::new();
+        self.form = form;
         self.input_mode = InputMode::OrgEditing(add_type, index);
         self.update_select_matches();
     }
@@ -424,47 +380,24 @@ impl App {
             &self.input_mode
         {
             let max = add_type.fields().len();
-            if self.form_field_index < max - 1 {
-                self.form_field_index += 1;
-                self.org_select_index = None;
+            if self.form.next_field(max) {
                 self.update_select_matches();
             }
         }
     }
 
     pub fn form_prev_field(&mut self) {
-        if self.form_field_index > 0 {
-            self.form_field_index -= 1;
-            self.org_select_index = None;
+        if self.form.previous_field() {
             self.update_select_matches();
         }
     }
 
     pub fn org_select_next(&mut self) {
-        if !self.org_select_matches.is_empty() {
-            let i = self.org_select_index.map(|i| i + 1).unwrap_or(0);
-            if i >= self.org_select_matches.len() {
-                self.org_select_index = Some(0);
-            } else {
-                self.org_select_index = Some(i);
-            }
-        }
+        self.form.select_next();
     }
 
     pub fn org_select_prev(&mut self) {
-        if !self.org_select_matches.is_empty() {
-            let i = self
-                .org_select_index
-                .map(|i| {
-                    if i == 0 {
-                        self.org_select_matches.len() - 1
-                    } else {
-                        i - 1
-                    }
-                })
-                .unwrap_or(self.org_select_matches.len() - 1);
-            self.org_select_index = Some(i);
-        }
+        self.form.select_previous();
     }
 
     pub fn update_select_matches(&mut self) {
@@ -473,7 +406,7 @@ impl App {
             InputMode::OrgEditing(t, _) => Some(*t),
             InputMode::Assigning => {
                 let current_input = self.input.to_lowercase();
-                self.org_select_matches = self
+                let matches = self
                     .org_model
                     .projects
                     .iter()
@@ -493,93 +426,64 @@ impl App {
                     })
                     .collect();
 
-                if self.org_select_matches.is_empty() {
-                    self.org_select_index = None;
-                } else if let Some(i) = self.org_select_index {
-                    if i >= self.org_select_matches.len() {
-                        self.org_select_index = Some(0);
-                    }
-                }
+                self.form.set_select_matches(matches);
                 return;
             }
             _ => None,
         };
 
         if let Some(add_type) = mode {
-            if add_type.is_id_field(self.form_field_index) {
+            if add_type.is_id_field(self.form.field_index) {
                 let current_input = self
-                    .form_fields
-                    .get(self.form_field_index)
+                    .form
+                    .get_field_value(self.form.field_index)
                     .map(|s| s.to_lowercase())
                     .unwrap_or_default();
 
-                let candidates = add_type.get_candidates(self.form_field_index, self);
-                self.org_select_matches = candidates
+                let candidates = add_type.get_candidates(self.form.field_index, self);
+                let matches = candidates
                     .into_iter()
                     .filter(|(name, _id)| name.to_lowercase().contains(&current_input))
                     .collect();
 
-                // Keep selection in bounds or reset if empty
-                if self.org_select_matches.is_empty() {
-                    self.org_select_index = None;
-                } else if let Some(i) = self.org_select_index {
-                    if i >= self.org_select_matches.len() {
-                        self.org_select_index = Some(0);
-                    }
-                }
+                self.form.set_select_matches(matches);
             } else {
-                self.org_select_matches = Vec::new();
-                self.org_select_index = None;
+                self.form.reset_select();
             }
         }
     }
 
     #[allow(dead_code)]
     pub fn form_current_value(&self) -> &str {
-        self.form_fields
-            .get(self.form_field_index)
-            .map(|s| s.as_str())
-            .unwrap_or("")
+        self.form.current_value()
     }
 
     pub fn form_push_char(&mut self, c: char) {
-        if let Some(field) = self.form_fields.get_mut(self.form_field_index) {
-            field.push(c);
-            self.update_select_matches();
-        }
+        self.form.push_char(c);
+        self.update_select_matches();
     }
 
     pub fn form_pop_char(&mut self) {
-        if let Some(field) = self.form_fields.get_mut(self.form_field_index) {
-            field.pop();
-            self.update_select_matches();
-        }
+        self.form.pop_char();
+        self.update_select_matches();
     }
 
     pub fn cancel_form(&mut self) {
         self.input_mode = InputMode::Normal;
-        self.form_fields.clear();
-        self.form_field_index = 0;
-        self.org_select_index = None;
-        self.org_select_matches.clear();
+        self.form.reset();
     }
 
     /// Submit the org form and create the entity.
     /// Returns Ok(true) if successful, Ok(false) if validation failed.
     pub fn submit_org_form(&mut self) -> Result<bool, BalebosError> {
         // If we have a selection, pick it instead of submitting the form
-        if let Some(i) = self.org_select_index {
-            if let Some((_name, id)) = self.org_select_matches.get(i) {
-                let id = id.clone();
-                if let Some(field) = self.form_fields.get_mut(self.form_field_index) {
-                    *field = id;
-                }
-                self.org_select_index = None;
-                self.update_select_matches();
-                // Auto-advance to next field if possible
-                self.form_next_field();
-                return Ok(true);
-            }
+        if let Some((_, id)) = self.form.selected_match() {
+            let id = id.clone();
+            self.form.set_field_value(self.form.field_index, id);
+            self.form.reset_select();
+            // Auto-advance to next field if possible
+            self.form_next_field();
+            return Ok(true);
         }
 
         let mode = self.input_mode.clone();
@@ -644,10 +548,10 @@ impl App {
     }
 
     fn submit_person_form(&mut self) -> Result<bool, BalebosError> {
-        let first_name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let last_name = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
-        let email = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
-        let phone_str = self.form_fields.get(3).map(|s| s.trim()).unwrap_or("");
+        let first_name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let last_name = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
+        let email = self.form.get_field_value(2).map(|s| s.trim()).unwrap_or("");
+        let phone_str = self.form.get_field_value(3).map(|s| s.trim()).unwrap_or("");
         let phone = if phone_str.is_empty() {
             None
         } else {
@@ -663,10 +567,10 @@ impl App {
     }
 
     fn submit_person_edit(&mut self, id: crate::org::PersonId) -> Result<bool, BalebosError> {
-        let first_name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let last_name = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
-        let email = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
-        let phone_str = self.form_fields.get(3).map(|s| s.trim()).unwrap_or("");
+        let first_name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let last_name = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
+        let email = self.form.get_field_value(2).map(|s| s.trim()).unwrap_or("");
+        let phone_str = self.form.get_field_value(3).map(|s| s.trim()).unwrap_or("");
         let phone = if phone_str.is_empty() {
             None
         } else {
@@ -684,9 +588,9 @@ impl App {
     fn submit_company_form(&mut self) -> Result<bool, BalebosError> {
         use crate::org::{BrandId, CountryCode};
 
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let country_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
-        let brand_str = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let country_str = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
+        let brand_str = self.form.get_field_value(2).map(|s| s.trim()).unwrap_or("");
 
         if name.is_empty() || country_str.is_empty() {
             return Ok(false);
@@ -714,9 +618,9 @@ impl App {
     fn submit_company_edit(&mut self, id: crate::org::CompanyId) -> Result<bool, BalebosError> {
         use crate::org::{BrandId, CountryCode};
 
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let country_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
-        let brand_str = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let country_str = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
+        let brand_str = self.form.get_field_value(2).map(|s| s.trim()).unwrap_or("");
 
         if name.is_empty() || country_str.is_empty() {
             return Ok(false);
@@ -741,7 +645,7 @@ impl App {
     }
 
     fn submit_brand_form(&mut self) -> Result<bool, BalebosError> {
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
 
         // Validation
         if name.is_empty() {
@@ -753,7 +657,7 @@ impl App {
     }
 
     fn submit_brand_edit(&mut self, id: crate::org::BrandId) -> Result<bool, BalebosError> {
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
 
         if name.is_empty() {
             return Ok(false);
@@ -764,7 +668,7 @@ impl App {
     }
 
     fn parse_importance(&self) -> Option<u8> {
-        let imp_str = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
+        let imp_str = self.form.get_field_value(2).map(|s| s.trim()).unwrap_or("");
         if imp_str.is_empty() {
             return None;
         }
@@ -777,8 +681,8 @@ impl App {
     fn submit_project_form(&mut self) -> Result<bool, BalebosError> {
         use crate::org::CompanyId;
 
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let company_id_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let company_id_str = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
         let importance = self.parse_importance();
 
         if name.is_empty() || company_id_str.is_empty() {
@@ -797,8 +701,8 @@ impl App {
     fn submit_project_edit(&mut self, id: crate::org::ProjectId) -> Result<bool, BalebosError> {
         use crate::org::CompanyId;
 
-        let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
-        let company_id_str = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
+        let name = self.form.get_field_value(0).map(|s| s.trim()).unwrap_or("");
+        let company_id_str = self.form.get_field_value(1).map(|s| s.trim()).unwrap_or("");
         let importance = self.parse_importance();
 
         if name.is_empty() || company_id_str.is_empty() {
@@ -853,22 +757,17 @@ impl App {
         if self.selected_asset().is_some() {
             self.input_mode = InputMode::Assigning;
             self.input.clear();
-            self.org_select_index = None;
-            self.org_select_matches = Vec::new();
+            self.form.reset_select();
             self.update_select_matches();
         }
     }
 
     pub fn submit_asset_assignment(&mut self) -> Result<bool, BalebosError> {
         // Handle selection from list
-        let project_id = if let Some(i) = self.org_select_index {
-            if let Some((_display, id_str)) = self.org_select_matches.get(i) {
-                match id_str.parse::<crate::org::ProjectId>() {
-                    Ok(id) => Some(id),
-                    Err(_) => return Ok(false),
-                }
-            } else {
-                None
+        let project_id = if let Some((_, id_str)) = self.form.selected_match() {
+            match id_str.parse::<crate::org::ProjectId>() {
+                Ok(id) => Some(id),
+                Err(_) => return Ok(false),
             }
         } else {
             let project_id_str = self.input.trim();
@@ -905,8 +804,7 @@ impl App {
 
         self.input_mode = InputMode::Normal;
         self.input.clear();
-        self.org_select_index = None;
-        self.org_select_matches.clear();
+        self.form.reset_select();
         self.inventory.clear_marks();
         self.refresh()?;
         Ok(true)
@@ -937,7 +835,7 @@ impl App {
     // -----------------------------------------------------------------------
 
     pub fn start_role_assign(&mut self) {
-        if let Some(idx) = self.projects_table_state.selected() {
+        if let Some(idx) = self.projects.table_state.selected() {
             // Resolve actual project from flat rows
             let mut current_idx = 0;
             let mut selected_project = None;
@@ -947,7 +845,7 @@ impl App {
                     break;
                 }
                 current_idx += 1;
-                if self.expanded_projects.contains(&project.id.to_string()) {
+                if self.projects.is_expanded(&project.id.to_string()) {
                     if let Some(assets) = self.org_model.assets_by_project.get(&project.id) {
                         current_idx += assets.len();
                     } else {
@@ -962,7 +860,7 @@ impl App {
                 self.role_assign_target = None;
                 self.role_assign_role = None;
                 self.input.clear();
-                self.org_select_index = None;
+                self.form.select_index = None;
                 self.update_role_assign_matches();
                 self.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectTarget);
             }
@@ -972,7 +870,7 @@ impl App {
     pub fn update_role_assign_matches(&mut self) {
         let filter = self.input.to_lowercase();
 
-        self.org_select_matches = self
+        let matches = self
             .org_model
             .persons
             .iter()
@@ -985,23 +883,15 @@ impl App {
             .filter(|(name, _): &(String, String)| name.to_lowercase().contains(&filter))
             .collect();
 
-        if self.org_select_matches.is_empty() {
-            self.org_select_index = None;
-        } else if let Some(i) = self.org_select_index {
-            if i >= self.org_select_matches.len() {
-                self.org_select_index = Some(0);
-            }
-        }
+        self.form.set_select_matches(matches);
     }
 
     pub fn role_assign_pick_target(&mut self) -> bool {
-        if let Some(i) = self.org_select_index {
-            if let Some((_, id)) = self.org_select_matches.get(i) {
-                self.role_assign_target = Some(id.clone());
-                self.org_select_index = Some(0); // For role selection
-                self.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectRole);
-                return true;
-            }
+        if let Some((_, id)) = self.form.selected_match() {
+            self.role_assign_target = Some(id.clone());
+            self.form.select_index = Some(0); // For role selection
+            self.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectRole);
+            return true;
         }
         false
     }
@@ -1031,7 +921,7 @@ impl App {
     // -----------------------------------------------------------------------
 
     pub fn start_contractor_assign(&mut self) {
-        if let Some(idx) = self.projects_table_state.selected() {
+        if let Some(idx) = self.projects.table_state.selected() {
             let mut current_idx = 0;
             let mut selected_project = None;
             for project in &self.org_model.project_views {
@@ -1040,7 +930,7 @@ impl App {
                     break;
                 }
                 current_idx += 1;
-                if self.expanded_projects.contains(&project.id.to_string()) {
+                if self.projects.is_expanded(&project.id.to_string()) {
                     if let Some(assets) = self.org_model.assets_by_project.get(&project.id) {
                         current_idx += assets.len();
                     } else {
@@ -1054,7 +944,7 @@ impl App {
                 self.contractor_assign_company = None;
                 self.contractor_assign_role = None;
                 self.input.clear();
-                self.org_select_index = None;
+                self.form.select_index = None;
                 self.update_contractor_assign_matches();
                 self.input_mode =
                     InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany);
@@ -1065,7 +955,7 @@ impl App {
     pub fn update_contractor_assign_matches(&mut self) {
         let filter = self.input.to_lowercase();
 
-        self.org_select_matches = self
+        let matches = self
             .org_model
             .companies
             .iter()
@@ -1074,23 +964,15 @@ impl App {
             .filter(|(name, _): &(String, String)| name.to_lowercase().contains(&filter))
             .collect();
 
-        if self.org_select_matches.is_empty() {
-            self.org_select_index = None;
-        } else if let Some(i) = self.org_select_index {
-            if i >= self.org_select_matches.len() {
-                self.org_select_index = Some(0);
-            }
-        }
+        self.form.set_select_matches(matches);
     }
 
     pub fn contractor_assign_pick_company(&mut self) -> bool {
-        if let Some(i) = self.org_select_index {
-            if let Some((_, id)) = self.org_select_matches.get(i) {
-                self.contractor_assign_company = Some(id.clone());
-                self.org_select_index = Some(0);
-                self.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectRole);
-                return true;
-            }
+        if let Some((_, id)) = self.form.selected_match() {
+            self.contractor_assign_company = Some(id.clone());
+            self.form.select_index = Some(0);
+            self.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectRole);
+            return true;
         }
         false
     }
