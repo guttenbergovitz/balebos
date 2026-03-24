@@ -1,10 +1,12 @@
 pub mod app;
 pub mod model;
+pub mod state;
 pub mod tabs;
 pub mod ui;
 
 use crate::storage::JsonlStorage;
-use crate::tui::app::{App, InputMode, Tab, OrgPane, OrgAddType};
+use crate::tui::app::{App, InputMode, OrgAddType, Tab};
+use crate::tui::state::OrgPane;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -57,10 +59,14 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Normal => handle_normal_mode(app, key.code)?,
                     InputMode::Editing => handle_editing_mode(app, key.code),
                     InputMode::Filtering => handle_filtering_mode(app, key.code),
-                    InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => handle_org_adding_mode(app, key.code),
+                    InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => {
+                        handle_org_adding_mode(app, key.code)
+                    }
                     InputMode::Assigning => handle_assigning_mode(app, key.code),
                     InputMode::RoleAssigning(_) => handle_role_assigning_mode(app, key.code),
-                    InputMode::ContractorAssigning(_) => handle_contractor_assigning_mode(app, key.code),
+                    InputMode::ContractorAssigning(_) => {
+                        handle_contractor_assigning_mode(app, key.code)
+                    }
                     InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
                 }
             }
@@ -155,7 +161,7 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         }
         // Add entity based on current pane
         KeyCode::Char('a') => {
-            let add_type = match app.org_pane {
+            let add_type = match app.organization.pane {
                 OrgPane::Persons => OrgAddType::Person,
                 OrgPane::Companies => OrgAddType::Company,
                 OrgPane::Brands => OrgAddType::Brand,
@@ -164,8 +170,8 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         }
         // Edit entity
         KeyCode::Char('e') => {
-            if let Some(idx) = app.org_table_state.selected() {
-                let add_type = match app.org_pane {
+            if let Some(idx) = app.organization.table_state.selected() {
+                let add_type = match app.organization.pane {
                     OrgPane::Persons => OrgAddType::Person,
                     OrgPane::Companies => OrgAddType::Company,
                     OrgPane::Brands => OrgAddType::Brand,
@@ -177,17 +183,17 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         KeyCode::Down | KeyCode::Char('j') => {
             let count = app.org_item_count();
             if count > 0 {
-                let i = app.org_table_state.selected().unwrap_or(0);
+                let i = app.organization.table_state.selected().unwrap_or(0);
                 let next = if i >= count - 1 { 0 } else { i + 1 };
-                app.org_table_state.select(Some(next));
+                app.organization.table_state.select(Some(next));
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
             let count = app.org_item_count();
             if count > 0 {
-                let i = app.org_table_state.selected().unwrap_or(0);
+                let i = app.organization.table_state.selected().unwrap_or(0);
                 let prev = if i == 0 { count - 1 } else { i - 1 };
-                app.org_table_state.select(Some(prev));
+                app.organization.table_state.select(Some(prev));
             }
         }
         _ => {}
@@ -243,8 +249,8 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
 }
 
 fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
-    use crate::tui::app::ContractorAssignStep;
     use crate::org::ContractorRole;
+    use crate::tui::app::ContractorAssignStep;
 
     match &app.input_mode {
         InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany) => match code {
@@ -265,12 +271,24 @@ fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
             _ => {}
         },
         InputMode::ContractorAssigning(ContractorAssignStep::SelectRole) => match code {
-            KeyCode::Esc => app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany),
-            KeyCode::Char('d') => { let _ = app.contractor_assign_submit(ContractorRole::Development); },
-            KeyCode::Char('o') => { let _ = app.contractor_assign_submit(ContractorRole::DevOps); },
-            KeyCode::Char('g') => { let _ = app.contractor_assign_submit(ContractorRole::Design); },
-            KeyCode::Char('c') => { let _ = app.contractor_assign_submit(ContractorRole::Consultancy); },
-            KeyCode::Char('s') => { let _ = app.contractor_assign_submit(ContractorRole::Security); },
+            KeyCode::Esc => {
+                app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany)
+            }
+            KeyCode::Char('d') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Development);
+            }
+            KeyCode::Char('o') => {
+                let _ = app.contractor_assign_submit(ContractorRole::DevOps);
+            }
+            KeyCode::Char('g') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Design);
+            }
+            KeyCode::Char('c') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Consultancy);
+            }
+            KeyCode::Char('s') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Security);
+            }
             _ => {}
         },
         _ => {}
@@ -278,8 +296,8 @@ fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
 }
 
 fn handle_role_assigning_mode(app: &mut App, code: KeyCode) {
-    use crate::tui::app::RoleAssignStep;
     use crate::org::Role;
+    use crate::tui::app::RoleAssignStep;
 
     match &app.input_mode {
         InputMode::RoleAssigning(RoleAssignStep::SelectTarget) => match code {
@@ -301,9 +319,15 @@ fn handle_role_assigning_mode(app: &mut App, code: KeyCode) {
         },
         InputMode::RoleAssigning(RoleAssignStep::SelectRole) => match code {
             KeyCode::Esc => app.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectTarget),
-            KeyCode::Char('o') => { let _ = app.role_assign_submit(Role::Owner); },
-            KeyCode::Char('m') => { let _ = app.role_assign_submit(Role::Manager); },
-            KeyCode::Char('t') => { let _ = app.role_assign_submit(Role::Technician); },
+            KeyCode::Char('o') => {
+                let _ = app.role_assign_submit(Role::Owner);
+            }
+            KeyCode::Char('m') => {
+                let _ = app.role_assign_submit(Role::Manager);
+            }
+            KeyCode::Char('t') => {
+                let _ = app.role_assign_submit(Role::Technician);
+            }
             _ => {}
         },
         _ => {}

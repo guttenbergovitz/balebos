@@ -58,8 +58,12 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
             Cell::from(project.company_name.clone()),
             Cell::from(format!("{}", project.asset_count)),
             Cell::from(
-                project.importance.map(|i| format!("★{}", i)).unwrap_or_else(|| "-".to_string())
-            ).style(match project.importance {
+                project
+                    .importance
+                    .map(|i| format!("★{}", i))
+                    .unwrap_or_else(|| "-".to_string()),
+            )
+            .style(match project.importance {
                 Some(5) => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 Some(4) => Style::default().fg(Color::Yellow),
                 Some(3) => Style::default().fg(Color::Green),
@@ -72,7 +76,8 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
             if let Some(assets) = app.org_model.assets_by_project.get(&project.id) {
                 for asset in assets {
                     rows.push(Row::new(vec![
-                        Cell::from(format!("  └─ {}", asset)).style(Style::default().fg(Color::DarkGray)),
+                        Cell::from(format!("  └─ {}", asset))
+                            .style(Style::default().fg(Color::DarkGray)),
                         Cell::from(""),
                         Cell::from(""),
                         Cell::from(""),
@@ -81,7 +86,11 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                 }
             } else {
                 rows.push(Row::new(vec![
-                    Cell::from("  (no assets assigned)").style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+                    Cell::from("  (no assets assigned)").style(
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
                     Cell::from(""),
                     Cell::from(""),
                     Cell::from(""),
@@ -102,14 +111,10 @@ fn draw_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!(
-                " Projects ({}) ",
-                app.org_model.project_views.len()
-            )),
-    )
+    .block(Block::default().borders(Borders::ALL).title(format!(
+        " Projects ({}) ",
+        app.org_model.project_views.len()
+    )))
     .row_highlight_style(selected_style);
 
     f.render_stateful_widget(t, area, &mut app.projects_table_state);
@@ -151,7 +156,8 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
     let project = match selected_project {
         Some(p) => p,
         None => {
-            let details = Paragraph::new("Asset selected (Select project row for details)").block(block);
+            let details =
+                Paragraph::new("Asset selected (Select project row for details)").block(block);
             f.render_widget(details, area);
             return;
         }
@@ -177,7 +183,10 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
             Span::raw(project.company_name.clone()),
         ]),
         Line::from(vec![
-            Span::styled("Importance: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Importance: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             match project.importance {
                 Some(i) => Span::styled(
                     format!("{} {}", "★".repeat(i as usize), "☆".repeat(5 - i as usize)),
@@ -211,13 +220,25 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     if project.assigned_persons.is_empty() {
-        text.push(Line::from(Span::styled("  No persons assigned", Style::default().fg(Color::DarkGray))));
+        text.push(Line::from(Span::styled(
+            "  No persons assigned",
+            Style::default().fg(Color::DarkGray),
+        )));
     } else {
         for person in &project.assigned_persons {
             text.push(Line::from(vec![
-                Span::styled(format!("  • {} ", person.name), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(format!("({}) ", person.role), Style::default().fg(Color::Yellow)),
-                Span::styled(format!("<{}>", person.email), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  • {} ", person.name),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("({}) ", person.role),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::styled(
+                    format!("<{}>", person.email),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
     }
@@ -231,12 +252,21 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
     )));
 
     if project.assigned_companies.is_empty() {
-        text.push(Line::from(Span::styled("  No companies assigned", Style::default().fg(Color::DarkGray))));
+        text.push(Line::from(Span::styled(
+            "  No companies assigned",
+            Style::default().fg(Color::DarkGray),
+        )));
     } else {
         for company in &project.assigned_companies {
             text.push(Line::from(vec![
-                Span::styled(format!("  • {} ", company.name), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(format!("({})", company.role), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("  • {} ", company.name),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("({})", company.role),
+                    Style::default().fg(Color::Yellow),
+                ),
             ]));
         }
     }
@@ -250,12 +280,21 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
     )));
 
     if project.contractors.is_empty() {
-        text.push(Line::from(Span::styled("  No contractors assigned", Style::default().fg(Color::DarkGray))));
+        text.push(Line::from(Span::styled(
+            "  No contractors assigned",
+            Style::default().fg(Color::DarkGray),
+        )));
     } else {
         for contractor in &project.contractors {
             text.push(Line::from(vec![
-                Span::styled(format!("  • {} ", contractor.name), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(format!("({})", contractor.role), Style::default().fg(Color::Magenta)),
+                Span::styled(
+                    format!("  • {} ", contractor.name),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("({})", contractor.role),
+                    Style::default().fg(Color::Magenta),
+                ),
             ]));
         }
     }
@@ -273,16 +312,16 @@ fn draw_project_details(f: &mut Frame, app: &App, area: Rect) {
             text.push(Line::from(format!("  • {}", asset)));
         }
     } else {
-        text.push(Line::from(Span::styled("  No assets assigned", Style::default().fg(Color::DarkGray))));
+        text.push(Line::from(Span::styled(
+            "  No assets assigned",
+            Style::default().fg(Color::DarkGray),
+        )));
     }
 
     text.push(Line::from(""));
     text.push(Line::from(vec![
         Span::styled("ID: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            project.id.to_string(),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(project.id.to_string(), Style::default().fg(Color::DarkGray)),
     ]));
 
     // Show hint about expansion

@@ -10,7 +10,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{App, OrgPane};
+use crate::tui::app::App;
+use crate::tui::state::OrgPane;
 
 /// Draw the Organization tab content.
 pub fn draw_organization(f: &mut Frame, app: &mut App, area: Rect) {
@@ -40,7 +41,7 @@ fn draw_org_tabs(f: &mut Frame, app: &App, area: Rect) {
     let titles: Vec<Line> = OrgPane::all()
         .iter()
         .map(|pane| {
-            let style = if *pane == app.org_pane {
+            let style = if *pane == app.organization.pane {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD)
@@ -51,7 +52,7 @@ fn draw_org_tabs(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let selected = match app.org_pane {
+    let selected = match app.organization.pane {
         OrgPane::Persons => 0,
         OrgPane::Companies => 1,
         OrgPane::Brands => 2,
@@ -79,7 +80,7 @@ fn draw_org_list(f: &mut Frame, app: &mut App, area: Rect) {
         .add_modifier(Modifier::REVERSED)
         .fg(Color::Yellow);
 
-    match app.org_pane {
+    match app.organization.pane {
         OrgPane::Persons => draw_persons_table(f, app, area, selected_style),
         OrgPane::Companies => draw_companies_table(f, app, area, selected_style),
         OrgPane::Brands => draw_brands_table(f, app, area, selected_style),
@@ -114,7 +115,7 @@ fn draw_persons_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: 
     )
     .row_highlight_style(selected_style);
 
-    f.render_stateful_widget(t, area, &mut app.org_table_state);
+    f.render_stateful_widget(t, area, &mut app.organization.table_state);
 }
 
 fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: Style) {
@@ -126,30 +127,35 @@ fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style
         .height(1)
         .bottom_margin(1);
 
-    let rows = app.org_model.companies.iter().map(|company: &crate::org::CompanyRecord| {
-        let type_str = if company.is_external() {
-            "External"
-        } else {
-            "Internal"
-        };
-        let type_style = if company.is_external() {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::Green)
-        };
+    let rows = app
+        .org_model
+        .companies
+        .iter()
+        .map(|company: &crate::org::CompanyRecord| {
+            let type_str = if company.is_external() {
+                "External"
+            } else {
+                "Internal"
+            };
+            let type_style = if company.is_external() {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::Green)
+            };
 
-        let brand_name = company.brand
-            .and_then(|id| app.org_model.brands_by_id.get(&id))
-            .map(|b| b.name.clone())
-            .unwrap_or_else(|| "-".to_string());
+            let brand_name = company
+                .brand
+                .and_then(|id| app.org_model.brands_by_id.get(&id))
+                .map(|b| b.name.clone())
+                .unwrap_or_else(|| "-".to_string());
 
-        Row::new(vec![
-            Cell::from(company.name.clone()),
-            Cell::from(company.country.alpha2().to_string()),
-            Cell::from(brand_name),
-            Cell::from(type_str).style(type_style),
-        ])
-    });
+            Row::new(vec![
+                Cell::from(company.name.clone()),
+                Cell::from(company.country.alpha2().to_string()),
+                Cell::from(brand_name),
+                Cell::from(type_str).style(type_style),
+            ])
+        });
 
     let t = Table::new(
         rows,
@@ -168,7 +174,7 @@ fn draw_companies_table(f: &mut Frame, app: &mut App, area: Rect, selected_style
     )
     .row_highlight_style(selected_style);
 
-    f.render_stateful_widget(t, area, &mut app.org_table_state);
+    f.render_stateful_widget(t, area, &mut app.organization.table_state);
 }
 
 fn draw_brands_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: Style) {
@@ -199,13 +205,13 @@ fn draw_brands_table(f: &mut Frame, app: &mut App, area: Rect, selected_style: S
     )
     .row_highlight_style(selected_style);
 
-    f.render_stateful_widget(t, area, &mut app.org_table_state);
+    f.render_stateful_widget(t, area, &mut app.organization.table_state);
 }
 
 fn draw_org_details(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default().borders(Borders::ALL).title(" Details ");
 
-    let text = match app.org_pane {
+    let text = match app.organization.pane {
         OrgPane::Persons => build_person_details(app),
         OrgPane::Companies => build_company_details(app),
         OrgPane::Brands => build_brand_details(app),
@@ -218,7 +224,7 @@ fn draw_org_details(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn build_person_details(app: &App) -> Vec<Line<'static>> {
-    let idx = match app.org_table_state.selected() {
+    let idx = match app.organization.table_state.selected() {
         Some(i) => i,
         None => return vec![Line::from("Select a person to see details")],
     };
@@ -264,7 +270,7 @@ fn build_person_details(app: &App) -> Vec<Line<'static>> {
 }
 
 fn build_company_details(app: &App) -> Vec<Line<'static>> {
-    let idx = match app.org_table_state.selected() {
+    let idx = match app.organization.table_state.selected() {
         Some(i) => i,
         None => return vec![Line::from("Select a company to see details")],
     };
@@ -318,7 +324,7 @@ fn build_company_details(app: &App) -> Vec<Line<'static>> {
 }
 
 fn build_brand_details(app: &App) -> Vec<Line<'static>> {
-    let idx = match app.org_table_state.selected() {
+    let idx = match app.organization.table_state.selected() {
         Some(i) => i,
         None => return vec![Line::from("Select a brand to see details")],
     };

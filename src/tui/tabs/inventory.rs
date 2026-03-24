@@ -11,8 +11,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{App, VisibleItem};
+use crate::tui::app::App;
 use crate::tui::model::AssetState;
+use crate::tui::state::VisibleItem;
 
 /// Draw the Inventory tab content (table + details).
 pub fn draw_inventory(f: &mut Frame, app: &mut App, area: Rect) {
@@ -40,110 +41,117 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         .height(1)
         .bottom_margin(1);
 
-    let rows: Vec<_> = app.visible_items.iter().filter_map(|item| {
-        let (asset, is_subdomain, has_children, is_expanded) = match item {
-            VisibleItem::Root(name) => {
-                let group = app
-                    .model
-                    .groups
-                    .iter()
-                    .find(|g| g.root.name == *name)?;
-                (
-                    &group.root,
-                    false,
-                    !group.subdomains.is_empty(),
-                    app.expanded_roots.contains(name),
-                )
-            }
-            VisibleItem::Subdomain(root_name, sub_name) => {
-                let group = app
-                    .model
-                    .groups
-                    .iter()
-                    .find(|g| g.root.name == *root_name)?;
-                let asset = group
-                    .subdomains
-                    .iter()
-                    .find(|s| s.name == *sub_name)?;
-                (asset, true, false, false)
-            }
-        };
+    let rows: Vec<_> = app
+        .inventory
+        .visible_items
+        .iter()
+        .filter_map(|item| {
+            let (asset, is_subdomain, has_children, is_expanded) = match item {
+                VisibleItem::Root(name) => {
+                    let group = app.model.groups.iter().find(|g| g.root.name == *name)?;
+                    (
+                        &group.root,
+                        false,
+                        !group.subdomains.is_empty(),
+                        app.inventory.expanded_roots.contains(name),
+                    )
+                }
+                VisibleItem::Subdomain(root_name, sub_name) => {
+                    let group = app
+                        .model
+                        .groups
+                        .iter()
+                        .find(|g| g.root.name == *root_name)?;
+                    let asset = group.subdomains.iter().find(|s| s.name == *sub_name)?;
+                    (asset, true, false, false)
+                }
+            };
 
-        let prefix = if is_subdomain {
-            "  └─ "
-        } else if has_children {
-            if is_expanded {
-                "[-] "
+            let prefix = if is_subdomain {
+                "  └─ "
+            } else if has_children {
+                if is_expanded {
+                    "[-] "
+                } else {
+                    "[+] "
+                }
             } else {
-                "[+] "
-            }
-        } else {
-            "    "
-        };
+                "    "
+            };
 
-        let name_span = if is_subdomain {
-            Span::styled(asset.name.clone(), Style::default().fg(Color::White))
-        } else {
-            Span::styled(
-                asset.name.clone(),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-        };
+            let name_span = if is_subdomain {
+                Span::styled(asset.name.clone(), Style::default().fg(Color::White))
+            } else {
+                Span::styled(
+                    asset.name.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
+            };
 
-        let mut status_style = Style::default();
-        let mut status_text = "-".to_string();
+            let mut status_style = Style::default();
+            let mut status_text = "-".to_string();
 
-        if let Some(http) = &asset.latest_http {
-            if let Some(code) = http.status {
-                if code == 200 {
-                    if let Some(ext_target) = asset.external_redirect() {
-                        status_text = format!("EXT -> {}", ext_target);
+            if let Some(http) = &asset.latest_http {
+                if let Some(code) = http.status {
+                    if code == 200 {
+                        if let Some(ext_target) = asset.external_redirect() {
+                            status_text = format!("EXT -> {}", ext_target);
+                            status_style = status_style.fg(Color::Yellow);
+                        } else {
+                            status_text = "200 OK".to_string();
+                            status_style = status_style.fg(Color::Green);
+                        }
+                    } else {
+                        status_text = code.to_string();
                         status_style = status_style.fg(Color::Yellow);
-                    } else {
-                        status_text = "200 OK".to_string();
-                        status_style = status_style.fg(Color::Green);
                     }
-                } else {
-                    status_text = code.to_string();
-                    status_style = status_style.fg(Color::Yellow);
-                }
-            } else if let Some(kind) = &http.error_kind {
-                status_text = format!("{:?}", kind);
-                status_style = status_style.fg(Color::Red);
-            }
-        }
-
-        let tech = match &asset.latest_http {
-            Some(http) => {
-                if !http.tech.is_empty() {
-                    let t = http.tech.join(", ");
-                    if t.len() > 30 {
-                        format!("{}...", &t[..27])
-                    } else {
-                        t
-                    }
-                } else {
-                    "-".to_string()
+                } else if let Some(kind) = &http.error_kind {
+                    status_text = format!("{:?}", kind);
+                    status_style = status_style.fg(Color::Red);
                 }
             }
-            None => "-".to_string(),
-        };
 
-        let is_marked = app.marked_assets.contains(&asset.name);
-        let mark_prefix = if is_marked { "[x] " } else { "[ ] " };
+            let tech = match &asset.latest_http {
+                Some(http) => {
+                    if !http.tech.is_empty() {
+                        let t = http.tech.join(", ");
+                        if t.len() > 30 {
+                            format!("{}...", &t[..27])
+                        } else {
+                            t
+                        }
+                    } else {
+                        "-".to_string()
+                    }
+                }
+                None => "-".to_string(),
+            };
 
-        Some(Row::new(vec![
-            Cell::from(Line::from(vec![
-                Span::raw(prefix),
-                Span::styled(mark_prefix, if is_marked { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) }),
-                name_span
-            ])),
-            Cell::from(status_text).style(status_style),
-            Cell::from(tech),
-        ]))
-    }).collect();
+            let is_marked = app.inventory.marked_assets.contains(&asset.name);
+            let mark_prefix = if is_marked { "[x] " } else { "[ ] " };
+
+            Some(Row::new(vec![
+                Cell::from(Line::from(vec![
+                    Span::raw(prefix),
+                    Span::styled(
+                        mark_prefix,
+                        if is_marked {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::DarkGray)
+                        },
+                    ),
+                    name_span,
+                ])),
+                Cell::from(status_text).style(status_style),
+                Cell::from(tech),
+            ]))
+        })
+        .collect();
 
     let t = Table::new(
         rows,
@@ -161,7 +169,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     )
     .row_highlight_style(selected_style);
 
-    f.render_stateful_widget(t, area, &mut app.table_state);
+    f.render_stateful_widget(t, area, &mut app.inventory.table_state);
 }
 
 fn draw_details(f: &mut Frame, app: &App, area: Rect) {
@@ -311,9 +319,7 @@ pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
             let now = Utc::now();
             let days_left = tls.not_after.signed_duration_since(now).num_days();
             let expiry_style = if days_left < 0 {
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
             } else if days_left < 14 {
                 Style::default().fg(Color::Red)
             } else if days_left < 30 {
@@ -351,7 +357,10 @@ pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
             text.push(Line::from(format!("  Registrar:  {}", registrar)));
         }
         if let Some(registered) = reg.registered_at {
-            text.push(Line::from(format!("  Registered: {}", registered.format("%Y-%m-%d"))));
+            text.push(Line::from(format!(
+                "  Registered: {}",
+                registered.format("%Y-%m-%d")
+            )));
         }
         if let Some(expires) = reg.expires_at {
             let now = Utc::now();
@@ -374,19 +383,40 @@ pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
             ]));
         }
         if !reg.status.is_empty() {
-            text.push(Line::from(format!("  Status:     {}", reg.status.join(", "))));
+            text.push(Line::from(format!(
+                "  Status:     {}",
+                reg.status.join(", ")
+            )));
         }
 
         // Contacts
         if let Some(c) = &reg.registrant {
-            text.push(Line::from(Span::styled("  Registrant:", Style::default().add_modifier(Modifier::ITALIC))));
-            text.push(Line::from(format!("    Name:     {}", c.name.as_deref().unwrap_or("-"))));
-            text.push(Line::from(format!("    Email:    {}", c.email.as_deref().unwrap_or("-"))));
+            text.push(Line::from(Span::styled(
+                "  Registrant:",
+                Style::default().add_modifier(Modifier::ITALIC),
+            )));
+            text.push(Line::from(format!(
+                "    Name:     {}",
+                c.name.as_deref().unwrap_or("-")
+            )));
+            text.push(Line::from(format!(
+                "    Email:    {}",
+                c.email.as_deref().unwrap_or("-")
+            )));
         }
         if let Some(c) = &reg.admin {
-            text.push(Line::from(Span::styled("  Admin:", Style::default().add_modifier(Modifier::ITALIC))));
-            text.push(Line::from(format!("    Name:     {}", c.name.as_deref().unwrap_or("-"))));
-            text.push(Line::from(format!("    Email:    {}", c.email.as_deref().unwrap_or("-"))));
+            text.push(Line::from(Span::styled(
+                "  Admin:",
+                Style::default().add_modifier(Modifier::ITALIC),
+            )));
+            text.push(Line::from(format!(
+                "    Name:     {}",
+                c.name.as_deref().unwrap_or("-")
+            )));
+            text.push(Line::from(format!(
+                "    Email:    {}",
+                c.email.as_deref().unwrap_or("-")
+            )));
         }
 
         text.push(Line::from(format!("  Source:     {}", reg.source)));
