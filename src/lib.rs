@@ -1,0 +1,11 @@
+//! Balebos library - Re-exports for testing and integration
+
+pub mod app;
+pub mod cli;
+pub mod domain;
+pub mod error;
+pub mod ignore;
+pub mod inventory;
+pub mod org;
+pub mod storage;
+pub mod tui;
