@@ -1,10 +1,10 @@
 use crate::app::probe_http::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
-use crate::inventory::InventoryItem;
+use crate::error::Result;
+use crate::inventory::{InventoryItem, ItemType};
 use crate::storage::{read_records, JsonlStorage};
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
-use std::io;
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +43,7 @@ fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
     let mut domain_latest: HashMap<&String, DateTime<Utc>> = HashMap::new();
 
     // Find the latest timestamp for each domain
-    for item in items.iter().filter(|item| item.item_type == "domain") {
+    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
         let entry = domain_latest
             .entry(&item.name)
             .or_insert(item.discovered_at);
@@ -75,7 +75,7 @@ fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
     // Count occurrences of each domain
     let mut domain_counts: HashMap<&String, u32> = HashMap::new();
 
-    for item in items.iter().filter(|item| item.item_type == "domain") {
+    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
         *domain_counts.entry(&item.name).or_insert(0) += 1;
     }
 
@@ -119,7 +119,7 @@ fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
 fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
     let mut issues = Vec::new();
 
-    for item in items.iter().filter(|item| item.item_type == "domain") {
+    for item in items.iter().filter(|item| item.item_type == ItemType::Domain) {
         // Check if domain is properly normalized
         let normalized = normalize_domain(&item.name);
         if normalized != item.name {
@@ -151,7 +151,7 @@ fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
 
     let mut issues = Vec::new();
 
-    for item in items.iter().filter(|item| item.item_type == "subdomain") {
+    for item in items.iter().filter(|item| item.item_type == ItemType::Subdomain) {
         // Check if subdomain starts with any allowed pattern
         let subdomain_parts: Vec<&str> = item.name.split('.').collect();
 
@@ -287,7 +287,7 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
     // Build set of domains in inventory
     let domains: HashSet<String> = items
         .iter()
-        .filter(|item| item.item_type == "domain")
+        .filter(|item| item.item_type == ItemType::Domain)
         .map(|item| item.name.clone())
         .collect();
 
@@ -321,7 +321,7 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
 pub fn check_inventory(
     storage: &JsonlStorage,
     ignore_patterns: &[String],
-) -> Result<Vec<Issue>, io::Error> {
+) -> Result<Vec<Issue>> {
     let records = read_records(storage)?;
     let items = records.items;
     let http_observations = records.http_observations;
@@ -380,9 +380,9 @@ mod tests {
     use super::*;
     use chrono::Duration;
 
-    fn make_item(name: &str, item_type: &str, source: &str, age_days: i64) -> InventoryItem {
+    fn make_item(name: &str, item_type: ItemType, source: &str, age_days: i64) -> InventoryItem {
         InventoryItem {
-            item_type: item_type.to_string(),
+            item_type,
             id: format!("test-{}", name),
             name: name.to_string(),
             discovered_at: Utc::now() - Duration::days(age_days),
@@ -392,7 +392,7 @@ mod tests {
     }
 
     fn make_domain(name: &str, age_days: i64) -> InventoryItem {
-        make_item(name, "domain", "cli", age_days)
+        make_item(name, ItemType::Domain, "cli", age_days)
     }
 
     #[test]
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_unknown_source_detected() {
-        let items = vec![make_item("example.com", "domain", "mystery", 1)];
+        let items = vec![make_item("example.com", ItemType::Domain, "mystery", 1)];
         let issues = check_unknown_sources(&items);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].severity, Severity::Critical);
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_invalid_data_uppercase() {
-        let items = vec![make_item("Example.COM", "domain", "cli", 1)];
+        let items = vec![make_item("Example.COM", ItemType::Domain, "cli", 1)];
         let issues = check_invalid_data(&items);
         assert!(issues.iter().any(|i| i.message.contains("uppercase")));
     }
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_suspicious_subdomain() {
-        let items = vec![make_item("xyzrandom.example.com", "subdomain", "subfinder", 1)];
+        let items = vec![make_item("xyzrandom.example.com", ItemType::Subdomain, "subfinder", 1)];
         let issues = check_subdomain_patterns(&items);
         assert_eq!(issues.len(), 1);
         assert!(issues[0].message.contains("Suspicious"));
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_allowed_subdomain_pattern() {
-        let items = vec![make_item("api.example.com", "subdomain", "subfinder", 1)];
+        let items = vec![make_item("api.example.com", ItemType::Subdomain, "subfinder", 1)];
         let issues = check_subdomain_patterns(&items);
         assert!(issues.is_empty());
     }

@@ -6,7 +6,6 @@ use crate::org::{
 };
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{BTreeMap, HashMap};
-use std::io;
 
 /// Person with their role in a project
 #[derive(Debug, Clone)]
@@ -213,7 +212,7 @@ pub struct OrgModel {
 }
 
 impl OrgModel {
-    pub fn load(storage: &JsonlStorage) -> io::Result<Self> {
+    pub fn load(storage: &JsonlStorage) -> crate::error::Result<Self> {
         let records = read_records(storage)?;
 
         let persons_by_id: HashMap<_, _> = records
@@ -339,7 +338,7 @@ impl OrgModel {
     }
 }
 
-pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
+pub fn load_tui_model(storage: &JsonlStorage) -> crate::error::Result<TuiModel> {
     let records = read_records(storage)?;
 
     // Build lookup maps for org data
@@ -568,6 +567,7 @@ fn update_stats(stats: &mut GlobalStats, asset: &AssetState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::ItemType;
 
     #[test]
     fn test_same_root_subdomains() {
@@ -601,7 +601,7 @@ mod tests {
             name: "shop.josera.de".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "shop.josera.de".to_string(),
@@ -633,7 +633,7 @@ mod tests {
             name: "vwo.josera.de".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "vwo.josera.de".to_string(),
@@ -668,7 +668,7 @@ mod tests {
             name: "example.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "example.com".to_string(),
@@ -704,7 +704,7 @@ mod tests {
             name: "josera-estonia.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "josera-estonia.com".to_string(),
@@ -745,7 +745,7 @@ mod tests {
             name: "josera-estonia.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "josera-estonia.com".to_string(),

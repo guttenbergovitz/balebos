@@ -1,6 +1,7 @@
+use crate::error::Result;
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{HashMap, HashSet};
-use std::io;
+
 
 pub struct DomainStats {
     pub total_entries: usize,
@@ -10,7 +11,7 @@ pub struct DomainStats {
     pub top_domains: Vec<(String, usize)>,
 }
 
-pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats, io::Error> {
+pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats> {
     let items = read_records(storage)?.items;
 
     // Total count of domain entries (items already filtered to domain/subdomain)

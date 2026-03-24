@@ -1,7 +1,9 @@
+use crate::error::Result;
+use crate::inventory::ItemType;
 use crate::storage::{read_records, JsonlStorage};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
-use std::io;
+
 use std::time::{Duration, SystemTime};
 
 pub struct InventoryDiff {
@@ -36,7 +38,7 @@ fn get_time_threshold(days_ago: Option<&str>) -> SystemTime {
 pub fn get_inventory_diff(
     storage: &JsonlStorage,
     days_ago: Option<&str>,
-) -> Result<InventoryDiff, io::Error> {
+) -> Result<InventoryDiff> {
     let items = read_records(storage)?.items;
 
     // Threshold time for recent vs past
@@ -49,7 +51,7 @@ pub fn get_inventory_diff(
 
     for item in &items {
         // Skip non-domain items
-        if item.item_type != "domain" {
+        if item.item_type != ItemType::Domain {
             continue;
         }
 
@@ -81,7 +83,7 @@ pub fn get_inventory_diff(
     let mut past_subdomains = HashSet::new();
 
     for item in &items {
-        if item.item_type != "subdomain" {
+        if item.item_type != ItemType::Subdomain {
             continue;
         }
 

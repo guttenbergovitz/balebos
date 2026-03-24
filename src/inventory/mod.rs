@@ -1,3 +1,3 @@
 pub mod item;
 
-pub use self::item::InventoryItem;
+pub use self::item::{InventoryItem, ItemType};

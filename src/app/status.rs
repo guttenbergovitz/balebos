@@ -1,3 +1,4 @@
+use crate::error::Result;
 /// Domain status report module for displaying HTTP probe results.
 ///
 /// This module provides functionality to generate health reports of all assets in the
@@ -35,7 +36,7 @@
 /// ```
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
-use std::io;
+
 
 #[derive(Clone, Debug)]
 struct HttpCheck {
@@ -59,7 +60,7 @@ struct StatusReport {
 }
 
 /// Collect and categorize HTTP check results from storage
-fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Error> {
+fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport> {
     let observations = read_records(storage)?.http_observations;
 
     // Collect latest HTTP check for each target (dedup by most recent)
@@ -119,7 +120,7 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport, io::Err
 
 /// Display status of all domains/subdomains with their HTTP probe results
 /// Shows live/dead status with HTTP status codes and error information
-pub fn display_domain_status(storage: &JsonlStorage) -> Result<(), io::Error> {
+pub fn display_domain_status(storage: &JsonlStorage) -> Result<()> {
     let report = collect_status_report(storage)?;
 
     if report.total == 0 {
@@ -235,7 +236,7 @@ pub fn display_domain_status(storage: &JsonlStorage) -> Result<(), io::Error> {
 }
 
 /// Export status report to CSV format
-pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<(), io::Error> {
+pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
 
     let mut csv_lines =
@@ -284,7 +285,7 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
 }
 
 /// Export status report to Markdown format
-pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Result<(), io::Error> {
+pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
     let total = report.total;
 
@@ -399,7 +400,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
 }
 
 /// Export status report to HTML format
-pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<(), io::Error> {
+pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
     let total = report.total;
 

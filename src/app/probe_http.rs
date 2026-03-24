@@ -1,4 +1,5 @@
 use crate::error::{ProbeError, Result};
+use crate::inventory::ItemType;
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ pub struct TlsObservation {
 // HTTP observation - always describes what happened (success or failure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpObservation {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: String,
     pub asset_type: String,
     pub target: String,
@@ -257,7 +258,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
         let error_kind = categorize_httpx_error(&error_msg);
 
         HttpObservation {
-            item_type: "http_check".to_string(),
+            item_type: ItemType::HttpCheck,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: original_target.to_string(),
@@ -287,7 +288,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
             .or(parsed.url);
 
         HttpObservation {
-            item_type: "http_check".to_string(),
+            item_type: ItemType::HttpCheck,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: original_target.to_string(),

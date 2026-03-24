@@ -1,8 +1,9 @@
 //! TUI application state and logic.
 
 use std::collections::HashSet;
-use std::io;
 use std::sync::{Arc, Mutex};
+
+use crate::error::BalebosError;
 use ratatui::widgets::TableState;
 
 use crate::org::BrandId;
@@ -211,7 +212,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(storage: JsonlStorage) -> Result<Self, io::Error> {
+    pub fn new(storage: JsonlStorage) -> Result<Self, BalebosError> {
         let model = load_tui_model(&storage)?;
         let org_model = OrgModel::load(&storage)?;
         let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");
@@ -278,7 +279,7 @@ impl App {
         Ok(app)
     }
 
-    pub fn refresh(&mut self) -> io::Result<()> {
+    pub fn refresh(&mut self) -> Result<(), BalebosError> {
         self.model = load_tui_model(&self.storage)?;
         self.org_model = OrgModel::load(&self.storage)?;
         self.update_visible_items();
@@ -595,7 +596,7 @@ impl App {
 
     /// Submit the org form and create the entity.
     /// Returns Ok(true) if successful, Ok(false) if validation failed.
-    pub fn submit_org_form(&mut self) -> io::Result<bool> {
+    pub fn submit_org_form(&mut self) -> Result<bool, BalebosError> {
         // If we have a selection, pick it instead of submitting the form
         if let Some(i) = self.org_select_index {
             if let Some((_name, id)) = self.org_select_matches.get(i) {
@@ -664,7 +665,7 @@ impl App {
         Ok(success)
     }
 
-    fn submit_person_form(&mut self) -> io::Result<bool> {
+    fn submit_person_form(&mut self) -> Result<bool, BalebosError> {
         let first_name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
         let last_name = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
         let email = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
@@ -679,7 +680,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_person_edit(&mut self, id: crate::org::PersonId) -> io::Result<bool> {
+    fn submit_person_edit(&mut self, id: crate::org::PersonId) -> Result<bool, BalebosError> {
         let first_name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
         let last_name = self.form_fields.get(1).map(|s| s.trim()).unwrap_or("");
         let email = self.form_fields.get(2).map(|s| s.trim()).unwrap_or("");
@@ -694,7 +695,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_company_form(&mut self) -> io::Result<bool> {
+    fn submit_company_form(&mut self) -> Result<bool, BalebosError> {
         use crate::org::{BrandId, CountryCode};
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
@@ -724,7 +725,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_company_edit(&mut self, id: crate::org::CompanyId) -> io::Result<bool> {
+    fn submit_company_edit(&mut self, id: crate::org::CompanyId) -> Result<bool, BalebosError> {
         use crate::org::{BrandId, CountryCode};
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
@@ -753,7 +754,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_brand_form(&mut self) -> io::Result<bool> {
+    fn submit_brand_form(&mut self) -> Result<bool, BalebosError> {
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
 
         // Validation
@@ -765,7 +766,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_brand_edit(&mut self, id: crate::org::BrandId) -> io::Result<bool> {
+    fn submit_brand_edit(&mut self, id: crate::org::BrandId) -> Result<bool, BalebosError> {
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
 
         if name.is_empty() {
@@ -787,7 +788,7 @@ impl App {
         }
     }
 
-    fn submit_project_form(&mut self) -> io::Result<bool> {
+    fn submit_project_form(&mut self) -> Result<bool, BalebosError> {
         use crate::org::CompanyId;
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
@@ -807,7 +808,7 @@ impl App {
         Ok(true)
     }
 
-    fn submit_project_edit(&mut self, id: crate::org::ProjectId) -> io::Result<bool> {
+    fn submit_project_edit(&mut self, id: crate::org::ProjectId) -> Result<bool, BalebosError> {
         use crate::org::CompanyId;
 
         let name = self.form_fields.get(0).map(|s| s.trim()).unwrap_or("");
@@ -968,7 +969,7 @@ impl App {
         }
     }
 
-    pub fn submit_asset_assignment(&mut self) -> io::Result<bool> {
+    pub fn submit_asset_assignment(&mut self) -> Result<bool, BalebosError> {
         // Handle selection from list
         let project_id = if let Some(i) = self.org_select_index {
             if let Some((_display, id_str)) = self.org_select_matches.get(i) {
@@ -1112,14 +1113,14 @@ impl App {
         false
     }
 
-    pub fn role_assign_submit(&mut self, role: crate::org::Role) -> io::Result<()> {
+    pub fn role_assign_submit(&mut self, role: crate::org::Role) -> Result<(), BalebosError> {
         let project_id = self.role_assign_project
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No project selected"))?;
+            .ok_or(BalebosError::MissingField("project".to_string()))?;
         let target_id_str = self.role_assign_target.as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No target selected"))?;
+            .ok_or(BalebosError::MissingField("target".to_string()))?;
 
         let person_id = target_id_str.parse::<crate::org::PersonId>()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid person ID"))?;
+            .map_err(|_| BalebosError::InvalidId("person ID".to_string()))?;
         crate::app::org::assign_person_to_project(&self.storage, person_id, project_id, role)?;
 
         self.input_mode = InputMode::Normal;
@@ -1193,14 +1194,14 @@ impl App {
         false
     }
 
-    pub fn contractor_assign_submit(&mut self, role: crate::org::ContractorRole) -> io::Result<()> {
+    pub fn contractor_assign_submit(&mut self, role: crate::org::ContractorRole) -> Result<(), BalebosError> {
         let project_id = self.contractor_assign_project
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No project selected"))?;
+            .ok_or(BalebosError::MissingField("project".to_string()))?;
         let company_id_str = self.contractor_assign_company.as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No company selected"))?;
+            .ok_or(BalebosError::MissingField("company".to_string()))?;
 
         let company_id = company_id_str.parse::<crate::org::CompanyId>()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid company ID"))?;
+            .map_err(|_| BalebosError::InvalidId("company ID".to_string()))?;
         crate::app::org::assign_contractor_to_project(&self.storage, company_id, project_id, role)?;
 
         self.input_mode = InputMode::Normal;

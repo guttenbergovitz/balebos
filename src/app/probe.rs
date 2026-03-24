@@ -1,5 +1,5 @@
 use crate::error::{ProbeError, Result};
-use crate::inventory::InventoryItem;
+use crate::inventory::{InventoryItem, ItemType};
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use std::fs;
@@ -54,7 +54,7 @@ pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<Stri
     // Add each subdomain to inventory
     for subdomain in &subdomains {
         let item = InventoryItem {
-            item_type: "subdomain".to_string(),
+            item_type: ItemType::Subdomain,
             id: format!("sub:{}", subdomain), // Simple ID format
             name: subdomain.clone(),
             discovered_at: now,
@@ -122,7 +122,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec
             }
 
             let item = InventoryItem {
-                item_type: "subdomain".to_string(),
+                item_type: ItemType::Subdomain,
                 id: format!("sub:{}", trimmed),
                 name: trimmed.clone(),
                 discovered_at: now,

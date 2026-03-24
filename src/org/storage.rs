@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use isocountry::CountryCode;
 use serde::{Deserialize, Serialize};
 
+use crate::inventory::ItemType;
+
 use super::{BrandId, CompanyId, ContractorRole, DomainContact, PersonId, ProjectId, Role};
 
 // ---------------------------------------------------------------------------
@@ -14,7 +16,7 @@ use super::{BrandId, CompanyId, ContractorRole, DomainContact, PersonId, Project
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: PersonId,
     pub first_name: String,
     pub last_name: String,
@@ -32,7 +34,7 @@ impl PersonRecord {
         phone: Option<String>,
     ) -> Self {
         Self {
-            item_type: "org_person".to_string(),
+            item_type: ItemType::OrgPerson,
             id,
             first_name,
             last_name,
@@ -49,7 +51,7 @@ impl PersonRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: CompanyId,
     pub name: String,
     pub country: CountryCode,
@@ -61,7 +63,7 @@ pub struct CompanyRecord {
 impl CompanyRecord {
     pub fn new(id: CompanyId, name: String, country: CountryCode, brand: Option<BrandId>) -> Self {
         Self {
-            item_type: "org_company".to_string(),
+            item_type: ItemType::OrgCompany,
             id,
             name,
             country,
@@ -82,7 +84,7 @@ impl CompanyRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrandRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: BrandId,
     pub name: String,
     pub created_at: DateTime<Utc>,
@@ -91,7 +93,7 @@ pub struct BrandRecord {
 impl BrandRecord {
     pub fn new(id: BrandId, name: String) -> Self {
         Self {
-            item_type: "org_brand".to_string(),
+            item_type: ItemType::OrgBrand,
             id,
             name,
             created_at: Utc::now(),
@@ -107,7 +109,7 @@ impl BrandRecord {
 /// Brand is derived from the company's brand.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: ProjectId,
     pub name: String,
     pub company: CompanyId,
@@ -121,7 +123,7 @@ pub struct ProjectRecord {
 impl ProjectRecord {
     pub fn new(id: ProjectId, name: String, company: CompanyId) -> Self {
         Self {
-            item_type: "org_project".to_string(),
+            item_type: ItemType::OrgProject,
             id,
             name,
             company,
@@ -144,7 +146,7 @@ impl ProjectRecord {
 /// Assigns a host (domain/subdomain) to a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetAssignmentRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub host: String,
     pub project: ProjectId,
     pub created_at: DateTime<Utc>,
@@ -153,7 +155,7 @@ pub struct AssetAssignmentRecord {
 impl AssetAssignmentRecord {
     pub fn new(host: String, project: ProjectId) -> Self {
         Self {
-            item_type: "org_asset_assignment".to_string(),
+            item_type: ItemType::OrgAssetAssignment,
             host,
             project,
             created_at: Utc::now(),
@@ -168,7 +170,7 @@ impl AssetAssignmentRecord {
 /// Sets the importance rating for a host (domain/subdomain).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetImportanceRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub host: String,
     pub importance: u8,
     pub created_at: DateTime<Utc>,
@@ -177,7 +179,7 @@ pub struct AssetImportanceRecord {
 impl AssetImportanceRecord {
     pub fn new(host: String, importance: u8) -> Self {
         Self {
-            item_type: "org_asset_importance".to_string(),
+            item_type: ItemType::OrgAssetImportance,
             host,
             importance,
             created_at: Utc::now(),
@@ -192,7 +194,7 @@ impl AssetImportanceRecord {
 /// Assigns a person or company to a project with a specific role.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleAssignmentRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub project: ProjectId,
     pub role: Role,
     pub person: Option<PersonId>,
@@ -203,7 +205,7 @@ pub struct RoleAssignmentRecord {
 impl RoleAssignmentRecord {
     pub fn new_person(project: ProjectId, person: PersonId, role: Role) -> Self {
         Self {
-            item_type: "org_role_assignment".to_string(),
+            item_type: ItemType::OrgRoleAssignment,
             project,
             role,
             person: Some(person),
@@ -214,7 +216,7 @@ impl RoleAssignmentRecord {
 
     pub fn new_company(project: ProjectId, company: CompanyId, role: Role) -> Self {
         Self {
-            item_type: "org_role_assignment".to_string(),
+            item_type: ItemType::OrgRoleAssignment,
             project,
             role,
             person: None,
@@ -230,7 +232,7 @@ impl RoleAssignmentRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DomainRegistrationRecord {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub domain: String,
     pub registrar: Option<String>,
     pub registered_at: Option<DateTime<Utc>>,
@@ -247,7 +249,7 @@ pub struct DomainRegistrationRecord {
 impl DomainRegistrationRecord {
     pub fn new(domain: String, source: String) -> Self {
         Self {
-            item_type: "org_domain_registration".to_string(),
+            item_type: ItemType::OrgDomainRegistration,
             domain,
             registrar: None,
             registered_at: None,
@@ -270,7 +272,7 @@ impl DomainRegistrationRecord {
 /// Assigns an external company to a project with a contractor role.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalContractorAssignment {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub project: ProjectId,
     pub company: CompanyId,
     pub role: ContractorRole,
@@ -280,7 +282,7 @@ pub struct ExternalContractorAssignment {
 impl ExternalContractorAssignment {
     pub fn new(project: ProjectId, company: CompanyId, role: ContractorRole) -> Self {
         Self {
-            item_type: "org_contractor_assignment".to_string(),
+            item_type: ItemType::OrgContractorAssignment,
             project,
             company,
             role,

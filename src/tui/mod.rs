@@ -14,7 +14,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
 
-pub fn run(storage: JsonlStorage) -> Result<(), io::Error> {
+pub fn run(storage: JsonlStorage) -> crate::error::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -45,7 +45,7 @@ pub fn run(storage: JsonlStorage) -> Result<(), io::Error> {
 fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> io::Result<()> {
+) -> crate::error::Result<()> {
     let mut last_scan_state = false;
 
     loop {
@@ -84,7 +84,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
 // Input mode handlers
 // ---------------------------------------------------------------------------
 
-fn handle_normal_mode(app: &mut App, code: KeyCode) -> io::Result<()> {
+fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
     match code {
         // Global keys
         KeyCode::Char('q') => app.should_quit = true,

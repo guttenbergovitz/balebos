@@ -1,4 +1,5 @@
 use crate::error::{ProbeError, Result};
+use crate::inventory::ItemType;
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DnsObservation {
-    pub item_type: String,
+    pub item_type: ItemType,
     pub id: String,
     pub asset_type: String,
     pub target: String,
@@ -135,7 +136,7 @@ pub fn probe_dns_batch(
                         .collect();
 
                     let obs = DnsObservation {
-                        item_type: "dns_record".to_string(),
+                        item_type: ItemType::DnsRecord,
                         id: Uuid::new_v4().to_string(),
                         asset_type: "domain".to_string(),
                         target: parsed.host,
@@ -174,7 +175,7 @@ pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation>
         Ok(obs)
     } else {
         let obs = DnsObservation {
-            item_type: "dns_record".to_string(),
+            item_type: ItemType::DnsRecord,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: target.to_string(),

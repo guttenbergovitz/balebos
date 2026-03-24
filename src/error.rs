@@ -15,9 +15,6 @@ pub enum BalebosError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("Mutex poisoned")]
-    MutexPoisoned,
-
     #[error("Missing required field: {0}")]
     MissingField(String),
 
@@ -53,9 +50,6 @@ pub enum StorageError {
 
     #[error("Serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
-
-    #[error("Failed to read from storage: {0}")]
-    ReadFailed(String),
 }
 
 pub type Result<T> = std::result::Result<T, BalebosError>;

@@ -3,10 +3,11 @@ use crate::app::probe_dns;
 use crate::app::probe_http;
 use crate::app::probe_rdap;
 use crate::domain::normalize_domain;
+use crate::error::Result;
 use crate::storage::JsonlStorage;
 use rayon::prelude::*;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::Instant;
 
@@ -23,14 +24,14 @@ pub struct BatchStats {
 }
 
 /// Load domains from a text file (one domain per line)
-fn load_domains_from_file(filepath: &str) -> Result<Vec<String>, io::Error> {
+fn load_domains_from_file(filepath: &str) -> Result<Vec<String>> {
     let path = Path::new(filepath);
 
     if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
+        return Err(crate::error::BalebosError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
             format!("File not found: {}", filepath),
-        ));
+        )));
     }
 
     let file = File::open(filepath)?;
@@ -62,7 +63,7 @@ pub fn batch_process(
     filepath: &str,
     storage: &JsonlStorage,
     ignore_patterns: &[String],
-) -> Result<BatchStats, io::Error> {
+) -> Result<BatchStats> {
     let start = Instant::now();
 
     // Load domains from file
@@ -311,7 +312,7 @@ pub fn run_single_recon(
 }
 
 /// Get all unique domains and subdomains currently in inventory
-fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
+fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>> {
     use std::collections::HashSet;
 
     let mut seen = HashSet::new();
