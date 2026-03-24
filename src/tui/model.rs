@@ -1,12 +1,10 @@
-use crate::app::probe_dns::DnsObservation;
-use crate::app::probe_http::HttpObservation;
+use crate::app::probe::{DnsObservation, HttpObservation};
 use crate::org::{
     BrandId, BrandRecord, CompanyId, CompanyRecord, DomainRegistration, PersonId, PersonRecord,
     ProjectId, ProjectRecord, RoleAssignmentRecord,
 };
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::{BTreeMap, HashMap};
-use std::io;
 
 /// Person with their role in a project
 #[derive(Debug, Clone)]
@@ -62,7 +60,9 @@ impl AssetState {
         let http = self.latest_http.as_ref()?;
 
         // 1. Clean up the current asset name (the intended target)
-        let current_domain = self.name.to_lowercase()
+        let current_domain = self
+            .name
+            .to_lowercase()
             .replace("www.", "")
             .trim_matches('.')
             .to_string();
@@ -71,7 +71,8 @@ impl AssetState {
         //    Prefer final_url, but also check redirect_chain as fallback
         //    (the last 3xx hop's redirect_to is the actual destination).
         let destination_url = http.final_url.clone().or_else(|| {
-            http.redirect_chain.iter()
+            http.redirect_chain
+                .iter()
                 .rev()
                 .find(|hop| (300..400).contains(&(hop.status as u32)))
                 .map(|hop| hop.redirect_to.clone())
@@ -103,9 +104,7 @@ fn extract_domain_from_url(url: &str) -> String {
         .unwrap_or(&lower);
     let host = without_proto.split('/').next().unwrap_or("");
     let host = host.split(':').next().unwrap_or(host);
-    host.replace("www.", "")
-        .trim_matches('.')
-        .to_string()
+    host.replace("www.", "").trim_matches('.').to_string()
 }
 
 /// Checks whether two domain names share the same root domain.
@@ -121,21 +120,33 @@ fn is_same_root_domain(a: &str, b: &str) -> bool {
 
     // Known two-part TLDs where the root domain requires 3 labels
     const TWO_PART_TLDS: &[&str] = &[
-        "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il",
-        "com.au", "com.br", "com.cn", "com.mx", "com.tr", "com.ua",
-        "org.uk", "org.au", "net.au", "net.uk",
-        "ac.uk", "gov.uk", "edu.au",
+        "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il", "com.au", "com.br",
+        "com.cn", "com.mx", "com.tr", "com.ua", "org.uk", "org.au", "net.au", "net.uk", "ac.uk",
+        "gov.uk", "edu.au",
     ];
 
     let needed = if a_parts.len() >= 3 || b_parts.len() >= 3 {
         let a_suffix = if a_parts.len() >= 2 {
-            format!("{}.{}", a_parts[a_parts.len()-2], a_parts[a_parts.len()-1])
-        } else { String::new() };
+            format!(
+                "{}.{}",
+                a_parts[a_parts.len() - 2],
+                a_parts[a_parts.len() - 1]
+            )
+        } else {
+            String::new()
+        };
         let b_suffix = if b_parts.len() >= 2 {
-            format!("{}.{}", b_parts[b_parts.len()-2], b_parts[b_parts.len()-1])
-        } else { String::new() };
+            format!(
+                "{}.{}",
+                b_parts[b_parts.len() - 2],
+                b_parts[b_parts.len() - 1]
+            )
+        } else {
+            String::new()
+        };
 
-        if TWO_PART_TLDS.contains(&a_suffix.as_str()) || TWO_PART_TLDS.contains(&b_suffix.as_str()) {
+        if TWO_PART_TLDS.contains(&a_suffix.as_str()) || TWO_PART_TLDS.contains(&b_suffix.as_str())
+        {
             3
         } else {
             2
@@ -148,8 +159,8 @@ fn is_same_root_domain(a: &str, b: &str) -> bool {
         return false;
     }
 
-    let root_a = &a_parts[a_parts.len()-needed..];
-    let root_b = &b_parts[b_parts.len()-needed..];
+    let root_a = &a_parts[a_parts.len() - needed..];
+    let root_b = &b_parts[b_parts.len() - needed..];
     root_a == root_b
 }
 
@@ -213,29 +224,20 @@ pub struct OrgModel {
 }
 
 impl OrgModel {
-    pub fn load(storage: &JsonlStorage) -> io::Result<Self> {
+    pub fn load(storage: &JsonlStorage) -> crate::error::Result<Self> {
         let records = read_records(storage)?;
 
-        let persons_by_id: HashMap<_, _> = records
-            .persons
-            .iter()
-            .map(|p| (p.id, p.clone()))
-            .collect();
+        let persons_by_id: HashMap<_, _> =
+            records.persons.iter().map(|p| (p.id, p.clone())).collect();
         let companies_by_id: HashMap<_, _> = records
             .companies
             .iter()
             .map(|c| (c.id, c.clone()))
             .collect();
-        let brands_by_id: HashMap<_, _> = records
-            .brands
-            .iter()
-            .map(|b| (b.id, b.clone()))
-            .collect();
-        let projects_by_id: HashMap<_, _> = records
-            .projects
-            .iter()
-            .map(|p| (p.id, p.clone()))
-            .collect();
+        let brands_by_id: HashMap<_, _> =
+            records.brands.iter().map(|b| (b.id, b.clone())).collect();
+        let projects_by_id: HashMap<_, _> =
+            records.projects.iter().map(|p| (p.id, p.clone())).collect();
 
         // Build project views with resolved names
         let mut project_views = Vec::new();
@@ -339,30 +341,18 @@ impl OrgModel {
     }
 }
 
-pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
+pub fn load_tui_model(storage: &JsonlStorage) -> crate::error::Result<TuiModel> {
     let records = read_records(storage)?;
 
     // Build lookup maps for org data
-    let persons_map: HashMap<_, _> = records
-        .persons
-        .iter()
-        .map(|p| (p.id, p.clone()))
-        .collect();
+    let persons_map: HashMap<_, _> = records.persons.iter().map(|p| (p.id, p.clone())).collect();
     let companies_map: HashMap<_, _> = records
         .companies
         .iter()
         .map(|c| (c.id, c.clone()))
         .collect();
-    let brands_map: HashMap<_, _> = records
-        .brands
-        .iter()
-        .map(|b| (b.id, b.clone()))
-        .collect();
-    let projects_map: HashMap<_, _> = records
-        .projects
-        .iter()
-        .map(|p| (p.id, p.clone()))
-        .collect();
+    let brands_map: HashMap<_, _> = records.brands.iter().map(|b| (b.id, b.clone())).collect();
+    let projects_map: HashMap<_, _> = records.projects.iter().map(|p| (p.id, p.clone())).collect();
 
     // Build asset -> project mapping (most recent assignment wins)
     let mut asset_to_project: HashMap<String, ProjectId> = HashMap::new();
@@ -427,18 +417,21 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
 
     let mut domain_registrations: HashMap<String, DomainRegistration> = HashMap::new();
     for reg in records.domain_registrations {
-        domain_registrations.insert(reg.domain.clone(), DomainRegistration {
-            domain: reg.domain,
-            registrar: reg.registrar,
-            registered_at: reg.registered_at,
-            expires_at: reg.expires_at,
-            updated_at: reg.updated_at,
-            status: reg.status,
-            registrant: reg.registrant,
-            admin: reg.admin,
-            tech: reg.tech,
-            source: reg.source,
-        });
+        domain_registrations.insert(
+            reg.domain.clone(),
+            DomainRegistration {
+                domain: reg.domain,
+                registrar: reg.registrar,
+                registered_at: reg.registered_at,
+                expires_at: reg.expires_at,
+                updated_at: reg.updated_at,
+                status: reg.status,
+                registrant: reg.registrant,
+                admin: reg.admin,
+                tech: reg.tech,
+                source: reg.source,
+            },
+        );
     }
 
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
@@ -488,7 +481,9 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
             }
         });
         match &entry.latest_http {
-            Some(existing) if http.checked_at > existing.checked_at => entry.latest_http = Some(http),
+            Some(existing) if http.checked_at > existing.checked_at => {
+                entry.latest_http = Some(http)
+            }
             None => entry.latest_http = Some(http),
             _ => {}
         }
@@ -504,11 +499,9 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
         let mut found_parent = false;
         for root_name in groups.keys().cloned().collect::<Vec<_>>() {
             if asset.name.ends_with(&format!(".{}", root_name)) {
-                groups
-                    .get_mut(&root_name)
-                    .unwrap()
-                    .subdomains
-                    .push(asset.clone());
+                if let Some(group) = groups.get_mut(&root_name) {
+                    group.subdomains.push(asset.clone());
+                }
                 found_parent = true;
                 break;
             }
@@ -542,11 +535,14 @@ pub fn load_tui_model(storage: &JsonlStorage) -> Result<TuiModel, io::Error> {
     for group in &final_groups {
         update_stats(&mut stats, &group.root);
         for sub in &group.subdomains {
-            update_stats(&mut stats, &sub);
+            update_stats(&mut stats, sub);
         }
     }
 
-    Ok(TuiModel { groups: final_groups, stats })
+    Ok(TuiModel {
+        groups: final_groups,
+        stats,
+    })
 }
 
 fn update_stats(stats: &mut GlobalStats, asset: &AssetState) {
@@ -568,6 +564,7 @@ fn update_stats(stats: &mut GlobalStats, asset: &AssetState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::ItemType;
 
     #[test]
     fn test_same_root_subdomains() {
@@ -579,7 +576,10 @@ mod tests {
     #[test]
     fn test_different_root_domains() {
         assert!(!is_same_root_domain("josera.de", "maxcluster.net"));
-        assert!(!is_same_root_domain("phonebook.josera.de", "convertexperiments.com"));
+        assert!(!is_same_root_domain(
+            "phonebook.josera.de",
+            "convertexperiments.com"
+        ));
     }
 
     #[test]
@@ -589,7 +589,10 @@ mod tests {
 
     #[test]
     fn test_two_part_tld() {
-        assert!(is_same_root_domain("foo.example.co.uk", "bar.example.co.uk"));
+        assert!(is_same_root_domain(
+            "foo.example.co.uk",
+            "bar.example.co.uk"
+        ));
         assert!(!is_same_root_domain("foo.example.co.uk", "foo.other.co.uk"));
         // bare co.uk shouldn't match a real domain under co.uk
         assert!(!is_same_root_domain("co.uk", "example.co.uk"));
@@ -601,7 +604,7 @@ mod tests {
             name: "shop.josera.de".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "shop.josera.de".to_string(),
@@ -620,6 +623,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Same root domain → NOT external
@@ -632,7 +636,7 @@ mod tests {
             name: "vwo.josera.de".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "vwo.josera.de".to_string(),
@@ -651,6 +655,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Different root domain → IS external
@@ -666,7 +671,7 @@ mod tests {
             name: "example.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "example.com".to_string(),
@@ -685,6 +690,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // www + subfolder → NOT external
@@ -693,7 +699,7 @@ mod tests {
 
     #[test]
     fn test_external_redirect_via_chain_fallback() {
-        use crate::app::probe_http::RedirectHop;
+        use crate::app::probe::RedirectHop;
 
         // Simulates josera-estonia.com: final_url is wrongly set to self,
         // but redirect_chain shows a 301 to josera.com/et
@@ -701,20 +707,18 @@ mod tests {
             name: "josera-estonia.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "josera-estonia.com".to_string(),
                 status: Some(200),
                 response_time_ms: 100,
                 final_url: Some("https://josera.com/et".to_string()),
-                redirect_chain: vec![
-                    RedirectHop {
-                        url: "https://josera-estonia.com/".to_string(),
-                        status: 301,
-                        redirect_to: "https://josera.com/et".to_string(),
-                    },
-                ],
+                redirect_chain: vec![RedirectHop {
+                    url: "https://josera-estonia.com/".to_string(),
+                    status: 301,
+                    redirect_to: "https://josera.com/et".to_string(),
+                }],
                 tls: None,
                 tech: vec![],
                 webserver: None,
@@ -726,6 +730,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         // Different root domain → IS external
@@ -734,27 +739,25 @@ mod tests {
 
     #[test]
     fn test_external_redirect_chain_only_no_final_url() {
-        use crate::app::probe_http::RedirectHop;
+        use crate::app::probe::RedirectHop;
 
         // final_url is None, but redirect_chain has the data
         let asset = AssetState {
             name: "josera-estonia.com".to_string(),
             latest_dns: None,
             latest_http: Some(HttpObservation {
-                item_type: "http_check".to_string(),
+                item_type: ItemType::HttpCheck,
                 id: "test".to_string(),
                 asset_type: "domain".to_string(),
                 target: "josera-estonia.com".to_string(),
                 status: Some(200),
                 response_time_ms: 100,
                 final_url: None,
-                redirect_chain: vec![
-                    RedirectHop {
-                        url: "https://josera-estonia.com/".to_string(),
-                        status: 301,
-                        redirect_to: "https://josera.com/et".to_string(),
-                    },
-                ],
+                redirect_chain: vec![RedirectHop {
+                    url: "https://josera-estonia.com/".to_string(),
+                    status: 301,
+                    redirect_to: "https://josera.com/et".to_string(),
+                }],
                 tls: None,
                 tech: vec![],
                 webserver: None,
@@ -766,6 +769,7 @@ mod tests {
                 error_kind: None,
                 error_message: None,
             }),
+            registration: None,
             project: None,
         };
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));

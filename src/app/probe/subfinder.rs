@@ -1,22 +1,27 @@
-use crate::inventory::InventoryItem;
+use crate::error::{ProbeError, Result};
+use crate::inventory::{InventoryItem, ItemType};
 use crate::storage::JsonlStorage;
 use chrono::Utc;
 use std::fs;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use uuid::Uuid;
 
-// Run subfinder to find subdomains
-fn run_subfinder(domain: &str) -> Result<String, io::Error> {
+fn run_subfinder(domain: &str) -> Result<String> {
     let output = Command::new("subfinder")
         .arg("-d")
         .arg(domain)
         .arg("-silent")
-        .output()?;
+        .output()
+        .map_err(ProbeError::Execution)?;
 
     if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        return Err(io::Error::other(format!("subfinder failed: {}", error)));
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(ProbeError::ToolFailed {
+            tool: "subfinder".to_string(),
+            stderr,
+        }
+        .into());
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -31,8 +36,7 @@ fn parse_subdomains(output: &str) -> Vec<String> {
         .collect()
 }
 
-// Probe for subdomains and add them to inventory
-pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<String>, io::Error> {
+pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<String>> {
     // Run subfinder to get subdomains
     let output = run_subfinder(domain)?;
 
@@ -50,7 +54,7 @@ pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<Stri
     // Add each subdomain to inventory
     for subdomain in &subdomains {
         let item = InventoryItem {
-            item_type: "subdomain".to_string(),
+            item_type: ItemType::Subdomain,
             id: format!("sub:{}", subdomain), // Simple ID format
             name: subdomain.clone(),
             discovered_at: now,
@@ -64,7 +68,7 @@ pub fn probe_subdomains(domain: &str, storage: &JsonlStorage) -> Result<Vec<Stri
     Ok(subdomains)
 }
 
-fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result<Vec<String>> {
+fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec<String>> {
     let mut all_subdomains = Vec::new();
     let chunk_size = 10; // Frequent updates for better feedback
 
@@ -81,15 +85,19 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
         let temp_file = temp_dir.join(format!("balebos_subfinder_{}.txt", Uuid::new_v4()));
         fs::write(&temp_file, chunk.join("\n"))?;
 
+        let temp_file_str = temp_file.to_string_lossy();
         let mut child = Command::new("subfinder")
             .arg("-dL")
-            .arg(temp_file.to_str().unwrap())
+            .arg(temp_file_str.as_ref())
             .arg("-silent")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => continue,
+        };
         let reader = BufReader::new(stdout);
         let now = Utc::now();
         let mut chunk_items = Vec::new();
@@ -102,9 +110,12 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
             if trimmed.is_empty() {
                 continue;
             }
-            
+
             found_in_chunk += 1;
-            print!("\r      → Found {} subdomains in current chunk...", found_in_chunk);
+            print!(
+                "\r      → Found {} subdomains in current chunk...",
+                found_in_chunk
+            );
             use std::io::Write;
             let _ = std::io::stdout().flush();
 
@@ -118,7 +129,7 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
             }
 
             let item = InventoryItem {
-                item_type: "subdomain".to_string(),
+                item_type: ItemType::Subdomain,
                 id: format!("sub:{}", trimmed),
                 name: trimmed.clone(),
                 discovered_at: now,
@@ -144,17 +155,14 @@ fn run_subfinder_batch(domains: &[String], storage: &JsonlStorage) -> io::Result
 
         let _ = child.wait();
         let _ = fs::remove_file(&temp_file);
-        
+
         all_subdomains.extend(chunk_subdomains);
     }
 
     Ok(all_subdomains)
 }
 
-pub fn probe_subdomains_batch(
-    domains: &[String],
-    storage: &JsonlStorage,
-) -> Result<Vec<String>, io::Error> {
+pub fn probe_subdomains_batch(domains: &[String], storage: &JsonlStorage) -> Result<Vec<String>> {
     if domains.is_empty() {
         return Ok(Vec::new());
     }

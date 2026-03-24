@@ -2,13 +2,15 @@
 
 #![allow(dead_code)]
 
+use crate::error::Result;
+
 use crate::org::{
     AssetAssignmentRecord, AssetImportanceRecord, BrandId, BrandRecord, CompanyId, CompanyRecord,
     ContractorRole, CountryCode, ExternalContractorAssignment, PersonId, PersonRecord, ProjectId,
     ProjectRecord, Role, RoleAssignmentRecord,
 };
 use crate::storage::{read_records, JsonlStorage};
-use std::io;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Generate a timestamp-based unique ID.
@@ -29,7 +31,7 @@ pub fn add_person(
     last_name: &str,
     email: &str,
     phone: Option<String>,
-) -> io::Result<PersonRecord> {
+) -> Result<PersonRecord> {
     let id = PersonId::new(generate_id());
     let record = PersonRecord::new(
         id,
@@ -49,7 +51,7 @@ pub fn update_person(
     last_name: &str,
     email: &str,
     phone: Option<String>,
-) -> io::Result<PersonRecord> {
+) -> Result<PersonRecord> {
     let record = PersonRecord::new(
         id,
         first_name.to_string(),
@@ -61,7 +63,7 @@ pub fn update_person(
     Ok(record)
 }
 
-pub fn list_persons(storage: &JsonlStorage) -> io::Result<Vec<PersonRecord>> {
+pub fn list_persons(storage: &JsonlStorage) -> Result<Vec<PersonRecord>> {
     let records = read_records(storage)?;
     Ok(records.persons)
 }
@@ -75,7 +77,7 @@ pub fn add_company(
     name: &str,
     country: CountryCode,
     brand: Option<BrandId>,
-) -> io::Result<CompanyRecord> {
+) -> Result<CompanyRecord> {
     let id = CompanyId::new(generate_id());
     let record = CompanyRecord::new(id, name.to_string(), country, brand);
     storage.save(&record)?;
@@ -88,13 +90,13 @@ pub fn update_company(
     name: &str,
     country: CountryCode,
     brand: Option<BrandId>,
-) -> io::Result<CompanyRecord> {
+) -> Result<CompanyRecord> {
     let record = CompanyRecord::new(id, name.to_string(), country, brand);
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_companies(storage: &JsonlStorage) -> io::Result<Vec<CompanyRecord>> {
+pub fn list_companies(storage: &JsonlStorage) -> Result<Vec<CompanyRecord>> {
     let records = read_records(storage)?;
     Ok(records.companies)
 }
@@ -103,20 +105,20 @@ pub fn list_companies(storage: &JsonlStorage) -> io::Result<Vec<CompanyRecord>> 
 // Brand operations
 // ---------------------------------------------------------------------------
 
-pub fn add_brand(storage: &JsonlStorage, name: &str) -> io::Result<BrandRecord> {
+pub fn add_brand(storage: &JsonlStorage, name: &str) -> Result<BrandRecord> {
     let id = BrandId::new(generate_id());
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn update_brand(storage: &JsonlStorage, id: BrandId, name: &str) -> io::Result<BrandRecord> {
+pub fn update_brand(storage: &JsonlStorage, id: BrandId, name: &str) -> Result<BrandRecord> {
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_brands(storage: &JsonlStorage) -> io::Result<Vec<BrandRecord>> {
+pub fn list_brands(storage: &JsonlStorage) -> Result<Vec<BrandRecord>> {
     let records = read_records(storage)?;
     Ok(records.brands)
 }
@@ -129,7 +131,7 @@ pub fn add_project(
     storage: &JsonlStorage,
     name: &str,
     company_id: CompanyId,
-) -> io::Result<ProjectRecord> {
+) -> Result<ProjectRecord> {
     let id = ProjectId::new(generate_id());
     let record = ProjectRecord::new(id, name.to_string(), company_id);
     storage.save(&record)?;
@@ -141,10 +143,9 @@ pub fn add_project_with_importance(
     name: &str,
     company_id: CompanyId,
     importance: Option<u8>,
-) -> io::Result<ProjectRecord> {
+) -> Result<ProjectRecord> {
     let id = ProjectId::new(generate_id());
-    let record = ProjectRecord::new(id, name.to_string(), company_id)
-        .with_importance(importance);
+    let record = ProjectRecord::new(id, name.to_string(), company_id).with_importance(importance);
     storage.save(&record)?;
     Ok(record)
 }
@@ -154,7 +155,7 @@ pub fn update_project(
     id: ProjectId,
     name: &str,
     company_id: CompanyId,
-) -> io::Result<ProjectRecord> {
+) -> Result<ProjectRecord> {
     let record = ProjectRecord::new(id, name.to_string(), company_id);
     storage.save(&record)?;
     Ok(record)
@@ -166,14 +167,13 @@ pub fn set_project_importance(
     name: &str,
     company_id: CompanyId,
     importance: Option<u8>,
-) -> io::Result<ProjectRecord> {
-    let record = ProjectRecord::new(id, name.to_string(), company_id)
-        .with_importance(importance);
+) -> Result<ProjectRecord> {
+    let record = ProjectRecord::new(id, name.to_string(), company_id).with_importance(importance);
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_projects(storage: &JsonlStorage) -> io::Result<Vec<ProjectRecord>> {
+pub fn list_projects(storage: &JsonlStorage) -> Result<Vec<ProjectRecord>> {
     let records = read_records(storage)?;
     Ok(records.projects)
 }
@@ -186,13 +186,13 @@ pub fn assign_asset(
     storage: &JsonlStorage,
     host: &str,
     project_id: ProjectId,
-) -> io::Result<AssetAssignmentRecord> {
+) -> Result<AssetAssignmentRecord> {
     let record = AssetAssignmentRecord::new(host.to_string(), project_id);
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn unassign_asset(storage: &JsonlStorage, host: &str) -> io::Result<bool> {
+pub fn unassign_asset(storage: &JsonlStorage, host: &str) -> Result<bool> {
     let records = read_records(storage)?;
     // Check if the asset is assigned
     let is_assigned = records.asset_assignments.iter().any(|a| a.host == host);
@@ -210,13 +210,13 @@ pub fn set_asset_importance(
     storage: &JsonlStorage,
     host: &str,
     importance: u8,
-) -> io::Result<AssetImportanceRecord> {
+) -> Result<AssetImportanceRecord> {
     let record = AssetImportanceRecord::new(host.to_string(), importance);
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_asset_assignments(storage: &JsonlStorage) -> io::Result<Vec<AssetAssignmentRecord>> {
+pub fn list_asset_assignments(storage: &JsonlStorage) -> Result<Vec<AssetAssignmentRecord>> {
     let records = read_records(storage)?;
     Ok(records.asset_assignments)
 }
@@ -230,7 +230,7 @@ pub fn assign_person_to_project(
     person_id: PersonId,
     project_id: ProjectId,
     role: Role,
-) -> io::Result<RoleAssignmentRecord> {
+) -> Result<RoleAssignmentRecord> {
     let record = RoleAssignmentRecord::new_person(project_id, person_id, role);
     storage.save(&record)?;
     Ok(record)
@@ -241,13 +241,13 @@ pub fn assign_company_to_project(
     company_id: CompanyId,
     project_id: ProjectId,
     role: Role,
-) -> io::Result<RoleAssignmentRecord> {
+) -> Result<RoleAssignmentRecord> {
     let record = RoleAssignmentRecord::new_company(project_id, company_id, role);
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_role_assignments(storage: &JsonlStorage) -> io::Result<Vec<RoleAssignmentRecord>> {
+pub fn list_role_assignments(storage: &JsonlStorage) -> Result<Vec<RoleAssignmentRecord>> {
     let records = read_records(storage)?;
     Ok(records.role_assignments)
 }
@@ -261,7 +261,7 @@ pub fn assign_contractor_to_project(
     company_id: CompanyId,
     project_id: ProjectId,
     role: ContractorRole,
-) -> io::Result<ExternalContractorAssignment> {
+) -> Result<ExternalContractorAssignment> {
     let record = ExternalContractorAssignment::new(project_id, company_id, role);
     storage.save(&record)?;
     Ok(record)
@@ -271,28 +271,22 @@ pub fn assign_contractor_to_project(
 // Lookup helpers
 // ---------------------------------------------------------------------------
 
-pub fn find_person_by_id(storage: &JsonlStorage, id: PersonId) -> io::Result<Option<PersonRecord>> {
+pub fn find_person_by_id(storage: &JsonlStorage, id: PersonId) -> Result<Option<PersonRecord>> {
     let records = read_records(storage)?;
     Ok(records.persons.into_iter().find(|p| p.id == id))
 }
 
-pub fn find_company_by_id(
-    storage: &JsonlStorage,
-    id: CompanyId,
-) -> io::Result<Option<CompanyRecord>> {
+pub fn find_company_by_id(storage: &JsonlStorage, id: CompanyId) -> Result<Option<CompanyRecord>> {
     let records = read_records(storage)?;
     Ok(records.companies.into_iter().find(|c| c.id == id))
 }
 
-pub fn find_brand_by_id(storage: &JsonlStorage, id: BrandId) -> io::Result<Option<BrandRecord>> {
+pub fn find_brand_by_id(storage: &JsonlStorage, id: BrandId) -> Result<Option<BrandRecord>> {
     let records = read_records(storage)?;
     Ok(records.brands.into_iter().find(|b| b.id == id))
 }
 
-pub fn find_project_by_id(
-    storage: &JsonlStorage,
-    id: ProjectId,
-) -> io::Result<Option<ProjectRecord>> {
+pub fn find_project_by_id(storage: &JsonlStorage, id: ProjectId) -> Result<Option<ProjectRecord>> {
     let records = read_records(storage)?;
     Ok(records.projects.into_iter().find(|p| p.id == id))
 }
@@ -301,7 +295,7 @@ pub fn find_project_by_id(
 pub fn find_asset_assignment(
     storage: &JsonlStorage,
     host: &str,
-) -> io::Result<Option<AssetAssignmentRecord>> {
+) -> Result<Option<AssetAssignmentRecord>> {
     let records = read_records(storage)?;
     // Return the most recent assignment for this host
     Ok(records
@@ -315,7 +309,7 @@ pub fn find_asset_assignment(
 pub fn find_role_assignments_for_project(
     storage: &JsonlStorage,
     project_id: ProjectId,
-) -> io::Result<Vec<RoleAssignmentRecord>> {
+) -> Result<Vec<RoleAssignmentRecord>> {
     let records = read_records(storage)?;
     Ok(records
         .role_assignments

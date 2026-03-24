@@ -1,3 +1,4 @@
+use crate::error::Result;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -30,7 +31,7 @@ impl JsonlStorage {
     // 2. We keep a history of all additions (useful for auditing)
     // 3. It's more resilient (partial writes don't corrupt existing data)
     // 4. It enables efficient writes (no need to rewrite the whole file)
-    pub fn save<T: Serialize>(&self, data: &T) -> Result<(), std::io::Error> {
+    pub fn save<T: Serialize>(&self, data: &T) -> Result<()> {
         let path = Path::new(&self.filepath);
 
         // Create parent directory if it doesn't exist
@@ -49,14 +50,14 @@ impl JsonlStorage {
         let mut writer = BufWriter::new(file);
 
         // Serialize to JSON and write with newline
-        let json = serde_json::to_string(data)?;
+        let json = serde_json::to_string(data).map_err(crate::error::StorageError::from)?;
         writeln!(writer, "{}", json)?;
 
         Ok(())
     }
 
     /// Save multiple items efficiently by opening the file only once
-    pub fn save_batch<T: Serialize>(&self, data: &[T]) -> Result<(), std::io::Error> {
+    pub fn save_batch<T: Serialize>(&self, data: &[T]) -> Result<()> {
         if data.is_empty() {
             return Ok(());
         }
@@ -77,7 +78,7 @@ impl JsonlStorage {
         let mut writer = BufWriter::new(file);
 
         for item in data {
-            let json = serde_json::to_string(item)?;
+            let json = serde_json::to_string(item).map_err(crate::error::StorageError::from)?;
             writeln!(writer, "{}", json)?;
         }
 

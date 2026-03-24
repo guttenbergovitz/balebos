@@ -1,8 +1,8 @@
+use crate::error::{ProbeError, Result};
 use crate::org::{DomainContact, DomainRegistrationRecord};
 use crate::storage::JsonlStorage;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::io;
 use std::process::Command;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -28,13 +28,13 @@ struct RdapOutput {
     status: Option<Vec<String>>,
 }
 
-pub fn run_rdap_probe(storage: &JsonlStorage, domain: &str) -> io::Result<DomainRegistrationRecord> {
+pub fn run_rdap_probe(storage: &JsonlStorage, domain: &str) -> Result<DomainRegistrationRecord> {
     let record = run_rdap_probe_no_save(domain)?;
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn run_rdap_probe_no_save(domain: &str) -> io::Result<DomainRegistrationRecord> {
+pub fn run_rdap_probe_no_save(domain: &str) -> Result<DomainRegistrationRecord> {
     match perform_rdap_query(domain) {
         Ok(record) => Ok(record),
         Err(_) => {
@@ -44,18 +44,19 @@ pub fn run_rdap_probe_no_save(domain: &str) -> io::Result<DomainRegistrationReco
     }
 }
 
-fn perform_rdap_query(domain: &str) -> io::Result<DomainRegistrationRecord> {
+fn perform_rdap_query(domain: &str) -> Result<DomainRegistrationRecord> {
     let output = Command::new("rdap")
         .arg(domain)
         .arg("--json")
-        .output()?;
+        .output()
+        .map_err(ProbeError::Execution)?;
 
     if !output.status.success() {
-        return Err(io::Error::other("RDAP failed"));
+        return Err(ProbeError::RdapFailed.into());
     }
 
-    let parsed: RdapOutput = serde_json::from_slice(&output.stdout)
-        .map_err(|e| io::Error::other(format!("Failed to parse RDAP JSON: {}", e)))?;
+    let parsed: RdapOutput =
+        serde_json::from_slice(&output.stdout).map_err(ProbeError::ParseError)?;
 
     let mut record = DomainRegistrationRecord::new(domain.to_string(), "rdap".to_string());
 
@@ -129,7 +130,7 @@ fn parse_vcard(vcard: &Option<serde_json::Value>) -> Option<DomainContact> {
 
     for prop in properties {
         let prop_arr = prop.as_array()?;
-        let tag = prop_arr.get(0)?.as_str()?;
+        let tag = prop_arr.first()?.as_str()?;
         let value = prop_arr.get(3)?.as_str()?;
 
         match tag {
@@ -147,8 +148,11 @@ fn parse_vcard(vcard: &Option<serde_json::Value>) -> Option<DomainContact> {
     }
 }
 
-fn perform_whois_query(domain: &str) -> io::Result<DomainRegistrationRecord> {
-    let output = Command::new("whois").arg(domain).output()?;
+fn perform_whois_query(domain: &str) -> Result<DomainRegistrationRecord> {
+    let output = Command::new("whois")
+        .arg(domain)
+        .output()
+        .map_err(ProbeError::Execution)?;
 
     let text = String::from_utf8_lossy(&output.stdout);
     let mut record = DomainRegistrationRecord::new(domain.to_string(), "whois".to_string());
@@ -167,11 +171,19 @@ fn perform_whois_query(domain: &str) -> io::Result<DomainRegistrationRecord> {
         }
         // Basic registrant info from WHOIS if available
         else if lower.starts_with("registrant name:") {
-            let mut c = record.registrant.take().unwrap_or(DomainContact { name: None, organization: None, email: None });
+            let mut c = record.registrant.take().unwrap_or(DomainContact {
+                name: None,
+                organization: None,
+                email: None,
+            });
             c.name = line.split(':').nth(1).map(|s| s.trim().to_string());
             record.registrant = Some(c);
         } else if lower.starts_with("registrant email:") {
-            let mut c = record.registrant.take().unwrap_or(DomainContact { name: None, organization: None, email: None });
+            let mut c = record.registrant.take().unwrap_or(DomainContact {
+                name: None,
+                organization: None,
+                email: None,
+            });
             c.email = line.split(':').nth(1).map(|s| s.trim().to_string());
             record.registrant = Some(c);
         }

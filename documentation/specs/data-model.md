@@ -242,3 +242,65 @@ Assigns a Person or Company to a Project with a specific role (Owner, Manager, T
 ```json
 {"item_type":"org_role_assignment","project":1234567890,"role":"Technician","person":null,"company":444555666,"created_at":"2026-03-21T10:00:00Z"}
 ```
+
+### 5.7 External Contractor Assignment Record
+
+Assigns an external company (no brand) to a Project with a specific contractor role.
+
+- **`item_type`**: `"org_contractor_assignment"`
+- **`project`**: Project ID
+- **`company`**: Company ID (must be external, i.e., `brand: null`)
+- **`role`**: One of `"Development"`, `"DevOps"`, `"Design"`, `"Consultancy"`, `"Security"`
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{"item_type":"org_contractor_assignment","project":1234567890,"company":444555666,"role":"Development","created_at":"2026-03-21T10:00:00Z"}
+```
+
+---
+
+## 6. Domain Registration Record
+
+Captures RDAP/WHOIS registration data for a domain, including registrar, expiration dates, and contact information.
+
+- **`item_type`**: `"org_domain_registration"`
+- **`domain`**: Domain name
+- **`registrar`**: Registrar name (optional)
+- **`registered_at`**: Domain registration date (optional)
+- **`expires_at`**: Domain expiration date (optional)
+- **`updated_at`**: Last update date (optional)
+- **`status`**: Array of EPP status codes (e.g., `"clientTransferProhibited"`)
+- **`registrant`**: Optional `DomainContact` object
+- **`admin`**: Optional `DomainContact` object
+- **`tech`**: Optional `DomainContact` object
+- **`source`**: Data source (`"rdap"` or `"whois"`)
+- **`created_at`**: RFC3339 Timestamp
+
+### DomainContact Object
+
+- **`name`**: Contact name (optional)
+- **`organization`**: Organization name (optional)
+- **`email`**: Contact email (optional)
+
+**Example:**
+```json
+{
+  "item_type": "org_domain_registration",
+  "domain": "example.com",
+  "registrar": "Example Registrar Inc.",
+  "registered_at": "2020-01-15T00:00:00Z",
+  "expires_at": "2027-01-15T00:00:00Z",
+  "updated_at": "2026-01-10T12:00:00Z",
+  "status": ["clientTransferProhibited", "clientDeleteProhibited"],
+  "registrant": {
+    "name": "John Doe",
+    "organization": "Example Corp",
+    "email": "admin@example.com"
+  },
+  "admin": null,
+  "tech": null,
+  "source": "rdap",
+  "created_at": "2026-03-21T10:15:00Z"
+}
+```

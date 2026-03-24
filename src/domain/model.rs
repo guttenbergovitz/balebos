@@ -5,6 +5,12 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DomainId(Uuid);
 
+impl Default for DomainId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DomainId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())

@@ -227,12 +227,12 @@ pub struct Assignment {
 }
 
 // ---------------------------------------------------------------------------
-// Observation (reference shape — actual impl lives in probe_http)
+// Observation (reference shape — actual impl lives in probe::http)
 // ---------------------------------------------------------------------------
 
 /// Lightweight observation record linking a host to a point-in-time check.
-/// Full HTTP/DNS observation details are in `app::probe_http::HttpObservation`
-/// and `app::probe_dns::DnsObservation`.
+/// Full HTTP/DNS observation details are in `app::probe::HttpObservation`
+/// and `app::probe::DnsObservation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Observation {
     pub host: String,

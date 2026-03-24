@@ -1,3 +1,4 @@
+use crate::error::Result;
 /// Tree visualization module for displaying domain hierarchies.
 ///
 /// This module provides functionality to display domains and their discovered subdomains
@@ -24,20 +25,20 @@
 /// │   └── ◇ api
 /// │       └── ◇ dev
 /// ```
+use crate::inventory::ItemType;
 use crate::storage::{read_records, JsonlStorage};
 use std::collections::BTreeMap;
-use std::io;
 
 // Tree node representing a domain or subdomain with its children
 #[derive(Debug, Clone)]
 struct TreeNode {
     name: String,
-    item_type: String, // "domain" or "subdomain"
+    item_type: ItemType,
     children: BTreeMap<String, TreeNode>,
 }
 
 impl TreeNode {
-    fn new(name: String, item_type: String) -> Self {
+    fn new(name: String, item_type: ItemType) -> Self {
         TreeNode {
             name,
             item_type,
@@ -48,16 +49,16 @@ impl TreeNode {
 
 /// Build a hierarchical tree of domains and subdomains
 /// Returns root nodes (base domains) with their subdomain hierarchy
-fn build_domain_tree(storage: &JsonlStorage) -> Result<Vec<TreeNode>, io::Error> {
+fn build_domain_tree(storage: &JsonlStorage) -> Result<Vec<TreeNode>> {
     let items = read_records(storage)?.items;
 
     let domain_records: Vec<String> = items
         .iter()
-        .filter(|item| item.item_type == "domain")
+        .filter(|item| item.item_type == ItemType::Domain)
         .map(|item| item.name.clone())
         .collect();
 
-    let mut all_items: Vec<(String, String)> = items
+    let mut all_items: Vec<(String, ItemType)> = items
         .into_iter()
         .map(|item| (item.name, item.item_type))
         .collect();
@@ -70,9 +71,9 @@ fn build_domain_tree(storage: &JsonlStorage) -> Result<Vec<TreeNode>, io::Error>
 
     for (fqdn, item_type) in all_items {
         // Check if this is a root domain record
-        if item_type == "domain" {
-            roots.insert(fqdn.clone(), TreeNode::new(fqdn, "domain".to_string()));
-        } else if item_type == "subdomain" {
+        if item_type == ItemType::Domain {
+            roots.insert(fqdn.clone(), TreeNode::new(fqdn, ItemType::Domain));
+        } else if item_type == ItemType::Subdomain {
             // Find which domain this subdomain belongs to
             // A subdomain belongs to a domain if the domain matches its suffix
             if let Some(parent_domain) = find_parent_domain(&fqdn, &domain_records) {
@@ -121,13 +122,13 @@ fn insert_into_node(node: &mut TreeNode, path: &str, _fqdn: &str) {
         let child_name = parts[0];
         node.children
             .entry(child_name.to_string())
-            .or_insert_with(|| TreeNode::new(child_name.to_string(), "subdomain".to_string()));
+            .or_insert_with(|| TreeNode::new(child_name.to_string(), ItemType::Subdomain));
     } else {
         // Nested child - recurse
         let first = parts[0];
         node.children
             .entry(first.to_string())
-            .or_insert_with(|| TreeNode::new(first.to_string(), "subdomain".to_string()));
+            .or_insert_with(|| TreeNode::new(first.to_string(), ItemType::Subdomain));
 
         if let Some(child) = node.children.get_mut(first) {
             let remaining = parts[1..].join(".");
@@ -139,9 +140,9 @@ fn insert_into_node(node: &mut TreeNode, path: &str, _fqdn: &str) {
 /// Print tree structure recursively
 fn print_tree_node(node: &TreeNode, prefix: &str, is_last: bool) {
     let connector = if is_last { "└── " } else { "├── " };
-    let marker = match node.item_type.as_str() {
-        "domain" => "🔵 ",   // Blue circle for root domains
-        "subdomain" => "◇ ", // Diamond for subdomains
+    let marker = match node.item_type {
+        ItemType::Domain => "🔵 ",   // Blue circle for root domains
+        ItemType::Subdomain => "◇ ", // Diamond for subdomains
         _ => "○ ",
     };
 
@@ -156,7 +157,7 @@ fn print_tree_node(node: &TreeNode, prefix: &str, is_last: bool) {
 }
 
 /// Display all domains and subdomains in a hierarchical tree structure
-pub fn display_domain_tree(storage: &JsonlStorage) -> Result<(), io::Error> {
+pub fn display_domain_tree(storage: &JsonlStorage) -> Result<()> {
     let roots = build_domain_tree(storage)?;
 
     if roots.is_empty() {

@@ -1,6 +1,7 @@
 mod app;
 mod cli;
 mod domain;
+mod error;
 mod exit_codes;
 mod ignore;
 mod inventory;
@@ -12,7 +13,7 @@ use exit_codes::*;
 use ignore::load_ignore_patterns;
 use std::process;
 
-use app::probe_http::HttpErrorKind;
+use app::probe::HttpErrorKind;
 use app::{
     batch_process, check_inventory, display_domain_status, display_domain_tree, export_status_csv,
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
@@ -484,7 +485,7 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
                 process::exit(EXIT_HTTP_ERROR);
             }
         },
-        ProbeKind::Dns => match crate::app::probe_dns::probe_dns(target, storage) {
+        ProbeKind::Dns => match crate::app::probe::probe_dns(target, storage) {
             Ok(obs) => {
                 println!("DNS check completed for {}", obs.target);
                 
@@ -748,7 +749,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 Ok(rec) => {
                     println!(
                         "Person {} assigned to project {} as {}",
-                        rec.person.unwrap(),
+                        person,
                         rec.project,
                         rec.role
                     );
@@ -792,7 +793,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
                 Ok(rec) => {
                     println!(
                         "Company {} assigned to project {} as {}",
-                        rec.company.unwrap(),
+                        company,
                         rec.project,
                         rec.role
                     );

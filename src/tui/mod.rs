@@ -1,10 +1,13 @@
 pub mod app;
 pub mod model;
+pub mod state;
 pub mod tabs;
 pub mod ui;
+pub mod workflows;
 
 use crate::storage::JsonlStorage;
-use crate::tui::app::{App, InputMode, Tab, OrgPane, OrgAddType};
+use crate::tui::app::{App, InputMode, OrgAddType, Tab};
+use crate::tui::state::OrgPane;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -14,7 +17,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
 
-pub fn run(storage: JsonlStorage) -> Result<(), io::Error> {
+pub fn run(storage: JsonlStorage) -> crate::error::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -45,7 +48,7 @@ pub fn run(storage: JsonlStorage) -> Result<(), io::Error> {
 fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> io::Result<()> {
+) -> crate::error::Result<()> {
     let mut last_scan_state = false;
 
     loop {
@@ -57,17 +60,21 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Normal => handle_normal_mode(app, key.code)?,
                     InputMode::Editing => handle_editing_mode(app, key.code),
                     InputMode::Filtering => handle_filtering_mode(app, key.code),
-                    InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => handle_org_adding_mode(app, key.code),
+                    InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => {
+                        handle_org_adding_mode(app, key.code)
+                    }
                     InputMode::Assigning => handle_assigning_mode(app, key.code),
                     InputMode::RoleAssigning(_) => handle_role_assigning_mode(app, key.code),
-                    InputMode::ContractorAssigning(_) => handle_contractor_assigning_mode(app, key.code),
+                    InputMode::ContractorAssigning(_) => {
+                        handle_contractor_assigning_mode(app, key.code)
+                    }
                     InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
                 }
             }
         }
 
         // Detect transition from scanning to finished
-        let is_scanning = *app.is_scanning.lock().unwrap();
+        let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
         if last_scan_state && !is_scanning {
             // Scan just finished, auto-refresh
             let _ = app.refresh();
@@ -84,7 +91,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
 // Input mode handlers
 // ---------------------------------------------------------------------------
 
-fn handle_normal_mode(app: &mut App, code: KeyCode) -> io::Result<()> {
+fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
     match code {
         // Global keys
         KeyCode::Char('q') => app.should_quit = true,
@@ -155,7 +162,7 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         }
         // Add entity based on current pane
         KeyCode::Char('a') => {
-            let add_type = match app.org_pane {
+            let add_type = match app.organization.pane {
                 OrgPane::Persons => OrgAddType::Person,
                 OrgPane::Companies => OrgAddType::Company,
                 OrgPane::Brands => OrgAddType::Brand,
@@ -164,8 +171,8 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         }
         // Edit entity
         KeyCode::Char('e') => {
-            if let Some(idx) = app.org_table_state.selected() {
-                let add_type = match app.org_pane {
+            if let Some(idx) = app.organization.table_state.selected() {
+                let add_type = match app.organization.pane {
                     OrgPane::Persons => OrgAddType::Person,
                     OrgPane::Companies => OrgAddType::Company,
                     OrgPane::Brands => OrgAddType::Brand,
@@ -177,17 +184,17 @@ fn handle_organization_keys(app: &mut App, code: KeyCode) {
         KeyCode::Down | KeyCode::Char('j') => {
             let count = app.org_item_count();
             if count > 0 {
-                let i = app.org_table_state.selected().unwrap_or(0);
+                let i = app.organization.table_state.selected().unwrap_or(0);
                 let next = if i >= count - 1 { 0 } else { i + 1 };
-                app.org_table_state.select(Some(next));
+                app.organization.table_state.select(Some(next));
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
             let count = app.org_item_count();
             if count > 0 {
-                let i = app.org_table_state.selected().unwrap_or(0);
+                let i = app.organization.table_state.selected().unwrap_or(0);
                 let prev = if i == 0 { count - 1 } else { i - 1 };
-                app.org_table_state.select(Some(prev));
+                app.organization.table_state.select(Some(prev));
             }
         }
         _ => {}
@@ -201,7 +208,7 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('e') => {
             // Edit project (must resolve actual project index from selected row)
-            if let Some(idx) = app.projects_table_state.selected() {
+            if let Some(idx) = app.projects.table_state.selected() {
                 let mut current_idx = 0;
                 let mut project_idx = None;
                 for (i, project) in app.org_model.project_views.iter().enumerate() {
@@ -210,7 +217,11 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
                         break;
                     }
                     current_idx += 1;
-                    if app.expanded_projects.contains(&project.id.to_string()) {
+                    if app
+                        .projects
+                        .expanded_projects
+                        .contains(&project.id.to_string())
+                    {
                         if let Some(assets) = app.org_model.assets_by_project.get(&project.id) {
                             current_idx += assets.len();
                         } else {
@@ -243,8 +254,8 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
 }
 
 fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
-    use crate::tui::app::ContractorAssignStep;
     use crate::org::ContractorRole;
+    use crate::tui::app::ContractorAssignStep;
 
     match &app.input_mode {
         InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany) => match code {
@@ -265,12 +276,24 @@ fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
             _ => {}
         },
         InputMode::ContractorAssigning(ContractorAssignStep::SelectRole) => match code {
-            KeyCode::Esc => app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany),
-            KeyCode::Char('d') => { let _ = app.contractor_assign_submit(ContractorRole::Development); },
-            KeyCode::Char('o') => { let _ = app.contractor_assign_submit(ContractorRole::DevOps); },
-            KeyCode::Char('g') => { let _ = app.contractor_assign_submit(ContractorRole::Design); },
-            KeyCode::Char('c') => { let _ = app.contractor_assign_submit(ContractorRole::Consultancy); },
-            KeyCode::Char('s') => { let _ = app.contractor_assign_submit(ContractorRole::Security); },
+            KeyCode::Esc => {
+                app.input_mode = InputMode::ContractorAssigning(ContractorAssignStep::SelectCompany)
+            }
+            KeyCode::Char('d') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Development);
+            }
+            KeyCode::Char('o') => {
+                let _ = app.contractor_assign_submit(ContractorRole::DevOps);
+            }
+            KeyCode::Char('g') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Design);
+            }
+            KeyCode::Char('c') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Consultancy);
+            }
+            KeyCode::Char('s') => {
+                let _ = app.contractor_assign_submit(ContractorRole::Security);
+            }
             _ => {}
         },
         _ => {}
@@ -278,8 +301,8 @@ fn handle_contractor_assigning_mode(app: &mut App, code: KeyCode) {
 }
 
 fn handle_role_assigning_mode(app: &mut App, code: KeyCode) {
-    use crate::tui::app::RoleAssignStep;
     use crate::org::Role;
+    use crate::tui::app::RoleAssignStep;
 
     match &app.input_mode {
         InputMode::RoleAssigning(RoleAssignStep::SelectTarget) => match code {
@@ -301,9 +324,15 @@ fn handle_role_assigning_mode(app: &mut App, code: KeyCode) {
         },
         InputMode::RoleAssigning(RoleAssignStep::SelectRole) => match code {
             KeyCode::Esc => app.input_mode = InputMode::RoleAssigning(RoleAssignStep::SelectTarget),
-            KeyCode::Char('o') => { let _ = app.role_assign_submit(Role::Owner); },
-            KeyCode::Char('m') => { let _ = app.role_assign_submit(Role::Manager); },
-            KeyCode::Char('t') => { let _ = app.role_assign_submit(Role::Technician); },
+            KeyCode::Char('o') => {
+                let _ = app.role_assign_submit(Role::Owner);
+            }
+            KeyCode::Char('m') => {
+                let _ = app.role_assign_submit(Role::Manager);
+            }
+            KeyCode::Char('t') => {
+                let _ = app.role_assign_submit(Role::Technician);
+            }
             _ => {}
         },
         _ => {}
@@ -357,14 +386,14 @@ fn handle_org_adding_mode(app: &mut App, code: KeyCode) {
             app.form_prev_field();
         }
         KeyCode::Down => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_next();
             } else {
                 app.form_next_field();
             }
         }
         KeyCode::Up => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_prev();
             } else {
                 app.form_prev_field();
@@ -389,19 +418,19 @@ fn handle_assigning_mode(app: &mut App, code: KeyCode) {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.input.clear();
-            app.org_select_index = None;
-            app.org_select_matches.clear();
+            app.form.select_index = None;
+            app.form.select_matches.clear();
         }
         KeyCode::Enter => {
             let _ = app.submit_asset_assignment();
         }
         KeyCode::Down => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_next();
             }
         }
         KeyCode::Up => {
-            if !app.org_select_matches.is_empty() {
+            if !app.form.select_matches.is_empty() {
                 app.org_select_prev();
             }
         }

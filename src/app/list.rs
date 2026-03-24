@@ -1,11 +1,12 @@
+use crate::error::Result;
+use crate::inventory::ItemType;
 use crate::storage::{read_records, JsonlStorage};
-use std::io;
 
-pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>, io::Error> {
+pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>> {
     let mut domains: Vec<String> = read_records(storage)?
         .items
         .into_iter()
-        .filter(|item| item.item_type == "domain")
+        .filter(|item| item.item_type == ItemType::Domain)
         .map(|item| item.name)
         .collect();
 

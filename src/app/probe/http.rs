@@ -1,95 +1,14 @@
+use super::types::{HttpErrorKind, HttpObservation, RedirectHop, TlsObservation};
+use crate::error::{ProbeError, Result};
+use crate::inventory::ItemType;
 use crate::storage::JsonlStorage;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use std::io;
+use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
-
-// HTTP probe error types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HttpErrorKind {
-    DnsNotFound,
-    Timeout,
-    ConnectionError,
-    TlsError,
-    ProbeError,
-    TooManyRedirects,
-}
-
-// Represents a single hop in a redirect chain
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RedirectHop {
-    pub url: String,
-    pub status: u16,
-    pub redirect_to: String,
-}
-
-// TLS certificate information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TlsObservation {
-    pub subject_dn: String,
-    pub issuer_dn: String,
-    pub not_before: chrono::DateTime<Utc>,
-    pub not_after: chrono::DateTime<Utc>,
-    pub fingerprint_sha256: String,
-}
-
-// HTTP observation - always describes what happened (success or failure)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpObservation {
-    pub item_type: String,
-    pub id: String,
-    pub asset_type: String,
-    pub target: String,
-
-    // Result - XOR: either status or error, never both
-    pub status: Option<u16>,
-    pub response_time_ms: u64,
-
-    // Redirect information
-    #[serde(default)]
-    pub final_url: Option<String>,
-    #[serde(default)]
-    pub redirect_chain: Vec<RedirectHop>,
-
-    // TLS information
-    #[serde(default)]
-    pub tls: Option<TlsObservation>,
-
-    // Fingerprinting and tech details
-    #[serde(default)]
-    pub tech: Vec<String>,
-    #[serde(default)]
-    pub webserver: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub cdn_name: Option<String>,
-    #[serde(default)]
-    pub favicon_hash: Option<String>,
-
-    // Metadata
-    pub checked_at: chrono::DateTime<Utc>,
-    pub source: String,
-
-    // Network error details (if any)
-    pub error_kind: Option<HttpErrorKind>,
-    pub error_message: Option<String>,
-}
-
-impl HttpObservation {
-    // Enforce invariant: exactly one of (status, error_kind) must be Some
-    fn validate_invariant(&self) {
-        debug_assert!(
-            self.status.is_some() ^ self.error_kind.is_some(),
-            "HttpObservation must have exactly one of status or error_kind set (XOR)"
-        );
-    }
-}
 
 // DTO for httpx JSON output
 #[derive(Deserialize, Debug, Clone)]
@@ -120,15 +39,15 @@ struct HttpxOutput {
     time: Option<String>, // "100ms"
     failed: Option<bool>,
     error: Option<String>,
-    
+
     tech: Option<Vec<String>>,
     webserver: Option<String>,
     title: Option<String>,
     cdn_name: Option<String>,
     favicon: Option<String>,
-    
+
     tls: Option<HttpxTls>,
-    
+
     chain_status_codes: Option<Vec<u16>>,
     chain: Option<Vec<HttpxChainItem>>,
 }
@@ -150,48 +69,51 @@ fn categorize_httpx_error(error_msg: &str) -> HttpErrorKind {
 }
 
 /// Helper function to check if httpx is correctly installed from ProjectDiscovery.
-fn check_httpx_installation() -> Result<(), io::Error> {
+fn check_httpx_installation() -> Result<()> {
     let version_check = Command::new("httpx")
         .arg("-version")
         .output()
         .map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "httpx not found in PATH. Please install it from ProjectDiscovery: https://github.com/projectdiscovery/httpx",
-                )
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ProbeError::ToolNotFound {
+                    tool: "httpx".to_string(),
+                }
             } else {
-                e
+                ProbeError::Execution(e)
             }
         })?;
 
-    if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery") 
-        && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery") {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.",
-        ));
+    if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery")
+        && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery")
+    {
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "The 'httpx' command found in PATH appears to be the Python HTTP client, not the ProjectDiscovery tool. Please ensure the ProjectDiscovery httpx takes precedence.".to_string(),
+        }.into());
     }
-    
+
     Ok(())
 }
 
 /// Helper to extract URL from httpx raw request string
 fn extract_url_from_raw_request(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    if lines.is_empty() { return "unknown".to_string(); }
-    
+    if lines.is_empty() {
+        return "unknown".to_string();
+    }
+
     // Line 0 is usually "GET /path HTTP/1.1"
     let first_line = lines[0];
     let path = first_line.split_whitespace().nth(1).unwrap_or("/");
-    
+
     // Find Host header
-    let host = lines.iter()
+    let host = lines
+        .iter()
         .find(|l| l.to_lowercase().starts_with("host: "))
         .map(|l| l[6..].trim())
         .unwrap_or("unknown");
-        
-    // We assume HTTPS for everything unless we see 80 in host, 
+
+    // We assume HTTPS for everything unless we see 80 in host,
     // but httpx usually uses 443 by default for these probes.
     format!("https://{}{}", host, path)
 }
@@ -212,16 +134,17 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
 
     let mut redirect_chain = Vec::new();
     if let (Some(codes), Some(chain)) = (&parsed.chain_status_codes, &parsed.chain) {
-        // chain_status_codes are the redirects (3xx). 
+        // chain_status_codes are the redirects (3xx).
         // chain contains the full requests.
         // If there are N redirects, there are N+1 items in the chain.
         for (i, &code) in codes.iter().enumerate() {
             if i < chain.len() {
-                let current_url = extract_url_from_raw_request(chain[i].request.as_deref().unwrap_or(""));
-                
+                let current_url =
+                    extract_url_from_raw_request(chain[i].request.as_deref().unwrap_or(""));
+
                 // The next item in the chain is where we redirected TO
                 let next_url = if i + 1 < chain.len() {
-                    extract_url_from_raw_request(chain[i+1].request.as_deref().unwrap_or(""))
+                    extract_url_from_raw_request(chain[i + 1].request.as_deref().unwrap_or(""))
                 } else {
                     parsed.url.clone().unwrap_or_else(|| "unknown".to_string())
                 };
@@ -258,7 +181,7 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
         let error_kind = categorize_httpx_error(&error_msg);
 
         HttpObservation {
-            item_type: "http_check".to_string(),
+            item_type: ItemType::HttpCheck,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: original_target.to_string(),
@@ -281,14 +204,15 @@ fn map_httpx_to_observation(parsed: HttpxOutput, original_target: &str) -> HttpO
         // Determine the true final URL: if there's a redirect chain with 3xx hops,
         // use the redirect_to of the last 3xx hop (where we actually ended up).
         // parsed.url is just the probed input URL, NOT the final destination.
-        let final_url = redirect_chain.iter()
+        let final_url = redirect_chain
+            .iter()
             .rev()
             .find(|hop| (300..400).contains(&(hop.status as u32)))
             .map(|hop| hop.redirect_to.clone())
             .or(parsed.url);
 
         HttpObservation {
-            item_type: "http_check".to_string(),
+            item_type: ItemType::HttpCheck,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: original_target.to_string(),
@@ -321,7 +245,7 @@ pub type ProgressCallback = Arc<dyn Fn(usize, usize, &str) + Send + Sync>;
 pub fn probe_http_batch(
     targets: &[String],
     storage: &JsonlStorage,
-) -> Result<Vec<HttpObservation>, io::Error> {
+) -> Result<Vec<HttpObservation>> {
     probe_http_batch_with_progress(targets, storage, None)
 }
 
@@ -330,7 +254,7 @@ pub fn probe_http_batch_with_progress(
     targets: &[String],
     storage: &JsonlStorage,
     on_progress: Option<ProgressCallback>,
-) -> Result<Vec<HttpObservation>, io::Error> {
+) -> Result<Vec<HttpObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -351,7 +275,7 @@ pub fn probe_http_batch_with_progress(
 
         let mut child = Command::new("httpx")
             .args([
-                "-json", 
+                "-json",
                 "-td",
                 "-title",
                 "-server",
@@ -373,24 +297,27 @@ pub fn probe_http_batch_with_progress(
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let mut stdin = child.stdin.take().expect("Failed to open stdin");
-        
+        let mut stdin = child.stdin.take().ok_or(ProbeError::ToolFailed {
+            tool: "httpx".to_string(),
+            stderr: "failed to open stdin pipe".to_string(),
+        })?;
+
         let mut clean_targets = Vec::new();
         for target in chunk {
-            let clean = target
-                .trim()
-                .replace("http://", "")
-                .replace("https://", "");
+            let clean = target.trim().replace("http://", "").replace("https://", "");
             clean_targets.push(clean);
         }
-        
+
         let targets_string = clean_targets.join("\n") + "\n";
-        
+
         thread::spawn(move || {
             let _ = stdin.write_all(targets_string.as_bytes());
         });
 
-        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let stdout = child.stdout.take().ok_or(ProbeError::ToolFailed {
+            tool: "httpx".to_string(),
+            stderr: "failed to open stdout pipe".to_string(),
+        })?;
         let reader = BufReader::new(stdout);
         let mut observations = Vec::new();
 
@@ -402,20 +329,19 @@ pub fn probe_http_batch_with_progress(
 
             if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
                 let input_from_httpx = parsed.input.clone();
-                
+
                 // Match input to the original target to preserve its casing/format
-                let original = chunk.iter()
+                let original = chunk
+                    .iter()
                     .find(|&t| {
-                        let clean = t.trim()
-                            .replace("http://", "")
-                            .replace("https://", "");
+                        let clean = t.trim().replace("http://", "").replace("https://", "");
                         clean == input_from_httpx
                     })
                     .map(|s| s.as_str())
                     .unwrap_or(&input_from_httpx);
-                
+
                 let obs = map_httpx_to_observation(parsed, original);
-                
+
                 if let Some(ref cb) = on_progress {
                     // Global progress calculation if needed, here we just use chunk local
                     cb(line_idx + 1, chunk.len(), &obs.target);
@@ -437,18 +363,15 @@ pub fn probe_http_batch_with_progress(
 }
 
 // Perform HTTP probe (single domain wrapper around batch)
-pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation, io::Error> {
+pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation> {
     check_httpx_installation()?;
-    
-    let clean_domain = domain
-        .trim()
-        .replace("http://", "")
-        .replace("https://", "");
+
+    let clean_domain = domain.trim().replace("http://", "").replace("https://", "");
 
     let output = Command::new("httpx")
         .args([
             "-u", &clean_domain,
-            "-json", 
+            "-json",
             "-td",
             "-title",
             "-server",
@@ -471,7 +394,11 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     let trimmed = stdout_str.trim();
 
     if trimmed.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::Other, "No output from httpx"));
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "No output from httpx".to_string(),
+        }
+        .into());
     }
 
     // httpx might output multiple JSON lines if it probes multiple endpoints (e.g. root + www).
@@ -484,17 +411,22 @@ pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservatio
     }
 
     if results.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "No valid JSON records in httpx output"));
+        return Err(ProbeError::InvalidOutput {
+            tool: "httpx".to_string(),
+            reason: "No valid JSON records in httpx output".to_string(),
+        }
+        .into());
     }
 
     // Pick the best result: prefer 200, then any status code, then whatever matches input
-    let parsed = results.iter()
+    let parsed = results
+        .iter()
         .find(|r| r.status_code == Some(200))
         .or_else(|| results.iter().find(|r| r.status_code.is_some()))
         .unwrap_or(&results[results.len() - 1]);
 
     let mut obs = map_httpx_to_observation(parsed.clone(), domain);
-    obs.target = domain.to_string(); 
+    obs.target = domain.to_string();
     storage.save(&obs)?;
     Ok(obs)
 }

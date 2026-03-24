@@ -1,37 +1,13 @@
+use super::types::DnsObservation;
+use crate::error::{ProbeError, Result};
+use crate::inventory::ItemType;
 use crate::storage::JsonlStorage;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::fs;
-use std::io;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DnsObservation {
-    pub item_type: String,
-    pub id: String,
-    pub asset_type: String,
-    pub target: String,
-
-    #[serde(default)]
-    pub a: Vec<String>,
-    #[serde(default)]
-    pub aaaa: Vec<String>,
-    #[serde(default)]
-    pub cname: Vec<String>,
-    #[serde(default)]
-    pub mx: Vec<String>,
-    #[serde(default)]
-    pub ns: Vec<String>,
-    #[serde(default)]
-    pub txt: Vec<String>,
-    #[serde(default)]
-    pub soa: Vec<String>,
-
-    pub checked_at: chrono::DateTime<Utc>,
-    pub source: String,
-}
 
 #[derive(Deserialize, Debug)]
 struct SoaRecord {
@@ -59,28 +35,21 @@ struct DnsxOutput {
 }
 
 /// Helper function to check if dnsx is correctly installed.
-fn check_dnsx_installation() -> Result<(), io::Error> {
-    let _ = Command::new("dnsx")
-        .arg("-version")
-        .output()
-        .map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "dnsx not found in PATH. Please install it from ProjectDiscovery.",
-                )
-            } else {
-                e
+fn check_dnsx_installation() -> Result<()> {
+    Command::new("dnsx").arg("-version").output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ProbeError::ToolNotFound {
+                tool: "dnsx".to_string(),
             }
-        })?;
+        } else {
+            ProbeError::Execution(e)
+        }
+    })?;
     Ok(())
 }
 
 /// Run a batch DNS probe using a single dnsx process for efficiency.
-pub fn probe_dns_batch(
-    targets: &[String],
-    storage: &JsonlStorage,
-) -> Result<Vec<DnsObservation>, io::Error> {
+pub fn probe_dns_batch(targets: &[String], storage: &JsonlStorage) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -106,10 +75,17 @@ pub fn probe_dns_batch(
 
         let output = Command::new("dnsx")
             .args([
-                "-l", temp_file.to_str().unwrap(),
-                "-json", 
-                "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-soa", 
-                "-silent"
+                "-l",
+                &temp_file.to_string_lossy(),
+                "-json",
+                "-a",
+                "-aaaa",
+                "-cname",
+                "-mx",
+                "-ns",
+                "-txt",
+                "-soa",
+                "-silent",
             ])
             .output()?;
 
@@ -131,12 +107,21 @@ pub fn probe_dns_batch(
 
             match serde_json::from_str::<DnsxOutput>(&line) {
                 Ok(parsed) => {
-                    let soa_strings = parsed.soa.unwrap_or_default().into_iter()
-                        .map(|s| format!("ns:{} mailbox:{}", s.ns.unwrap_or_default(), s.mailbox.unwrap_or_default()))
+                    let soa_strings = parsed
+                        .soa
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|s| {
+                            format!(
+                                "ns:{} mailbox:{}",
+                                s.ns.unwrap_or_default(),
+                                s.mailbox.unwrap_or_default()
+                            )
+                        })
                         .collect();
 
                     let obs = DnsObservation {
-                        item_type: "dns_record".to_string(),
+                        item_type: ItemType::DnsRecord,
                         id: Uuid::new_v4().to_string(),
                         asset_type: "domain".to_string(),
                         target: parsed.host,
@@ -167,15 +152,15 @@ pub fn probe_dns_batch(
     Ok(all_observations)
 }
 
-pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation, io::Error> {
+pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation> {
     let targets = vec![target.to_string()];
     let mut results = probe_dns_batch(&targets, storage)?;
-    
+
     if let Some(obs) = results.pop() {
         Ok(obs)
     } else {
         let obs = DnsObservation {
-            item_type: "dns_record".to_string(),
+            item_type: ItemType::DnsRecord,
             id: Uuid::new_v4().to_string(),
             asset_type: "domain".to_string(),
             target: target.to_string(),
