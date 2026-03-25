@@ -1,7 +1,8 @@
 use crate::app::probe;
 use crate::domain::normalize_domain;
 use crate::error::Result;
-use crate::storage::JsonlStorage;
+use crate::storage::{StorageEngine, StorageEngineExt};
+use std::sync::Arc;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -58,7 +59,7 @@ fn load_domains_from_file(filepath: &str) -> Result<Vec<String>> {
 /// Run full reconnaissance on a batch of domains
 pub fn batch_process(
     filepath: &str,
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],
 ) -> Result<BatchStats> {
     let start = Instant::now();
@@ -79,7 +80,7 @@ pub fn batch_process(
     };
 
     // Load existing records to skip RDAP if already checked today
-    let existing_records = crate::storage::read_records(storage).ok();
+    let existing_records = storage.read_all_records().ok();
     let checked_today: std::collections::HashSet<String> = existing_records
         .as_ref()
         .map(|r| {
@@ -291,7 +292,7 @@ pub fn batch_process(
 /// Run full reconnaissance on a single domain
 pub fn run_single_recon(
     domain: &str,
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],
 ) -> crate::error::Result<()> {
     if crate::ignore::is_ignored(domain, ignore_patterns) {
@@ -325,11 +326,11 @@ pub fn run_single_recon(
 }
 
 /// Get all unique domains and subdomains currently in inventory
-fn get_all_assets(storage: &JsonlStorage) -> Result<Vec<String>> {
+fn get_all_assets(storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
     use std::collections::HashSet;
 
     let mut seen = HashSet::new();
-    let mut assets: Vec<String> = crate::storage::read_records(storage)?
+    let mut assets: Vec<String> = storage.read_all_records()?
         .items
         .into_iter()
         .filter_map(|item| {

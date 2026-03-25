@@ -92,9 +92,22 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("")
     };
 
+    let storage_name = app.storage.name();
     let text = vec![Line::from(vec![
         Span::styled(
-            " Balebos Dashboard ",
+            format!(" Storage: {} ", storage_name),
+            Style::default()
+                .bg(if storage_name == "DuckDB" {
+                    Color::Blue
+                } else {
+                    Color::DarkGray
+                })
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" | "),
+        Span::styled(
+            " Balebos v1.3.0 ",
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::Cyan),

@@ -1,7 +1,8 @@
 use super::types::DnsObservation;
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
-use crate::storage::JsonlStorage;
+use crate::storage::{StorageEngine, StorageEngineExt};
+use std::sync::Arc;
 use chrono::Utc;
 use serde::Deserialize;
 use std::fs;
@@ -49,7 +50,7 @@ fn check_dnsx_installation() -> Result<()> {
 }
 
 /// Run a batch DNS probe using a single dnsx process for efficiency.
-pub fn probe_dns_batch(targets: &[String], storage: &JsonlStorage) -> Result<Vec<DnsObservation>> {
+pub fn probe_dns_batch(targets: &[String], storage: &Arc<dyn StorageEngine>) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -152,7 +153,7 @@ pub fn probe_dns_batch(targets: &[String], storage: &JsonlStorage) -> Result<Vec
     Ok(all_observations)
 }
 
-pub fn probe_dns(target: &str, storage: &JsonlStorage) -> Result<DnsObservation> {
+pub fn probe_dns(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<DnsObservation> {
     let targets = vec![target.to_string()];
     let mut results = probe_dns_batch(&targets, storage)?;
 

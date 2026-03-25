@@ -5,7 +5,8 @@ pub mod tabs;
 pub mod ui;
 pub mod workflows;
 
-use crate::storage::JsonlStorage;
+use crate::storage::StorageEngine;
+use std::sync::Arc;
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
 use crate::tui::state::OrgPane;
 use crossterm::{
@@ -17,7 +18,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
 
-pub fn run(storage: JsonlStorage) -> crate::error::Result<()> {
+pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();

@@ -34,8 +34,9 @@ use crate::error::Result;
 ///   🔴 Server errors (5xx):       32 (  3.2%)
 ///   ⚠️  Network errors:           182 ( 18.2%)
 /// ```
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 struct HttpCheck {
@@ -59,8 +60,8 @@ struct StatusReport {
 }
 
 /// Collect and categorize HTTP check results from storage
-fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport> {
-    let observations = read_records(storage)?.http_observations;
+fn collect_status_report(storage: &Arc<dyn StorageEngine>) -> Result<StatusReport> {
+    let observations = storage.read_all_records()?.http_observations;
 
     // Collect latest HTTP check for each target (dedup by most recent)
     let mut status_map: BTreeMap<String, HttpCheck> = BTreeMap::new();
@@ -119,7 +120,7 @@ fn collect_status_report(storage: &JsonlStorage) -> Result<StatusReport> {
 
 /// Display status of all domains/subdomains with their HTTP probe results
 /// Shows live/dead status with HTTP status codes and error information
-pub fn display_domain_status(storage: &JsonlStorage) -> Result<()> {
+pub fn display_domain_status(storage: &Arc<dyn StorageEngine>) -> Result<()> {
     let report = collect_status_report(storage)?;
 
     if report.total == 0 {
@@ -235,7 +236,7 @@ pub fn display_domain_status(storage: &JsonlStorage) -> Result<()> {
 }
 
 /// Export status report to CSV format
-pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()> {
+pub fn export_status_csv(storage: &Arc<dyn StorageEngine>, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
 
     let mut csv_lines = vec![
@@ -285,7 +286,7 @@ pub fn export_status_csv(storage: &JsonlStorage, output_file: &str) -> Result<()
 }
 
 /// Export status report to Markdown format
-pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Result<()> {
+pub fn export_status_markdown(storage: &Arc<dyn StorageEngine>, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
     let total = report.total;
 
@@ -404,7 +405,7 @@ pub fn export_status_markdown(storage: &JsonlStorage, output_file: &str) -> Resu
 }
 
 /// Export status report to HTML format
-pub fn export_status_html(storage: &JsonlStorage, output_file: &str) -> Result<()> {
+pub fn export_status_html(storage: &Arc<dyn StorageEngine>, output_file: &str) -> Result<()> {
     let report = collect_status_report(storage)?;
     let total = report.total;
 

@@ -2,9 +2,10 @@ use crate::domain::normalize::{normalize_domain, validate_domain};
 use crate::domain::Domain;
 use crate::error::{BalebosError, Result};
 use crate::inventory::InventoryItem;
-use crate::storage::JsonlStorage;
+use crate::storage::{StorageEngine, StorageEngineExt};
+use std::sync::Arc;
 
-pub fn scan_domain(domain_name: &str, storage: &JsonlStorage) -> Result<Domain> {
+pub fn scan_domain(domain_name: &str, storage: &Arc<dyn StorageEngine>) -> Result<Domain> {
     let (domain, item) = scan_domain_no_save(domain_name)?;
     storage.save(&item)?;
     Ok(domain)

@@ -1,9 +1,10 @@
 use crate::error::Result;
 use crate::inventory::ItemType;
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
+use std::sync::Arc;
 
-pub fn list_domains(storage: &JsonlStorage, unique: bool) -> Result<Vec<String>> {
-    let mut domains: Vec<String> = read_records(storage)?
+pub fn list_domains(storage: &Arc<dyn StorageEngine>, unique: bool) -> Result<Vec<String>> {
+    let mut domains: Vec<String> = storage.read_all_records()?
         .items
         .into_iter()
         .filter(|item| item.item_type == ItemType::Domain)

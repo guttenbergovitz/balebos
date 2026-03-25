@@ -3,7 +3,8 @@ use crate::org::{
     BrandId, BrandRecord, CompanyId, CompanyRecord, DomainRegistration, PersonId, PersonRecord,
     ProjectId, ProjectRecord, RoleAssignmentRecord,
 };
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
+use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
 
 /// Person with their role in a project
@@ -224,8 +225,8 @@ pub struct OrgModel {
 }
 
 impl OrgModel {
-    pub fn load(storage: &JsonlStorage) -> crate::error::Result<Self> {
-        let records = read_records(storage)?;
+    pub fn load(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<Self> {
+        let records = storage.read_all_records()?;
 
         let persons_by_id: HashMap<_, _> =
             records.persons.iter().map(|p| (p.id, p.clone())).collect();
@@ -341,8 +342,8 @@ impl OrgModel {
     }
 }
 
-pub fn load_tui_model(storage: &JsonlStorage) -> crate::error::Result<TuiModel> {
-    let records = read_records(storage)?;
+pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<TuiModel> {
+    let records = storage.read_all_records()?;
 
     // Build lookup maps for org data
     let persons_map: HashMap<_, _> = records.persons.iter().map(|p| (p.id, p.clone())).collect();

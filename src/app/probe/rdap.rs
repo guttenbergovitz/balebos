@@ -1,6 +1,7 @@
 use crate::error::{ProbeError, Result};
 use crate::org::{DomainContact, DomainRegistrationRecord};
-use crate::storage::JsonlStorage;
+use crate::storage::{StorageEngine, StorageEngineExt};
+use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::process::Command;
@@ -28,7 +29,7 @@ struct RdapOutput {
     status: Option<Vec<String>>,
 }
 
-pub fn run_rdap_probe(storage: &JsonlStorage, domain: &str) -> Result<DomainRegistrationRecord> {
+pub fn run_rdap_probe(storage: &Arc<dyn StorageEngine>, domain: &str) -> Result<DomainRegistrationRecord> {
     let record = run_rdap_probe_no_save(domain)?;
     storage.save(&record)?;
     Ok(record)

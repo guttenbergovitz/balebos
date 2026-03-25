@@ -26,7 +26,8 @@ use crate::error::Result;
 /// │       └── ◇ dev
 /// ```
 use crate::inventory::ItemType;
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
+use std::sync::Arc;
 use std::collections::BTreeMap;
 
 // Tree node representing a domain or subdomain with its children
@@ -49,8 +50,8 @@ impl TreeNode {
 
 /// Build a hierarchical tree of domains and subdomains
 /// Returns root nodes (base domains) with their subdomain hierarchy
-fn build_domain_tree(storage: &JsonlStorage) -> Result<Vec<TreeNode>> {
-    let items = read_records(storage)?.items;
+fn build_domain_tree(storage: &Arc<dyn StorageEngine>) -> Result<Vec<TreeNode>> {
+    let items = storage.read_all_records()?.items;
 
     let domain_records: Vec<String> = items
         .iter()
@@ -157,7 +158,7 @@ fn print_tree_node(node: &TreeNode, prefix: &str, is_last: bool) {
 }
 
 /// Display all domains and subdomains in a hierarchical tree structure
-pub fn display_domain_tree(storage: &JsonlStorage) -> Result<()> {
+pub fn display_domain_tree(storage: &Arc<dyn StorageEngine>) -> Result<()> {
     let roots = build_domain_tree(storage)?;
 
     if roots.is_empty() {

@@ -9,8 +9,9 @@ use crate::org::{
     ContractorRole, CountryCode, ExternalContractorAssignment, PersonId, PersonRecord, ProjectId,
     ProjectRecord, Role, RoleAssignmentRecord,
 };
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::{StorageEngine, StorageEngineExt};
 
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Generate a timestamp-based unique ID.
@@ -26,7 +27,7 @@ fn generate_id() -> u128 {
 // ---------------------------------------------------------------------------
 
 pub fn add_person(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     first_name: &str,
     last_name: &str,
     email: &str,
@@ -45,7 +46,7 @@ pub fn add_person(
 }
 
 pub fn update_person(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     id: PersonId,
     first_name: &str,
     last_name: &str,
@@ -63,8 +64,8 @@ pub fn update_person(
     Ok(record)
 }
 
-pub fn list_persons(storage: &JsonlStorage) -> Result<Vec<PersonRecord>> {
-    let records = read_records(storage)?;
+pub fn list_persons(storage: &Arc<dyn StorageEngine>) -> Result<Vec<PersonRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.persons)
 }
 
@@ -73,7 +74,7 @@ pub fn list_persons(storage: &JsonlStorage) -> Result<Vec<PersonRecord>> {
 // ---------------------------------------------------------------------------
 
 pub fn add_company(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     name: &str,
     country: CountryCode,
     brand: Option<BrandId>,
@@ -85,7 +86,7 @@ pub fn add_company(
 }
 
 pub fn update_company(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     id: CompanyId,
     name: &str,
     country: CountryCode,
@@ -96,8 +97,8 @@ pub fn update_company(
     Ok(record)
 }
 
-pub fn list_companies(storage: &JsonlStorage) -> Result<Vec<CompanyRecord>> {
-    let records = read_records(storage)?;
+pub fn list_companies(storage: &Arc<dyn StorageEngine>) -> Result<Vec<CompanyRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.companies)
 }
 
@@ -105,21 +106,21 @@ pub fn list_companies(storage: &JsonlStorage) -> Result<Vec<CompanyRecord>> {
 // Brand operations
 // ---------------------------------------------------------------------------
 
-pub fn add_brand(storage: &JsonlStorage, name: &str) -> Result<BrandRecord> {
+pub fn add_brand(storage: &Arc<dyn StorageEngine>, name: &str) -> Result<BrandRecord> {
     let id = BrandId::new(generate_id());
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn update_brand(storage: &JsonlStorage, id: BrandId, name: &str) -> Result<BrandRecord> {
+pub fn update_brand(storage: &Arc<dyn StorageEngine>, id: BrandId, name: &str) -> Result<BrandRecord> {
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
 }
 
-pub fn list_brands(storage: &JsonlStorage) -> Result<Vec<BrandRecord>> {
-    let records = read_records(storage)?;
+pub fn list_brands(storage: &Arc<dyn StorageEngine>) -> Result<Vec<BrandRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.brands)
 }
 
@@ -128,7 +129,7 @@ pub fn list_brands(storage: &JsonlStorage) -> Result<Vec<BrandRecord>> {
 // ---------------------------------------------------------------------------
 
 pub fn add_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     name: &str,
     company_id: CompanyId,
 ) -> Result<ProjectRecord> {
@@ -139,7 +140,7 @@ pub fn add_project(
 }
 
 pub fn add_project_with_importance(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     name: &str,
     company_id: CompanyId,
     importance: Option<u8>,
@@ -151,7 +152,7 @@ pub fn add_project_with_importance(
 }
 
 pub fn update_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     id: ProjectId,
     name: &str,
     company_id: CompanyId,
@@ -162,7 +163,7 @@ pub fn update_project(
 }
 
 pub fn set_project_importance(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     id: ProjectId,
     name: &str,
     company_id: CompanyId,
@@ -173,8 +174,8 @@ pub fn set_project_importance(
     Ok(record)
 }
 
-pub fn list_projects(storage: &JsonlStorage) -> Result<Vec<ProjectRecord>> {
-    let records = read_records(storage)?;
+pub fn list_projects(storage: &Arc<dyn StorageEngine>) -> Result<Vec<ProjectRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.projects)
 }
 
@@ -183,7 +184,7 @@ pub fn list_projects(storage: &JsonlStorage) -> Result<Vec<ProjectRecord>> {
 // ---------------------------------------------------------------------------
 
 pub fn assign_asset(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     host: &str,
     project_id: ProjectId,
 ) -> Result<AssetAssignmentRecord> {
@@ -192,8 +193,8 @@ pub fn assign_asset(
     Ok(record)
 }
 
-pub fn unassign_asset(storage: &JsonlStorage, host: &str) -> Result<bool> {
-    let records = read_records(storage)?;
+pub fn unassign_asset(storage: &Arc<dyn StorageEngine>, host: &str) -> Result<bool> {
+    let records = storage.read_all_records()?;
     // Check if the asset is assigned
     let is_assigned = records.asset_assignments.iter().any(|a| a.host == host);
     if !is_assigned {
@@ -207,7 +208,7 @@ pub fn unassign_asset(storage: &JsonlStorage, host: &str) -> Result<bool> {
 }
 
 pub fn set_asset_importance(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     host: &str,
     importance: u8,
 ) -> Result<AssetImportanceRecord> {
@@ -216,8 +217,8 @@ pub fn set_asset_importance(
     Ok(record)
 }
 
-pub fn list_asset_assignments(storage: &JsonlStorage) -> Result<Vec<AssetAssignmentRecord>> {
-    let records = read_records(storage)?;
+pub fn list_asset_assignments(storage: &Arc<dyn StorageEngine>) -> Result<Vec<AssetAssignmentRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.asset_assignments)
 }
 
@@ -226,7 +227,7 @@ pub fn list_asset_assignments(storage: &JsonlStorage) -> Result<Vec<AssetAssignm
 // ---------------------------------------------------------------------------
 
 pub fn assign_person_to_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     person_id: PersonId,
     project_id: ProjectId,
     role: Role,
@@ -237,7 +238,7 @@ pub fn assign_person_to_project(
 }
 
 pub fn assign_company_to_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     company_id: CompanyId,
     project_id: ProjectId,
     role: Role,
@@ -247,8 +248,8 @@ pub fn assign_company_to_project(
     Ok(record)
 }
 
-pub fn list_role_assignments(storage: &JsonlStorage) -> Result<Vec<RoleAssignmentRecord>> {
-    let records = read_records(storage)?;
+pub fn list_role_assignments(storage: &Arc<dyn StorageEngine>) -> Result<Vec<RoleAssignmentRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.role_assignments)
 }
 
@@ -257,7 +258,7 @@ pub fn list_role_assignments(storage: &JsonlStorage) -> Result<Vec<RoleAssignmen
 // ---------------------------------------------------------------------------
 
 pub fn assign_contractor_to_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     company_id: CompanyId,
     project_id: ProjectId,
     role: ContractorRole,
@@ -271,32 +272,32 @@ pub fn assign_contractor_to_project(
 // Lookup helpers
 // ---------------------------------------------------------------------------
 
-pub fn find_person_by_id(storage: &JsonlStorage, id: PersonId) -> Result<Option<PersonRecord>> {
-    let records = read_records(storage)?;
+pub fn find_person_by_id(storage: &Arc<dyn StorageEngine>, id: PersonId) -> Result<Option<PersonRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.persons.into_iter().find(|p| p.id == id))
 }
 
-pub fn find_company_by_id(storage: &JsonlStorage, id: CompanyId) -> Result<Option<CompanyRecord>> {
-    let records = read_records(storage)?;
+pub fn find_company_by_id(storage: &Arc<dyn StorageEngine>, id: CompanyId) -> Result<Option<CompanyRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.companies.into_iter().find(|c| c.id == id))
 }
 
-pub fn find_brand_by_id(storage: &JsonlStorage, id: BrandId) -> Result<Option<BrandRecord>> {
-    let records = read_records(storage)?;
+pub fn find_brand_by_id(storage: &Arc<dyn StorageEngine>, id: BrandId) -> Result<Option<BrandRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.brands.into_iter().find(|b| b.id == id))
 }
 
-pub fn find_project_by_id(storage: &JsonlStorage, id: ProjectId) -> Result<Option<ProjectRecord>> {
-    let records = read_records(storage)?;
+pub fn find_project_by_id(storage: &Arc<dyn StorageEngine>, id: ProjectId) -> Result<Option<ProjectRecord>> {
+    let records = storage.read_all_records()?;
     Ok(records.projects.into_iter().find(|p| p.id == id))
 }
 
 /// Find the project assignment for a given host.
 pub fn find_asset_assignment(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     host: &str,
 ) -> Result<Option<AssetAssignmentRecord>> {
-    let records = read_records(storage)?;
+    let records = storage.read_all_records()?;
     // Return the most recent assignment for this host
     Ok(records
         .asset_assignments
@@ -307,10 +308,10 @@ pub fn find_asset_assignment(
 
 /// Find all role assignments for a given project.
 pub fn find_role_assignments_for_project(
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     project_id: ProjectId,
 ) -> Result<Vec<RoleAssignmentRecord>> {
-    let records = read_records(storage)?;
+    let records = storage.read_all_records()?;
     Ok(records
         .role_assignments
         .into_iter()

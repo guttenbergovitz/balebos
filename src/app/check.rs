@@ -2,9 +2,10 @@ use crate::app::probe::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::error::Result;
 use crate::inventory::{InventoryItem, ItemType};
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 // Severity of an issue
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,8 +335,8 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
 }
 
 // Run all checks and collect issues
-pub fn check_inventory(storage: &JsonlStorage, ignore_patterns: &[String]) -> Result<Vec<Issue>> {
-    let records = read_records(storage)?;
+pub fn check_inventory(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) -> Result<Vec<Issue>> {
+    let records = storage.read_all_records()?;
     let items = records.items;
     let http_observations = records.http_observations;
 
