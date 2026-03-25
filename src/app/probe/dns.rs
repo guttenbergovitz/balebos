@@ -62,12 +62,15 @@ pub fn probe_dns_batch(targets: &[String], storage: &Arc<dyn StorageEngine>) -> 
 
     for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
         let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;
-        println!(
-            "    ⟳ DNS: Processing chunk {}/{} ({} targets)...",
-            chunk_idx + 1,
-            total_chunks,
-            chunk.len()
-        );
+        // Skip printing in TUI - status is handled by the caller
+        if std::env::var("BALEBOS_STORAGE").is_err() {
+            println!(
+                "    ⟳ DNS: Processing chunk {}/{} ({} targets)...",
+                chunk_idx + 1,
+                total_chunks,
+                chunk.len()
+            );
+        }
 
         // Use a temporary file for targets to avoid pipe issues
         let temp_dir = std::env::temp_dir();

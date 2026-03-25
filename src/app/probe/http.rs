@@ -266,12 +266,15 @@ pub fn probe_http_batch_with_progress(
 
     for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
         let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;
-        println!(
-            "    ⟳ HTTP: Processing chunk {}/{} ({} targets)...",
-            chunk_idx + 1,
-            total_chunks,
-            chunk.len()
-        );
+        // Skip printing in TUI - status is handled by the caller
+        if std::env::var("BALEBOS_STORAGE").is_err() {
+            println!(
+                "    ⟳ HTTP: Processing chunk {}/{} ({} targets)...",
+                chunk_idx + 1,
+                total_chunks,
+                chunk.len()
+            );
+        }
 
         let mut child = Command::new("httpx")
             .args([

@@ -25,6 +25,7 @@ pub struct InventoryState {
     pub visible_items: Vec<VisibleItem>,
     pub hide_external_redirects: bool,
     pub marked_assets: HashSet<String>,
+    pub filter_tag: Option<String>,
 }
 
 impl InventoryState {
@@ -36,6 +37,7 @@ impl InventoryState {
             visible_items: Vec::new(),
             hide_external_redirects: false,
             marked_assets: HashSet::new(),
+            filter_tag: None,
         }
     }
 
@@ -147,6 +149,18 @@ impl InventoryState {
 
         for group in &model.groups {
             let root_name = &group.root.name;
+
+            // Check tag filter first
+            if let Some(ref tag) = self.filter_tag {
+                if !model
+                    .asset_tags
+                    .get(root_name)
+                    .map(|tags| tags.contains(tag))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+            }
 
             // Apply filtering
             let root_matches = root_name.to_lowercase().contains(&filter_lower);

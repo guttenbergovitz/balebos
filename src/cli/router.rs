@@ -12,6 +12,7 @@ pub enum Command {
     Probe { kind: ProbeKind, target: String },
     Ui,
     Org(OrgCommand),
+    Tag(TagCommand),
 }
 
 pub enum ProbeKind {
@@ -23,6 +24,8 @@ pub enum ProbeKind {
 pub struct ExportArgs {
     pub format: String,
     pub output_file: Option<String>,
+    #[allow(dead_code)]
+    pub tag_filter: Option<String>,
 }
 
 /// Organizational management commands.
@@ -68,6 +71,29 @@ pub enum OrgCommand {
     },
 }
 
+/// Tag management commands.
+pub enum TagCommand {
+    Add {
+        asset_name: String,
+        tag: String,
+    },
+    AddBulk {
+        asset_names: Vec<String>,
+        tag: String,
+    },
+    Remove {
+        asset_name: String,
+        tag: String,
+    },
+    List {
+        asset_name: Option<String>,
+    },
+    ListTags,
+    ListByTag {
+        tag: String,
+    },
+}
+
 /// Parse command-line arguments into a structured Command.
 ///
 /// Returns `None` if no valid command is recognized
@@ -96,10 +122,18 @@ pub fn parse_command() -> Option<Command> {
         "status" => {
             let export = if args.get(2).is_some_and(|a| a == "--export" || a == "-e") {
                 let format = args.get(3)?.clone();
-                let output_file = args.get(4).cloned();
+                let output_file = args.get(4).and_then(|s| {
+                    if s.starts_with("--tag") {
+                        None
+                    } else {
+                        Some(s.clone())
+                    }
+                });
+                let tag_filter = find_flag_value(args.as_slice(), "--tag");
                 Some(ExportArgs {
                     format,
                     output_file,
+                    tag_filter,
                 })
             } else {
                 None
@@ -126,6 +160,7 @@ pub fn parse_command() -> Option<Command> {
             Some(Command::Probe { kind, target })
         }
         "org" => parse_org_command(&args),
+        "tag" => parse_tag_command(&args),
         _ => None,
     }
 }
@@ -211,4 +246,40 @@ fn find_flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1).cloned())
+}
+
+fn parse_tag_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "add" => {
+            let asset_name = args.get(3)?.clone();
+            let tag = args.get(4)?.clone();
+            Some(Command::Tag(TagCommand::Add { asset_name, tag }))
+        }
+        "add-bulk" => {
+            // balebos tag add-bulk <tag> <asset1> <asset2> ...
+            let tag = args.get(3)?.clone();
+            let asset_names: Vec<String> = args.iter().skip(4).cloned().collect();
+            if asset_names.is_empty() {
+                return None;
+            }
+            Some(Command::Tag(TagCommand::AddBulk { asset_names, tag }))
+        }
+        "remove" => {
+            let asset_name = args.get(3)?.clone();
+            let tag = args.get(4)?.clone();
+            Some(Command::Tag(TagCommand::Remove { asset_name, tag }))
+        }
+        "list" => {
+            let asset_name = args.get(3).cloned();
+            Some(Command::Tag(TagCommand::List { asset_name }))
+        }
+        "list-tags" => Some(Command::Tag(TagCommand::ListTags)),
+        "by-tag" => {
+            let tag = args.get(3)?.clone();
+            Some(Command::Tag(TagCommand::ListByTag { tag }))
+        }
+        _ => None,
+    }
 }

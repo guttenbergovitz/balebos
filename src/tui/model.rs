@@ -175,6 +175,7 @@ pub struct DomainGroup {
 pub struct TuiModel {
     pub groups: Vec<DomainGroup>,
     pub stats: GlobalStats,
+    pub asset_tags: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 pub struct GlobalStats {
@@ -540,9 +541,12 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         }
     }
 
+    let asset_tags = crate::app::tags::get_active_tags(&records.asset_tags);
+
     Ok(TuiModel {
         groups: final_groups,
         stats,
+        asset_tags,
     })
 }
 
