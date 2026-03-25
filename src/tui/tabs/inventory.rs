@@ -153,6 +153,12 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
+    let title = if let Some(ref tag) = app.inventory.filter_tag {
+        format!(" Inventory (Space to toggle) [Tag: {}] ", tag)
+    } else {
+        " Inventory (Space to toggle) ".to_string()
+    };
+
     let t = Table::new(
         rows,
         [
@@ -165,7 +171,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Inventory (Space to toggle) "),
+            .title(title),
     )
     .row_highlight_style(selected_style);
 
@@ -176,7 +182,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default().borders(Borders::ALL).title(" Details ");
 
     if let Some(asset) = app.selected_asset() {
-        let text = build_details_text(asset);
+        let text = build_details_text(asset, app);
         let details = Paragraph::new(text)
             .block(block)
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -187,7 +193,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
+pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
     let mut text = vec![
         Line::from(vec![
             Span::styled("Target: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -195,6 +201,22 @@ pub fn build_details_text(asset: &AssetState) -> Vec<Line<'static>> {
         ]),
         Line::from(""),
     ];
+
+    // Tags
+    if let Some(tags) = app.model.asset_tags.get(&asset.name) {
+        if !tags.is_empty() {
+            text.push(Line::from(Span::styled(
+                "Tags:",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::UNDERLINED),
+            )));
+            for tag in tags {
+                text.push(Line::from(format!("  • {}", tag)));
+            }
+            text.push(Line::from(""));
+        }
+    }
 
     // Redirect Status
     if let Some(ext_target) = asset.external_redirect() {

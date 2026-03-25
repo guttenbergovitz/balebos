@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::domain::Domain;
 
@@ -32,6 +33,8 @@ pub enum ItemType {
     OrgAssetImportance,
     #[serde(rename = "org_domain_registration")]
     OrgDomainRegistration,
+    #[serde(rename = "asset_tag")]
+    AssetTag,
 }
 
 // This struct represents an item in our inventory storage
@@ -68,6 +71,44 @@ impl InventoryItem {
             discovered_at: domain.discovered_at,
             source: source.to_string(),
             original_input,
+        }
+    }
+}
+
+/// Tag assignment for an asset (domain/subdomain)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetTag {
+    pub item_type: ItemType,
+    pub id: String,
+    pub asset_name: String,
+    pub tag: String,
+    pub tagged_at: DateTime<Utc>,
+    pub tagged_by: String,
+    pub removed_at: Option<DateTime<Utc>>,
+}
+
+impl AssetTag {
+    pub fn new(asset_name: String, tag: String) -> Self {
+        Self {
+            item_type: ItemType::AssetTag,
+            id: Uuid::new_v4().to_string(),
+            asset_name,
+            tag,
+            tagged_at: Utc::now(),
+            tagged_by: "cli".to_string(),
+            removed_at: None,
+        }
+    }
+
+    pub fn removed(asset_name: String, tag: String) -> Self {
+        Self {
+            item_type: ItemType::AssetTag,
+            id: Uuid::new_v4().to_string(),
+            asset_name,
+            tag,
+            tagged_at: Utc::now(),
+            tagged_by: "cli".to_string(),
+            removed_at: Some(Utc::now()),
         }
     }
 }

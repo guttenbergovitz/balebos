@@ -19,7 +19,7 @@ use app::{
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
-use cli::{parse_command, Command, OrgCommand, ProbeKind};
+use cli::{parse_command, Command, OrgCommand, ProbeKind, TagCommand};
 use crate::storage::{StorageEngine, JsonlStorage};
 use std::sync::Arc;
 
@@ -41,6 +41,14 @@ fn print_usage() {
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
+    eprintln!();
+    eprintln!("Tag management:");
+    eprintln!("  balebos tag add <asset> <tag>      - Add a tag to an asset");
+    eprintln!("  balebos tag add-bulk <tag> <asset1> <asset2> ... - Add tag to multiple assets");
+    eprintln!("  balebos tag remove <asset> <tag>   - Remove a tag from an asset");
+    eprintln!("  balebos tag list [asset]           - List tags (all or for specific asset)");
+    eprintln!("  balebos tag list-tags              - List all unique tag names");
+    eprintln!("  balebos tag by-tag <tag>           - List all assets with a specific tag");
     eprintln!();
     eprintln!("Organizational management:");
     eprintln!("  balebos org person add <first> <last> <email>  - Add a person");
@@ -90,6 +98,7 @@ fn main() {
         Command::Probe { kind, target } => cmd_probe(kind, &target, &storage),
         Command::Ui => cmd_ui(storage),
         Command::Org(org_cmd) => cmd_org(org_cmd, &storage),
+        Command::Tag(tag_cmd) => cmd_tag(tag_cmd, &storage),
     }
 }
 
@@ -178,7 +187,9 @@ fn cmd_status(export: Option<cli::ExportArgs>, storage: &Arc<dyn StorageEngine>)
 
         let result = match export_args.format.as_str() {
             "csv" => export_status_csv(storage, &output_file),
-            "markdown" | "md" => export_status_markdown(storage, &output_file),
+            "markdown" | "md" => {
+                export_status_markdown(storage, &output_file)
+            }
             "html" => export_status_html(storage, &output_file),
             _ => {
                 eprintln!("Unknown format: {}", export_args.format);
@@ -823,6 +834,79 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
             }
             Err(e) => {
                 eprintln!("Error unassigning asset: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+    }
+}
+
+fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
+    use app::tags::*;
+
+    match tag_cmd {
+        TagCommand::Add { asset_name, tag } => match add_tag(storage, &asset_name, &tag) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error adding tag: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+        TagCommand::AddBulk { asset_names, tag } => {
+            let mut success_count = 0;
+            let mut error_count = 0;
+            
+            for asset_name in &asset_names {
+                match add_tag(storage, asset_name, &tag) {
+                    Ok(()) => {
+                        println!("✓ Tagged '{}' with '{}'", asset_name, tag);
+                        success_count += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("✗ Failed to tag '{}': {}", asset_name, e);
+                        error_count += 1;
+                    }
+                }
+            }
+            
+            println!("\nBulk tagging complete:");
+            println!("  Success: {}", success_count);
+            if error_count > 0 {
+                println!("  Failed:  {}", error_count);
+            }
+            
+            if error_count > 0 {
+                process::exit(EXIT_GENERAL_ERROR);
+            } else {
+                process::exit(EXIT_SUCCESS);
+            }
+        }
+        TagCommand::Remove { asset_name, tag } => match remove_tag(storage, &asset_name, &tag) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error removing tag: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+        TagCommand::List { asset_name } => {
+            match list_tags(storage, asset_name.as_deref()) {
+                Ok(()) => process::exit(EXIT_SUCCESS),
+                Err(e) => {
+                    eprintln!("Error listing tags: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
+            }
+        }
+        TagCommand::ListTags => match list_all_tag_names(storage) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error listing tags: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
+            }
+        },
+        TagCommand::ListByTag { tag } => match list_assets_by_tag(storage, &tag) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error listing assets: {}", e);
                 process::exit(EXIT_GENERAL_ERROR);
             }
         },

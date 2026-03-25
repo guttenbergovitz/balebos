@@ -8,6 +8,7 @@ pub mod report;
 pub mod scan;
 pub mod stats;
 pub mod status;
+pub mod tags;
 pub mod tree;
 
 pub use self::batch::{batch_process, run_single_recon};

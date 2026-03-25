@@ -1,6 +1,6 @@
 use crate::app::probe::{DnsObservation, HttpObservation};
 use crate::error::Result;
-use crate::inventory::{InventoryItem, ItemType};
+use crate::inventory::{AssetTag, InventoryItem, ItemType};
 use crate::org::{
     AssetAssignmentRecord, AssetImportanceRecord, BrandRecord, CompanyRecord,
     DomainRegistrationRecord, ExternalContractorAssignment, PersonRecord, ProjectRecord,
@@ -22,6 +22,7 @@ pub struct Records {
     pub items: Vec<InventoryItem>,
     pub http_observations: Vec<HttpObservation>,
     pub dns_observations: Vec<DnsObservation>,
+    pub asset_tags: Vec<AssetTag>,
     // Organizational records
     pub persons: Vec<PersonRecord>,
     pub companies: Vec<CompanyRecord>,
@@ -107,6 +108,11 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::OrgDomainRegistration => {
                 if let Ok(rec) = serde_json::from_str::<DomainRegistrationRecord>(&line) {
                     records.domain_registrations.push(rec);
+                }
+            }
+            ItemType::AssetTag => {
+                if let Ok(tag) = serde_json::from_str::<AssetTag>(&line) {
+                    records.asset_tags.push(tag);
                 }
             }
         }

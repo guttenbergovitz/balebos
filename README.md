@@ -44,6 +44,7 @@ docker compose run --rm balebos scan example.com
   - [Getting Started](documentation/guides/getting-started.md) - Installation and first steps
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
   - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
+  - [Tag Management](documentation/guides/tag-management.md) - Asset tagging and organization
 - **Technical Specs**
   - [Architecture Overview](documentation/architecture.md) - Design principles and layers
   - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
@@ -113,6 +114,15 @@ balebos report
 
 # Launch interactive TUI dashboard
 balebos ui
+
+# Tag management
+balebos tag add example.com to-review
+balebos tag add example.com priority-high
+balebos tag list
+balebos tag list example.com
+balebos tag list-tags
+balebos tag by-tag priority-high
+balebos tag remove example.com to-review
 
 # Organization management
 balebos org brand add "Acme Corp"
