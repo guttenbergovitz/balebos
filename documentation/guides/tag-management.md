@@ -93,6 +93,34 @@ Assets tagged with 'priority-high':
 Total: 1 asset(s)
 ```
 
+### Bulk Tagging
+
+In the TUI, you can tag multiple assets at once:
+
+1. Select multiple assets using `Space` key
+2. Press `T` (Shift+t) to open tag selector
+3. Select or create tag
+4. All selected assets are tagged with the same tag
+
+Similarly, remove tags from multiple selected assets:
+
+1. Select multiple assets using `Space` key
+2. Press `d` to open remove tag modal
+3. Select tag to remove from all selected assets
+
+## Export with Tag Filtering
+
+Export assets with optional tag filtering:
+
+```bash
+balebos status --export csv --filter-tag priority-high
+```
+
+Only assets with the specified tag will be exported. This is useful for:
+- Exporting domains to review before making changes
+- Creating reports for specific asset categories
+- Sharing prioritized asset lists with team members
+
 ## Common Workflows
 
 ### Review Workflow
@@ -109,6 +137,15 @@ balebos tag by-tag to-review
 # After review, remove the tag
 balebos tag remove example.com to-review
 ```
+
+### Bulk Review Processing (TUI)
+Mark multiple domains for review and process them:
+
+1. In TUI, navigate to inventory
+2. Select multiple domains with `Space`
+3. Press `T` (Shift+t) and select/create `to-review` tag
+4. All selected domains are tagged
+5. Later, select same domains and press `d` to bulk remove `to-review` tag
 
 ### Prioritization
 Organize assets by priority:
@@ -188,6 +225,15 @@ In the Inventory tab:
 - Tag selector shows all available tags with highlight
 - Add Tag modal displays current and available tags
 - Remove Tag modal shows current tags list
+- Status bar (bottom) shows notifications and idle quotes when not processing
+
+### Status Bar
+
+The status bar at the bottom displays:
+- **Real-time notifications** from tag operations and scans
+- **Idle quotes** from famous programmers and Monty Python (rotate every 30 seconds)
+- **Validation errors** and operation results
+- Messages auto-hide after completion to keep interface clean
 
 ### Workflow Example
 
