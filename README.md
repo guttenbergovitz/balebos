@@ -21,10 +21,22 @@ Balebos is designed so that system state does not depend on constant human atten
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in a simple, queryable form (JSONL / Parquet / DuckDB), optimized for low cost and ad-hoc analysis
+- stores state in a high-performance OLAP engine (DuckDB) with auto-migration from JSONL
 - tracks changes over time
 - exposes system state via API / queries
 - highlights drift and unknowns
+
+## Quick Start
+
+The fastest way to run Balebos with all its dependencies is using Docker:
+
+```bash
+# Start the interactive TUI
+docker compose run --rm balebos ui
+
+# Scan a domain
+docker compose run --rm balebos scan example.com
+```
 
 ## Documentation
 
@@ -51,13 +63,13 @@ Balebos exists to make that visible and controlled.
 
 - no magic
 - deterministic pipelines
-- simple storage over complex infrastructure
+- simple storage over complex infrastructure (JSONL for interchange, DuckDB for speed)
 - visibility over abstraction
 - cost-aware by default
 
 ## Status
 
-Alpha stage with working core functionality. Main features are implemented and tested.
+Beta stage with high-performance storage and container support.
 
 ## Usage
 
@@ -123,14 +135,20 @@ balebos org assign company 333444 --project 345678 --role technician
 
 ### Data Storage
 
-Balebos stores all data in append-only JSONL files located in the `data/` directory:
-- `data/inventory.jsonl` - Main inventory file containing all assets
+Balebos uses a tiered storage approach:
+- **DuckDB (`.duckdb`)** - Primary high-performance storage for TUI and analysis.
+- **JSONL (`.jsonl`)** - Backward compatibility and data interchange.
+
+By default, the system looks for `data/inventory.jsonl`. You can enable DuckDB backend by setting an environment variable:
+```bash
+export BALEBOS_STORAGE=duckdb
+```
 
 This approach ensures:
-- Simple, human-readable storage
-- Audit trail of all changes
-- Easy backup and version control
-- No database dependencies
+- Built-in auto-migration from existing JSONL files
+- Sub-second queries even with millions of records
+- Easy backup and version control via text files
+- Native SQL support for ad-hoc analysis
 
 ### Core Concepts
 
@@ -305,21 +323,32 @@ Balebos integrates with external tools to leverage proven solutions:
 
 ## Installation
 
+### Building from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/balebos.git
 cd balebos
 
-# Build the binary
-cargo build --release
+# Build the binary (requires DuckDB library in LIBRARY_PATH)
+make build
 
 # Run Balebos
-./target/release/balebos
+make run-ui
 ```
+
+### Development
+
+A `Makefile` is provided for common tasks:
+- `make dev-check` - Quick compilation check
+- `make dev-test` - Run all tests
+- `make dev-fix` - Auto-format and lint fix
+- `make clean` - Clean build artifacts and local DuckDB
 
 ### Dependencies
 
-- Rust 2021 edition or newer
+- Rust 1.88+
+- [DuckDB](https://duckdb.org/) (for high-performance storage)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
   - [dnsx](https://github.com/projectdiscovery/dnsx)

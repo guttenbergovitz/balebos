@@ -1,11 +1,11 @@
 # Data Model Specification
 
-This document defines the storage format and data structures used by Balebos in the append-only JSONL inventory.
+This document defines the storage format and data structures used by Balebos. These structures apply to both the newline-delimited JSON (JSONL) files and the `data` column in the DuckDB backend.
 
 ## Core Principles
 
-1.  **Heterogeneous Log**: Multiple record types (domains, observations, results) coexist in the same `.jsonl` file.
-2.  **Append-Only**: Records are never updated or deleted. New observations are simply appended.
+1.  **Heterogeneous Log**: Multiple record types (domains, observations, results) coexist in the same storage (file or table).
+2.  **Append-Only**: Records are never updated or deleted. New observations are simply appended. In DuckDB, each record is an event in the `events` table.
 3.  **Record Header**: Every record must contain an `item_type` field to allow for correct parsing.
 
 ---
