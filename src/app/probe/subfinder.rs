@@ -75,12 +75,15 @@ fn run_subfinder_batch(domains: &[String], storage: &Arc<dyn StorageEngine>) -> 
 
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
         let total_chunks = (domains.len() as f32 / chunk_size as f32).ceil() as usize;
-        println!(
-            "    ⟳ Processing chunk {}/{} ({} domains)...",
-            chunk_idx + 1,
-            total_chunks,
-            chunk.len()
-        );
+        // Skip printing in TUI - status is handled by the caller
+        if std::env::var("BALEBOS_STORAGE").is_err() {
+            println!(
+                "    ⟳ Processing chunk {}/{} ({} domains)...",
+                chunk_idx + 1,
+                total_chunks,
+                chunk.len()
+            );
+        }
 
         let temp_dir = std::env::temp_dir();
         let temp_file = temp_dir.join(format!("balebos_subfinder_{}.txt", Uuid::new_v4()));
@@ -152,7 +155,7 @@ fn run_subfinder_batch(domains: &[String], storage: &Arc<dyn StorageEngine>) -> 
         if !chunk_items.is_empty() {
             storage.save_batch(&chunk_items)?;
         }
-        println!(); // New line after chunk progress
+        println!(); // New line after chunk progress (only in CLI mode)
 
         let _ = child.wait();
         let _ = fs::remove_file(&temp_file);

@@ -12,39 +12,75 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{build_details_text, draw_inventory, draw_organization, draw_projects};
+use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
 
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Clear old status messages
+    app.clear_old_status();
+    
     let show_filter = app.input_mode == InputMode::Filtering
         || !app.filter.is_empty()
-        || app.inventory.hide_external_redirects;
+        || app.inventory.hide_external_redirects
+        || app.inventory.filter_tag.is_some();
+
+    // Build constraints dynamically
+    let mut constraints = vec![
+        Constraint::Length(3), // Header/Stats
+        Constraint::Length(3), // Tab bar
+    ];
+    
+    if show_filter {
+        constraints.push(Constraint::Length(3)); // Filter Bar
+    }
+    
+    constraints.push(Constraint::Min(10)); // Main View (flexible)
+    constraints.push(Constraint::Length(3)); // Status Bar (always visible - increased for better visibility)
+    constraints.push(Constraint::Length(3)); // Footer/Help
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),                               // Header/Stats
-            Constraint::Length(3),                               // Tab bar
-            Constraint::Length(if show_filter { 3 } else { 0 }), // Filter Bar (conditional)
-            Constraint::Min(10),                                 // Main View
-            Constraint::Length(3),                               // Footer/Help
-        ])
+        .constraints(constraints)
         .split(f.area());
 
-    draw_header(f, app, chunks[0]);
-    draw_tab_bar(f, app, chunks[1]);
-    if chunks[2].height > 0 {
-        draw_filter_bar(f, app, chunks[2]);
+    let mut idx = 0;
+    draw_header(f, app, chunks[idx]);
+    idx += 1;
+    draw_tab_bar(f, app, chunks[idx]);
+    idx += 1;
+    
+    if show_filter {
+        draw_filter_bar(f, app, chunks[idx]);
+        idx += 1;
     }
-    draw_main_content(f, app, chunks[3]);
-    draw_footer(f, app, chunks[4]);
+    
+    draw_main_content(f, app, chunks[idx]);
+    idx += 1;
+    draw_status_bar(f, app, chunks[idx]); // Always show status bar
+    idx += 1;
+    draw_footer(f, app, chunks[idx]);
 
     // Modal overlays
     if app.input_mode == InputMode::Editing {
         draw_input_modal(f, app);
+    }
+    if app.input_mode == InputMode::TagFilterSelecting {
+        draw_tag_filter_select_modal(f, app);
+    }
+    if app.input_mode == InputMode::TagSelecting {
+        draw_tag_select_modal(f, app);
+    }
+    if app.input_mode == InputMode::TagAdding {
+        draw_tag_add_modal(f, app);
+    }
+    if app.input_mode == InputMode::TagRemovingSelecting {
+        draw_tag_remove_select_modal(f, app);
+    }
+    if app.input_mode == InputMode::TagRemoving {
+        draw_tag_remove_modal(f, app);
     }
     if let InputMode::OrgAdding(add_type) | InputMode::OrgEditing(add_type, _) = &app.input_mode {
         draw_org_add_modal(f, app, *add_type);
@@ -70,20 +106,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let stats = &app.model.stats;
     let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
-    let scan_status = app
-        .scan_status
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone();
 
     let scanning_span = if is_scanning {
-        let label = if scan_status.is_empty() {
-            "SCANNING...".to_string()
-        } else {
-            scan_status
-        };
         Span::styled(
-            format!(" {} ", label),
+            " ⟳ SCANNING... ",
             Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
@@ -234,13 +260,58 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 // ---------------------------------------------------------------------------
+// Status bar (for messages/toasts)
+// ---------------------------------------------------------------------------
+
+fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
+    use crate::tui::quotes::get_random_quote;
+    
+    let scan_status_locked = app.scan_status.lock().unwrap_or_else(|p| p.into_inner());
+    let (scan_msg, scan_time) = scan_status_locked.clone();
+    drop(scan_status_locked);
+    
+    // Check if status expired (older than 5 seconds) or empty
+    let now = chrono::Utc::now();
+    let should_show_status = !scan_msg.is_empty() && (now.signed_duration_since(scan_time).num_seconds() < 5);
+    
+    let status_text = if should_show_status {
+        scan_msg
+    } else if let Some((ref msg, msg_time)) = app.status_message {
+        if now.signed_duration_since(msg_time).num_seconds() < 5 {
+            msg.clone()
+        } else {
+            get_random_quote().to_string()
+        }
+    } else {
+        get_random_quote().to_string()
+    };
+
+    let status_style = if status_text.starts_with('✓') {
+        Style::default().fg(Color::Green)
+    } else if status_text.contains("error") || status_text.contains("failed") || status_text.starts_with('❌') {
+        Style::default().fg(Color::Red)
+    } else if status_text.starts_with('⟳') {
+        Style::default().fg(Color::Cyan)
+    } else {
+        // Quotes are displayed in dim/gray
+        Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)
+    };
+
+    let status = Paragraph::new(format!(" {} ", status_text))
+        .style(status_style)
+        .block(Block::default().borders(Borders::TOP).title(" Status "));
+
+    f.render_widget(status, area);
+}
+
+// ---------------------------------------------------------------------------
 // Footer (context-sensitive help)
 // ---------------------------------------------------------------------------
 
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info | Space/Enter: Toggle "
+            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
         }
         Tab::Organization => {
             " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
@@ -276,6 +347,271 @@ fn draw_input_modal(f: &mut Frame, app: &App) {
         area.y + 1,
     ));
 }
+
+fn draw_tag_filter_select_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 50, f.area());
+
+    let block = Block::default()
+        .title(" Filter by Tag (↑/↓: navigate, Enter: select, c/x: clear filter, Esc: cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+    f.render_widget(block.clone(), area);
+
+    // Inner area for list
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 2,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(4),
+    };
+
+    if app.available_tags.is_empty() {
+        let text = vec![
+            Line::from("No tags available."),
+            Line::from(""),
+            Line::from("Add tags to assets first with 'T'."),
+        ];
+        let paragraph = Paragraph::new(text);
+        f.render_widget(paragraph, inner);
+    } else {
+        // Show current filter at top
+        let mut lines = vec![];
+        if let Some(ref current_tag) = app.inventory.filter_tag {
+            lines.push(Line::from(vec![
+                Span::styled("Current filter: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(current_tag.as_str(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            ]));
+            lines.push(Line::from(""));
+        }
+        
+        // Show list of tags
+        for (i, tag) in app.available_tags.iter().enumerate() {
+            let style = if i == app.tag_select_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            lines.push(Line::from(Span::styled(format!("  {}", tag), style)));
+        }
+
+        let paragraph = Paragraph::new(lines);
+        f.render_widget(paragraph, inner);
+    }
+}
+
+fn draw_tag_select_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 50, f.area());
+    let asset_name = app
+        .selected_asset()
+        .map(|a| a.name.as_str())
+        .unwrap_or("(none)");
+
+    let block = Block::default()
+        .title(format!(" Select Tag for '{}' (↑/↓: navigate, Enter: select, n: new, Esc: cancel) ", asset_name))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+    f.render_widget(block.clone(), area);
+
+    // Inner area for list
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 2,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(4),
+    };
+
+    if app.available_tags.is_empty() {
+        let text = vec![
+            Line::from("No existing tags."),
+            Line::from(""),
+            Line::from("Press 'n' to create a new tag."),
+        ];
+        let paragraph = Paragraph::new(text);
+        f.render_widget(paragraph, inner);
+    } else {
+        // Show list of tags
+        let items: Vec<Line> = app
+            .available_tags
+            .iter()
+            .enumerate()
+            .map(|(i, tag)| {
+                let style = if i == app.tag_select_index {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(format!("  {}", tag), style))
+            })
+            .collect();
+
+        let paragraph = Paragraph::new(items);
+        f.render_widget(paragraph, inner);
+    }
+}
+
+fn draw_tag_add_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 40, f.area());
+    let asset_name = app
+        .selected_asset()
+        .map(|a| a.name.as_str())
+        .unwrap_or("(none)");
+    
+    // Get all unique tags
+    let all_tags: Vec<String> = app
+        .model
+        .asset_tags
+        .values()
+        .flat_map(|tags| tags.iter())
+        .map(|s| s.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    
+    // Get current tags for this asset
+    let current_tags = app
+        .model
+        .asset_tags
+        .get(asset_name)
+        .map(|tags| {
+            tags.iter()
+                .map(|t| format!("  • {}", t))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_else(|| "  (none)".to_string());
+    
+    let available_tags = if all_tags.is_empty() {
+        "  (no existing tags)".to_string()
+    } else {
+        all_tags
+            .iter()
+            .map(|t| format!("  • {}", t))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    
+    let text = format!(
+        "Add tag to '{}':\n\nCurrent tags:\n{}\n\nAvailable tags:\n{}\n\nNew tag: {}_",
+        asset_name, current_tags, available_tags, app.input
+    );
+
+    let block = Block::default()
+        .title(" Add Tag (Enter to confirm, Esc to cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green))
+        .style(Style::default().bg(Color::Black));
+    
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().fg(Color::Yellow))
+        .block(block);
+
+    f.render_widget(Clear, area);
+    f.render_widget(paragraph, area);
+}
+
+fn draw_tag_remove_select_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 50, f.area());
+    let asset_name = app
+        .selected_asset()
+        .map(|a| a.name.as_str())
+        .unwrap_or("(none)");
+
+    let block = Block::default()
+        .title(format!(" Remove Tag from '{}' (↑/↓: navigate, Enter: remove, Esc: cancel) ", asset_name))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+    f.render_widget(block.clone(), area);
+
+    // Inner area for list
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 2,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(4),
+    };
+
+    if app.available_tags.is_empty() {
+        let text = vec![
+            Line::from("No tags on this asset."),
+            Line::from(""),
+            Line::from("Add tags first with 'T'."),
+        ];
+        let paragraph = Paragraph::new(text);
+        f.render_widget(paragraph, inner);
+    } else {
+        // Show list of tags to remove
+        let items: Vec<Line> = app
+            .available_tags
+            .iter()
+            .enumerate()
+            .map(|(i, tag)| {
+                let style = if i == app.tag_select_index {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(format!("  {}", tag), style))
+            })
+            .collect();
+
+        let paragraph = Paragraph::new(items);
+        f.render_widget(paragraph, inner);
+    }
+}
+
+fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(60, 30, f.area());
+    let asset_name = app
+        .selected_asset()
+        .map(|a| a.name.as_str())
+        .unwrap_or("(none)");
+    
+    // Show current tags
+    let current_tags = app
+        .selected_asset()
+        .and_then(|a| app.model.asset_tags.get(&a.name))
+        .map(|tags| {
+            tags.iter()
+                .map(|t| format!("  • {}", t))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_else(|| "  (no tags)".to_string());
+    
+    let text = format!(
+        "Remove tag from '{}':\n\nCurrent tags:\n{}\n\nTag to remove: {}_",
+        asset_name, current_tags, app.input
+    );
+
+    let block = Block::default()
+        .title(" Remove Tag (Enter to confirm, Esc to cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .style(Style::default().bg(Color::Black));
+    
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().fg(Color::Yellow))
+        .block(block);
+
+    f.render_widget(Clear, area);
+    f.render_widget(paragraph, area);
+}
+
 
 fn draw_assign_modal(f: &mut Frame, app: &App) {
     let area = fixed_size_centered_rect(60, 20, f.area());
@@ -836,7 +1172,7 @@ fn draw_asset_details_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
 
     if let Some(asset) = app.selected_asset() {
-        let text = build_details_text(asset);
+        let text = crate::tui::tabs::inventory::build_details_text(asset, app);
         let details = Paragraph::new(text)
             .block(block)
             .scroll((app.asset_details_scroll, 0))

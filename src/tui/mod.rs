@@ -4,6 +4,7 @@ pub mod state;
 pub mod tabs;
 pub mod ui;
 pub mod workflows;
+pub mod quotes;
 
 use crate::storage::StorageEngine;
 use std::sync::Arc;
@@ -61,6 +62,11 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Normal => handle_normal_mode(app, key.code)?,
                     InputMode::Editing => handle_editing_mode(app, key.code),
                     InputMode::Filtering => handle_filtering_mode(app, key.code),
+                    InputMode::TagAdding => handle_tag_adding_mode(app, key.code),
+                    InputMode::TagSelecting => handle_tag_selecting_mode(app, key.code)?,
+                    InputMode::TagFilterSelecting => handle_tag_filter_selecting_mode(app, key.code),
+                    InputMode::TagRemoving => handle_tag_removing_mode(app, key.code),
+                    InputMode::TagRemovingSelecting => handle_tag_removing_selecting_mode(app, key.code)?,
                     InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => {
                         handle_org_adding_mode(app, key.code)
                     }
@@ -122,6 +128,21 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('/') | KeyCode::Char('f') => {
             app.input_mode = InputMode::Filtering;
+        }
+        KeyCode::Char('t') => {
+            app.cycle_tag_filter();
+        }
+        KeyCode::Char('T') => {
+            // Add tag to selected asset - show selection UI
+            if app.selected_asset().is_some() {
+                app.start_tag_selection();
+            }
+        }
+        KeyCode::Char('d') => {
+            // Remove tag from selected asset - show selection UI
+            if app.selected_asset().is_some() {
+                app.start_tag_remove_selection();
+            }
         }
         KeyCode::Char('x') => {
             app.toggle_external_filter();
@@ -373,6 +394,117 @@ fn handle_filtering_mode(app: &mut App, code: KeyCode) {
         }
         _ => {}
     }
+}
+
+fn handle_tag_selecting_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.tag_select_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.tag_select_prev();
+        }
+        KeyCode::Enter => {
+            app.tag_select_confirm()?;
+        }
+        KeyCode::Char('n') => {
+            // Switch to manual entry mode
+            app.input_mode = InputMode::TagAdding;
+            app.input.clear();
+        }
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_tag_filter_selecting_mode(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.tag_select_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.tag_select_prev();
+        }
+        KeyCode::Enter => {
+            app.tag_filter_select_confirm();
+        }
+        KeyCode::Char('c') | KeyCode::Char('x') => {
+            // Clear filter
+            app.tag_filter_clear();
+        }
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+}
+
+fn handle_tag_adding_mode(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Enter => {
+            if let Err(e) = app.add_tag_to_selected() {
+                eprintln!("Failed to add tag: {}", e);
+            }
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        KeyCode::Char(c) => {
+            app.input.push(c);
+        }
+        KeyCode::Backspace => {
+            app.input.pop();
+        }
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        _ => {}
+    }
+}
+
+fn handle_tag_removing_mode(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Enter => {
+            if let Err(e) = app.remove_tag_from_selected() {
+                eprintln!("Failed to remove tag: {}", e);
+            }
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        KeyCode::Char(c) => {
+            app.input.push(c);
+        }
+        KeyCode::Backspace => {
+            app.input.pop();
+        }
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        _ => {}
+    }
+}
+
+fn handle_tag_removing_selecting_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.tag_select_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.tag_select_prev();
+        }
+        KeyCode::Enter => {
+            app.tag_remove_select_confirm()?;
+        }
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn handle_org_adding_mode(app: &mut App, code: KeyCode) {
