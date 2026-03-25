@@ -20,7 +20,8 @@ use app::{
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
 use cli::{parse_command, Command, OrgCommand, ProbeKind};
-use storage::JsonlStorage;
+use crate::storage::{StorageEngine, JsonlStorage};
+use std::sync::Arc;
 
 fn print_usage() {
     eprintln!("Usage:");
@@ -60,7 +61,12 @@ fn print_usage() {
 }
 
 fn main() {
-    let storage = JsonlStorage::new("data/inventory.jsonl");
+    let use_duckdb = std::env::var("BALEBOS_STORAGE").unwrap_or_default() == "duckdb";
+    let storage: Arc<dyn StorageEngine> = if use_duckdb {
+        Arc::new(crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap())
+    } else {
+        Arc::new(JsonlStorage::new("data/inventory.jsonl"))
+    };
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
     let command = match parse_command() {
@@ -87,7 +93,7 @@ fn main() {
     }
 }
 
-fn cmd_ui(storage: JsonlStorage) {
+fn cmd_ui(storage: Arc<dyn StorageEngine>) {
     if let Err(e) = tui::run(storage) {
         eprintln!("TUI error: {}", e);
         process::exit(EXIT_GENERAL_ERROR);
@@ -95,7 +101,7 @@ fn cmd_ui(storage: JsonlStorage) {
     process::exit(EXIT_SUCCESS);
 }
 
-fn cmd_scan(domain_name: &str, storage: &JsonlStorage) {
+fn cmd_scan(domain_name: &str, storage: &Arc<dyn StorageEngine>) {
     match scan_domain(domain_name, storage) {
         Ok(domain) => {
             println!("Domain scanned successfully: {}", domain.name);
@@ -114,7 +120,7 @@ fn cmd_scan(domain_name: &str, storage: &JsonlStorage) {
     }
 }
 
-fn cmd_batch(file: &str, storage: &JsonlStorage, ignore_patterns: &[String]) {
+fn cmd_batch(file: &str, storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     match batch_process(file, storage, ignore_patterns) {
         Ok(_) => process::exit(EXIT_SUCCESS),
         Err(e) => {
@@ -124,7 +130,7 @@ fn cmd_batch(file: &str, storage: &JsonlStorage, ignore_patterns: &[String]) {
     }
 }
 
-fn cmd_list(unique: bool, storage: &JsonlStorage) {
+fn cmd_list(unique: bool, storage: &Arc<dyn StorageEngine>) {
     match list_domains(storage, unique) {
         Ok(domains) => {
             if domains.is_empty() {
@@ -145,7 +151,7 @@ fn cmd_list(unique: bool, storage: &JsonlStorage) {
     }
 }
 
-fn cmd_tree(storage: &JsonlStorage) {
+fn cmd_tree(storage: &Arc<dyn StorageEngine>) {
     match display_domain_tree(storage) {
         Ok(()) => process::exit(EXIT_SUCCESS),
         Err(e) => {
@@ -155,7 +161,7 @@ fn cmd_tree(storage: &JsonlStorage) {
     }
 }
 
-fn cmd_status(export: Option<cli::ExportArgs>, storage: &JsonlStorage) {
+fn cmd_status(export: Option<cli::ExportArgs>, storage: &Arc<dyn StorageEngine>) {
     if let Some(export_args) = export {
         let output_file = export_args.output_file.unwrap_or_else(|| {
             let ext = match export_args.format.as_str() {
@@ -198,7 +204,7 @@ fn cmd_status(export: Option<cli::ExportArgs>, storage: &JsonlStorage) {
     }
 }
 
-fn cmd_stats(by_domain: bool, storage: &JsonlStorage) {
+fn cmd_stats(by_domain: bool, storage: &Arc<dyn StorageEngine>) {
     match get_domain_stats(storage) {
         Ok(stats) => {
             if by_domain {
@@ -239,7 +245,7 @@ fn cmd_stats(by_domain: bool, storage: &JsonlStorage) {
     }
 }
 
-fn cmd_diff(storage: &JsonlStorage) {
+fn cmd_diff(storage: &Arc<dyn StorageEngine>) {
     match get_inventory_diff(storage, None) {
         Ok(diff) => {
             println!("Domain Changes (last 7 days)");
@@ -272,7 +278,7 @@ fn cmd_diff(storage: &JsonlStorage) {
     }
 }
 
-fn cmd_check(storage: &JsonlStorage, ignore_patterns: &[String]) {
+fn cmd_check(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     match check_inventory(storage, ignore_patterns) {
         Ok(issues) => {
             if issues.is_empty() {
@@ -326,7 +332,7 @@ fn cmd_check(storage: &JsonlStorage, ignore_patterns: &[String]) {
     }
 }
 
-fn cmd_report(storage: &JsonlStorage, ignore_patterns: &[String]) {
+fn cmd_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     match generate_report(storage, ignore_patterns) {
         Ok(report) => {
             println!("Balebos Report (last 7 days)");
@@ -398,7 +404,7 @@ fn cmd_report(storage: &JsonlStorage, ignore_patterns: &[String]) {
     }
 }
 
-fn cmd_probe(kind: ProbeKind, target: &str, storage: &JsonlStorage) {
+fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
     match kind {
         ProbeKind::Subdomains => match probe_subdomains(target, storage) {
             Ok(subdomains) => {
@@ -532,7 +538,7 @@ fn print_issue_line(label: &str, count: usize, extra: &str) {
     }
 }
 
-fn cmd_org(org_cmd: OrgCommand, storage: &JsonlStorage) {
+fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
     use app::org::*;
     use org::{BrandId, CompanyId, CountryCode, PersonId, ProjectId, Role};
 

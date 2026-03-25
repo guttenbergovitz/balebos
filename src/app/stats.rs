@@ -1,6 +1,7 @@
 use crate::error::Result;
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 pub struct DomainStats {
     pub total_entries: usize,
@@ -10,8 +11,8 @@ pub struct DomainStats {
     pub top_domains: Vec<(String, usize)>,
 }
 
-pub fn get_domain_stats(storage: &JsonlStorage) -> Result<DomainStats> {
-    let items = read_records(storage)?.items;
+pub fn get_domain_stats(storage: &Arc<dyn StorageEngine>) -> Result<DomainStats> {
+    let items = storage.read_all_records()?.items;
 
     // Total count of domain entries (items already filtered to domain/subdomain)
     let total_entries = items.len();

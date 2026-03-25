@@ -1,12 +1,12 @@
 use super::types::{HttpErrorKind, HttpObservation, RedirectHop, TlsObservation};
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
-use crate::storage::JsonlStorage;
+use crate::storage::{StorageEngine, StorageEngineExt};
+use std::sync::Arc;
 use chrono::Utc;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
 
@@ -244,7 +244,7 @@ pub type ProgressCallback = Arc<dyn Fn(usize, usize, &str) + Send + Sync>;
 /// Optionally accepts a progress callback `on_progress(completed, total, target_name)`.
 pub fn probe_http_batch(
     targets: &[String],
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
 ) -> Result<Vec<HttpObservation>> {
     probe_http_batch_with_progress(targets, storage, None)
 }
@@ -252,7 +252,7 @@ pub fn probe_http_batch(
 /// Like `probe_http_batch` but with an optional progress callback for TUI integration.
 pub fn probe_http_batch_with_progress(
     targets: &[String],
-    storage: &JsonlStorage,
+    storage: &Arc<dyn StorageEngine>,
     on_progress: Option<ProgressCallback>,
 ) -> Result<Vec<HttpObservation>> {
     if targets.is_empty() {
@@ -363,7 +363,7 @@ pub fn probe_http_batch_with_progress(
 }
 
 // Perform HTTP probe (single domain wrapper around batch)
-pub fn http_check(domain: &str, storage: &JsonlStorage) -> Result<HttpObservation> {
+pub fn http_check(domain: &str, storage: &Arc<dyn StorageEngine>) -> Result<HttpObservation> {
     check_httpx_installation()?;
 
     let clean_domain = domain.trim().replace("http://", "").replace("https://", "");

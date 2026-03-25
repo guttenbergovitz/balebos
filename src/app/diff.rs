@@ -1,8 +1,9 @@
 use crate::error::Result;
 use crate::inventory::ItemType;
-use crate::storage::{read_records, JsonlStorage};
+use crate::storage::StorageEngine;
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use std::time::{Duration, SystemTime};
 
@@ -35,8 +36,8 @@ fn get_time_threshold(days_ago: Option<&str>) -> SystemTime {
         .unwrap_or_else(SystemTime::now)
 }
 
-pub fn get_inventory_diff(storage: &JsonlStorage, days_ago: Option<&str>) -> Result<InventoryDiff> {
-    let items = read_records(storage)?.items;
+pub fn get_inventory_diff(storage: &Arc<dyn StorageEngine>, days_ago: Option<&str>) -> Result<InventoryDiff> {
+    let items = storage.read_all_records()?.items;
 
     // Threshold time for recent vs past
     let threshold = get_time_threshold(days_ago);
@@ -66,12 +67,12 @@ pub fn get_inventory_diff(storage: &JsonlStorage, days_ago: Option<&str>) -> Res
     // Find new and missing domains
     let new_domains: Vec<String> = recent_domains
         .difference(&past_domains)
-        .map(|&s| s.clone())
+        .map(|s| s.to_string())
         .collect();
 
     let missing_domains: Vec<String> = past_domains
         .difference(&recent_domains)
-        .map(|&s| s.clone())
+        .map(|s| s.to_string())
         .collect();
 
     // Process subdomains ===================================
@@ -98,12 +99,12 @@ pub fn get_inventory_diff(storage: &JsonlStorage, days_ago: Option<&str>) -> Res
     // Find new and missing subdomains
     let new_subdomains: Vec<String> = recent_subdomains
         .difference(&past_subdomains)
-        .map(|&s| s.clone())
+        .map(|s| s.to_string())
         .collect();
 
     let missing_subdomains: Vec<String> = past_subdomains
         .difference(&recent_subdomains)
-        .map(|&s| s.clone())
+        .map(|s| s.to_string())
         .collect();
 
     Ok(InventoryDiff {

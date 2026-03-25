@@ -11,8 +11,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use super::JsonlStorage;
-
 #[derive(Deserialize)]
 struct RecordHeader {
     item_type: ItemType,
@@ -36,25 +34,11 @@ pub struct Records {
     pub domain_registrations: Vec<DomainRegistrationRecord>,
 }
 
-/// Read a heterogeneous JSONL log and separate into typed records.
-///
-/// Skips empty lines and malformed JSON silently.
-/// Unknown `item_type` values are ignored.
-pub fn read_records(storage: &JsonlStorage) -> Result<Records> {
-    let file_path = storage.get_filepath();
-    let path = Path::new(file_path);
-
-    if !path.exists() {
-        return Ok(Records::default());
-    }
-
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
+/// Parse typed records from an iterator of JSON string lines.
+pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
     let mut records = Records::default();
 
-    for line_result in reader.lines() {
-        let line = line_result?;
-
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }
@@ -129,4 +113,18 @@ pub fn read_records(storage: &JsonlStorage) -> Result<Records> {
     }
 
     Ok(records)
+}
+
+/// Read a heterogeneous JSONL log and separate into typed records.
+pub fn read_records(file_path: &str) -> Result<Records> {
+    let path = Path::new(file_path);
+
+    if !path.exists() {
+        return Ok(Records::default());
+    }
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    
+    parse_records(reader.lines().map_while(|r| r.ok()))
 }

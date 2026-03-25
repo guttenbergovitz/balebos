@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::error::BalebosError;
 
 use crate::org::BrandId;
-use crate::storage::JsonlStorage;
+use crate::storage::StorageEngine;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
 use crate::tui::state::{FormState, InventoryState, OrgPane, OrgState, ProjectsState};
 use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
@@ -108,7 +108,7 @@ pub use crate::tui::workflows::{ContractorAssignStep, RoleAssignStep};
 pub struct App {
     pub model: TuiModel,
     pub org_model: OrgModel,
-    pub storage: JsonlStorage,
+    pub storage: Arc<dyn StorageEngine>,
     pub should_quit: bool,
 
     // Tab navigation
@@ -140,7 +140,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(storage: JsonlStorage) -> Result<Self, BalebosError> {
+    pub fn new(storage: Arc<dyn StorageEngine>) -> Result<Self, BalebosError> {
         let model = load_tui_model(&storage)?;
         let org_model = OrgModel::load(&storage)?;
         let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");

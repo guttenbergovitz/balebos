@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde::Serialize;
+use super::StorageEngine;
 
 // Our storage system for inventory items
 // We're using a simple JSONL (JSON Lines) file format
@@ -18,20 +18,14 @@ impl JsonlStorage {
             filepath: filepath.to_string(),
         }
     }
+}
 
-    // Getter dla ścieżki pliku
-    pub fn get_filepath(&self) -> &str {
-        &self.filepath
+impl StorageEngine for JsonlStorage {
+    fn name(&self) -> String {
+        "JSONL".to_string()
     }
 
-    // Save an item to JSONL storage
-    // This is append-only - we only add new records, never modify existing ones
-    // Why append-only?
-    // 1. It's simple (no need to manage updates or handle conflicts)
-    // 2. We keep a history of all additions (useful for auditing)
-    // 3. It's more resilient (partial writes don't corrupt existing data)
-    // 4. It enables efficient writes (no need to rewrite the whole file)
-    pub fn save<T: Serialize>(&self, data: &T) -> Result<()> {
+    fn save_string(&self, json: &str) -> Result<()> {
         let path = Path::new(&self.filepath);
 
         // Create parent directory if it doesn't exist
@@ -49,16 +43,13 @@ impl JsonlStorage {
 
         let mut writer = BufWriter::new(file);
 
-        // Serialize to JSON and write with newline
-        let json = serde_json::to_string(data).map_err(crate::error::StorageError::from)?;
         writeln!(writer, "{}", json)?;
 
         Ok(())
     }
 
-    /// Save multiple items efficiently by opening the file only once
-    pub fn save_batch<T: Serialize>(&self, data: &[T]) -> Result<()> {
-        if data.is_empty() {
+    fn save_string_batch(&self, json_lines: &[String]) -> Result<()> {
+        if json_lines.is_empty() {
             return Ok(());
         }
 
@@ -77,12 +68,15 @@ impl JsonlStorage {
 
         let mut writer = BufWriter::new(file);
 
-        for item in data {
-            let json = serde_json::to_string(item).map_err(crate::error::StorageError::from)?;
+        for json in json_lines {
             writeln!(writer, "{}", json)?;
         }
 
         writer.flush()?;
         Ok(())
+    }
+
+    fn read_all_records(&self) -> Result<crate::storage::reader::Records> {
+        crate::storage::reader::read_records(&self.filepath)
     }
 }

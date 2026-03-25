@@ -26,3 +26,6 @@ balebos.ignore
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+
+# Taskfile
+Taskfile.yml
