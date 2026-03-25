@@ -23,9 +23,12 @@ Balebos is organized into focused components, each with a clear responsibility:
    - Isolated from storage and presentation concerns
 
 2. **Storage Layer**
-   - Handles persistence in append-only JSONL
-   - Provides read and write operations
-   - Implements resilient error handling
+   - Implements a **Port/Adapter (Hexagonal)** architecture
+   - **Port**: `StorageEngine` trait defines the persistence interface
+   - **Adapter (JSONL)**: Legacy/interchange backend using append-only text files
+   - **Adapter (DuckDB)**: Primary high-performance OLAP backend with SQL support
+   - Handles auto-migration from JSONL to DuckDB on first run
+   - Provides thread-safe access via `Arc<dyn StorageEngine>`
 
 3. **Application Layer**
    - Contains business logic and use cases
@@ -89,19 +92,17 @@ Normalization is stored alongside raw input, not instead of it.
 Interpretation still happens at query time, using the normalized form while
 preserving the original data for reference and auditing.
 
-### Append-Only Storage
+### Hybrid Persistence
 
-All data in Balebos is stored append-only, meaning:
-- New records are added, never updated or deleted
-- Historical data is preserved indefinitely
-- Each record has its own timestamp
-- Duplicates are allowed and handled at query time
+Balebos combines the simplicity of append-only text logs with the power of an analytical database:
 
-This approach offers several benefits:
-- Simpler write operations (no conflicts)
-- Complete audit trail
+- **JSONL (Interchange)**: Used for data import/export and manual auditing.
+- **DuckDB (Operational)**: Used for the live TUI and reporting.
+
+Even in DuckDB, the system maintains an **event-sourced** approach where possible, appending observations rather than overwriting historical state. This ensures:
+- Full audit trail preserved
 - Resilience to partial failures
-- Better concurrency characteristics
+- High-performance analytical queries (DuckDB excels at processing large event tables)
 
 ### Observations
 
@@ -284,13 +285,13 @@ Balebos can be extended in several ways:
 
 ## Design Decisions and Trade-offs
 
-### Why JSONL instead of a database?
+### Why DuckDB and JSONL?
 
-- Simplicity of implementation and operations
-- No database dependencies to manage
-- Human-readable format for debugging
-- Easy backup and version control
-- Sufficient performance for expected data volumes
+The project evolved from a pure JSONL storage to a DuckDB-backed system:
+
+- **JSONL** remains for its simplicity, human-readability, and ease of backup. It is the perfect format for piping data between CLI tools.
+- **DuckDB** was introduced to solve performance bottlenecks in the TUI and reporting. It provides sub-second query times on large datasets without the overhead of a full-blown database server (PostgreSQL/MySQL).
+- The **Hexagonal Architecture** allows users to choose the backend that fits their needs (e.g., pure JSONL for tiny embedded systems, DuckDB for large-scale recon).
 
 ### Why append-only?
 

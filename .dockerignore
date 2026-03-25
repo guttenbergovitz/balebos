@@ -1,0 +1,15 @@
+# Docker Ignore
+target/
+.git/
+.idea/
+.vscode/
+
+# Data
+data/
+*.duckdb
+*.jsonl
+
+# Envs
+.env
+Taskfile.yml
+Makefile
