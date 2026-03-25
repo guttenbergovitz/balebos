@@ -4,25 +4,40 @@ This guide will help you get up and running with Balebos quickly.
 
 ## Installation
 
-### Prerequisites
+### Option A: Using Docker (Easiest)
 
-- Rust 2021 edition or newer
-- [subfinder](https://github.com/projectdiscovery/subfinder) (optional, for subdomain discovery)
-- [rdap](https://github.com/openrdap/rdap) (required for domain registration info)
+Balebos is containerized to handle all dependencies (DuckDB, ProjectDiscovery tools) automatically.
 
-### Building from Source
+```bash
+# Start the TUI
+docker compose run --rm balebos ui
+
+# Scan a domain
+docker compose run --rm balebos scan example.com
+```
+
+### Option B: Building from Source
+
+Requires Rust 1.88+ and DuckDB installed on your system.
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/balebos.git
 cd balebos
 
-# Build the binary
-cargo build --release
+# Build the binary (automatically handles DuckDB linking if using Homebrew)
+make build
 
-# Run Balebos
-./target/release/balebos
+# Run the TUI
+make run-ui
 ```
+
+### Local Prerequisites
+
+If building from source, you need:
+- **DuckDB**: `brew install duckdb` (macOS)
+- **ProjectDiscovery tools**: [subfinder](https://github.com/projectdiscovery/subfinder), [httpx](https://github.com/projectdiscovery/httpx), [dnsx](https://github.com/projectdiscovery/dnsx)
+- **whois**: `apt install whois` or `brew install whois`
 
 ## Quick Start
 
@@ -271,10 +286,11 @@ Use `balebos status` to see details about each error.
 
 ### High memory usage with large inventories
 
-Balebos processes JSONL files sequentially. For very large inventories (>100k records), consider:
-- Archiving old records
-- Using separate inventory files for different services
-- Filtering with `balebos.ignore`
+Balebos now supports DuckDB, which solves most performance issues. Ensure you are using the DuckDB backend:
+```bash
+export BALEBOS_STORAGE=duckdb
+```
+For very large inventories (>1M records), DuckDB's analytical engine will significantly outperform sequential JSONL processing.
 
 ## Getting Help
 
