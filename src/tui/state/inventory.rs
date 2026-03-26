@@ -267,6 +267,7 @@ mod tests {
     fn test_toggle_expand() {
         let mut state = InventoryState::new();
         state.visible_items = vec![VisibleItem::Root("example.com".to_string())];
+        state.table_state.select(Some(0)); // Select the first item
 
         assert!(!state.expanded_roots.contains("example.com"));
         state.toggle_expand();

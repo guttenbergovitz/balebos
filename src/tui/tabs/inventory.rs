@@ -444,6 +444,58 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         text.push(Line::from(format!("  Source:     {}", reg.source)));
     }
 
+    // Hosting Detection
+    if let Some(hosting) = &asset.hosting {
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Hosting Detection:",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )));
+
+        if let Some(provider) = &hosting.provider_name {
+            let category = hosting.provider_category.as_deref().unwrap_or("Unknown");
+            text.push(Line::from(format!("  Provider: {} ({})", provider, category)));
+        } else {
+            text.push(Line::from(Span::styled(
+                "  Provider: UNKNOWN",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        if hosting.cdn_detected {
+            let cdn = hosting.cdn_name.clone().unwrap_or_else(|| "Unknown CDN".to_string());
+            text.push(Line::from(vec![
+                Span::raw("  CDN:      "),
+                Span::styled(cdn, Style::default().fg(Color::Yellow)),
+            ]));
+        }
+
+        let confidence_style = match hosting.confidence {
+            crate::app::probe::Confidence::Confirmed => Style::default().fg(Color::Green),
+            crate::app::probe::Confidence::High => Style::default().fg(Color::Green),
+            crate::app::probe::Confidence::Medium => Style::default().fg(Color::Yellow),
+            crate::app::probe::Confidence::Low => Style::default().fg(Color::Red),
+        };
+        text.push(Line::from(vec![
+            Span::raw("  Confidence: "),
+            Span::styled(format!("{}", hosting.confidence), confidence_style),
+            Span::raw(format!(" (via {})", hosting.detection_method)),
+        ]));
+
+        // Show evidence if any
+        if !hosting.evidence.is_empty() && hosting.evidence.len() <= 3 {
+            text.push(Line::from(Span::styled(
+                "  Evidence:",
+                Style::default().add_modifier(Modifier::ITALIC),
+            )));
+            for ev in &hosting.evidence {
+                text.push(Line::from(format!("    • {}", ev)));
+            }
+        }
+    }
+
     // Organization Details
     text.push(Line::from(""));
     text.push(Line::from(Span::styled(

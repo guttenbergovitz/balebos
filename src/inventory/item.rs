@@ -15,6 +15,10 @@ pub enum ItemType {
     HttpCheck,
     #[serde(rename = "dns_record")]
     DnsRecord,
+    #[serde(rename = "asn_record")]
+    AsnRecord,
+    #[serde(rename = "hosting_detection")]
+    HostingDetection,
     #[serde(rename = "org_person")]
     OrgPerson,
     #[serde(rename = "org_company")]

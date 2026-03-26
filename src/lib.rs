@@ -4,6 +4,7 @@ pub mod app;
 pub mod cli;
 pub mod domain;
 pub mod error;
+pub mod hosting;
 pub mod ignore;
 pub mod inventory;
 pub mod org;

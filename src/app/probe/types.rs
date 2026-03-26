@@ -111,3 +111,90 @@ pub struct DnsObservation {
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,
 }
+
+// ASN observation - from asnmap probe
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsnObservation {
+    pub item_type: ItemType,
+    pub id: String,
+    pub target: String,  // IP address that was looked up
+    pub host: String,    // Original hostname (for correlation)
+
+    pub asn: u32,
+    pub org: String,
+    pub country: String,
+
+    pub checked_at: chrono::DateTime<Utc>,
+    pub source: String,
+}
+
+// Confidence level for hosting detection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Confidence {
+    Low,
+    Medium,
+    High,
+    Confirmed,
+}
+
+impl std::fmt::Display for Confidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Confidence::Low => write!(f, "Low"),
+            Confidence::Medium => write!(f, "Medium"),
+            Confidence::High => write!(f, "High"),
+            Confidence::Confirmed => write!(f, "Confirmed"),
+        }
+    }
+}
+
+// How the hosting provider was detected
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionMethod {
+    CdnName,
+    Cname,
+    Asn,
+    Header,
+    Combined,
+}
+
+impl std::fmt::Display for DetectionMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DetectionMethod::CdnName => write!(f, "CDN Name"),
+            DetectionMethod::Cname => write!(f, "CNAME"),
+            DetectionMethod::Asn => write!(f, "ASN"),
+            DetectionMethod::Header => write!(f, "Header"),
+            DetectionMethod::Combined => write!(f, "Combined"),
+        }
+    }
+}
+
+// Hosting detection result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostingObservation {
+    pub item_type: ItemType,
+    pub id: String,
+    pub target: String,
+
+    // Provider info (UNKNOWN if cannot be determined)
+    pub provider_id: Option<String>,
+    pub provider_name: Option<String>,
+    pub provider_category: Option<String>,
+
+    // CDN info (if behind CDN)
+    pub cdn_detected: bool,
+    pub cdn_name: Option<String>,
+
+    // Detection details
+    pub confidence: Confidence,
+    pub detection_method: DetectionMethod,
+
+    // Evidence trail for debugging
+    pub evidence: Vec<String>,
+
+    pub checked_at: chrono::DateTime<Utc>,
+    pub source: String,
+}

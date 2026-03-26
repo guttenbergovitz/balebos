@@ -1,4 +1,4 @@
-use crate::app::probe::{DnsObservation, HttpObservation};
+use crate::app::probe::{Confidence, DetectionMethod, DnsObservation, HttpObservation};
 use crate::org::{
     BrandId, BrandRecord, CompanyId, CompanyRecord, DomainRegistration, PersonId, PersonRecord,
     ProjectId, ProjectRecord, RoleAssignmentRecord,
@@ -6,6 +6,18 @@ use crate::org::{
 use crate::storage::StorageEngine;
 use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
+
+/// Hosting information for display in TUI
+#[derive(Debug, Clone)]
+pub struct HostingInfo {
+    pub provider_name: Option<String>,
+    pub provider_category: Option<String>,
+    pub cdn_detected: bool,
+    pub cdn_name: Option<String>,
+    pub confidence: Confidence,
+    pub detection_method: DetectionMethod,
+    pub evidence: Vec<String>,
+}
 
 /// Person with their role in a project
 #[derive(Debug, Clone)]
@@ -47,6 +59,7 @@ pub struct AssetState {
     pub latest_http: Option<HttpObservation>,
     pub registration: Option<DomainRegistration>,
     pub project: Option<ProjectContext>,
+    pub hosting: Option<HostingInfo>,
 }
 
 impl AssetState {
@@ -436,31 +449,73 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         );
     }
 
+    // Helper: Get registration for a domain, checking apex if subdomain
+    let get_registration = |name: &str| -> Option<DomainRegistration> {
+        // First try exact match
+        if let Some(reg) = domain_registrations.get(name) {
+            return Some(reg.clone());
+        }
+        // Try apex domain (e.g., www.example.com -> example.com)
+        let parts: Vec<&str> = name.split('.').collect();
+        if parts.len() > 2 {
+            let apex = parts[parts.len() - 2..].join(".");
+            if let Some(reg) = domain_registrations.get(&apex) {
+                return Some(reg.clone());
+            }
+        }
+        None
+    };
+
+    // Build hosting info map (keep latest per target)
+    let mut hosting_map: HashMap<String, HostingInfo> = HashMap::new();
+    for obs in records.hosting_observations {
+        let info = HostingInfo {
+            provider_name: obs.provider_name,
+            provider_category: obs.provider_category,
+            cdn_detected: obs.cdn_detected,
+            cdn_name: obs.cdn_name,
+            confidence: obs.confidence,
+            detection_method: obs.detection_method,
+            evidence: obs.evidence,
+        };
+        hosting_map
+            .entry(obs.target.clone())
+            .and_modify(|existing| {
+                // Keep the latest one (we could compare checked_at but simpler to just replace)
+                *existing = info.clone();
+            })
+            .or_insert(info);
+    }
+
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
 
     // 1. Collect all assets
     for item in records.items {
         let project = build_project_context(&item.name);
-        let registration = domain_registrations.get(&item.name).cloned();
+        let registration = get_registration(&item.name);
+        let hosting = hosting_map.get(&item.name).cloned();
         assets_map.entry(item.name.clone()).or_insert(AssetState {
             name: item.name,
             latest_dns: None,
             latest_http: None,
             registration,
             project,
+            hosting,
         });
     }
 
     for dns in records.dns_observations {
         let entry = assets_map.entry(dns.target.clone()).or_insert_with(|| {
             let project = build_project_context(&dns.target);
-            let registration = domain_registrations.get(&dns.target).cloned();
+            let registration = get_registration(&dns.target);
+            let hosting = hosting_map.get(&dns.target).cloned();
             AssetState {
                 name: dns.target.clone(),
                 latest_dns: None,
                 latest_http: None,
                 registration,
                 project,
+                hosting,
             }
         });
         match &entry.latest_dns {
@@ -473,13 +528,15 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     for http in records.http_observations {
         let entry = assets_map.entry(http.target.clone()).or_insert_with(|| {
             let project = build_project_context(&http.target);
-            let registration = domain_registrations.get(&http.target).cloned();
+            let registration = get_registration(&http.target);
+            let hosting = hosting_map.get(&http.target).cloned();
             AssetState {
                 name: http.target.clone(),
                 latest_dns: None,
                 latest_http: None,
                 registration,
                 project,
+                hosting,
             }
         });
         match &entry.latest_http {
@@ -630,6 +687,7 @@ mod tests {
             }),
             registration: None,
             project: None,
+            hosting: None,
         };
         // Same root domain → NOT external
         assert!(asset.external_redirect().is_none());
@@ -662,6 +720,7 @@ mod tests {
             }),
             registration: None,
             project: None,
+            hosting: None,
         };
         // Different root domain → IS external
         assert_eq!(
@@ -697,6 +756,7 @@ mod tests {
             }),
             registration: None,
             project: None,
+            hosting: None,
         };
         // www + subfolder → NOT external
         assert!(asset.external_redirect().is_none());
@@ -737,6 +797,7 @@ mod tests {
             }),
             registration: None,
             project: None,
+            hosting: None,
         };
         // Different root domain → IS external
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
@@ -776,6 +837,7 @@ mod tests {
             }),
             registration: None,
             project: None,
+            hosting: None,
         };
         assert_eq!(asset.external_redirect(), Some("josera.com".to_string()));
     }
