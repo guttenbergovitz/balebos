@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_start() {
         let mut workflow = ContractorAssignWorkflow::new();
-        let proj_id = ProjectId(12345);
+        let proj_id = ProjectId::new(12345);
         workflow.start(proj_id);
         assert_eq!(workflow.project, Some(proj_id));
         assert!(workflow.company.is_none());
@@ -139,20 +139,20 @@ mod tests {
         let mut workflow = ContractorAssignWorkflow::new();
         assert!(!workflow.is_complete());
 
-        workflow.project = Some(ProjectId(123));
+        workflow.project = Some(ProjectId::new(123));
         assert!(!workflow.is_complete());
 
         workflow.company = Some("company_id".to_string());
         assert!(!workflow.is_complete());
 
-        workflow.role = Some(ContractorRole::Developer);
+        workflow.role = Some(ContractorRole::Development);
         assert!(workflow.is_complete());
     }
 
     #[test]
     fn test_reset() {
         let mut workflow = ContractorAssignWorkflow::new();
-        workflow.project = Some(ProjectId(123));
+        workflow.project = Some(ProjectId::new(123));
         workflow.company = Some("company".to_string());
         workflow.step = ContractorAssignStep::SelectRole;
 

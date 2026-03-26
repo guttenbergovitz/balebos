@@ -3,6 +3,7 @@ mod cli;
 mod domain;
 mod error;
 mod exit_codes;
+mod hosting;
 mod ignore;
 mod inventory;
 mod org;
@@ -505,7 +506,7 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
         ProbeKind::Dns => match crate::app::probe::probe_dns(target, storage) {
             Ok(obs) => {
                 println!("DNS check completed for {}", obs.target);
-                
+
                 if !obs.a.is_empty() {
                     println!("A: {}", obs.a.join(", "));
                 }
@@ -515,7 +516,7 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                 if !obs.cname.is_empty() {
                     println!("CNAME: {}", obs.cname.join(", "));
                 }
-                
+
                 if obs.a.is_empty() && obs.aaaa.is_empty() && obs.cname.is_empty() {
                     println!("No DNS records found.");
                 }
@@ -526,6 +527,123 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
             Err(e) => {
                 eprintln!("Error checking DNS records: {}", e);
                 process::exit(EXIT_EXTERNAL_TOOL_ERROR);
+            }
+        },
+        ProbeKind::Asn => {
+            // First run DNS probe to get IPs
+            match crate::app::probe::probe_dns(target, storage) {
+                Ok(dns_obs) => {
+                    if dns_obs.a.is_empty() && dns_obs.aaaa.is_empty() {
+                        eprintln!("No IP addresses found for {}. Run DNS probe first.", target);
+                        process::exit(EXIT_DOMAIN_NOT_FOUND);
+                    }
+
+                    // Build IP to host map
+                    let ip_map = crate::app::probe::asn::build_ip_host_map(&[dns_obs.clone()]);
+
+                    match crate::app::probe::probe_asn_batch(&ip_map, storage) {
+                        Ok(observations) => {
+                            println!("ASN lookup completed for {}", target);
+
+                            for obs in &observations {
+                                println!("  {} -> AS{} {} ({})", obs.target, obs.asn, obs.org, obs.country);
+                            }
+
+                            if observations.is_empty() {
+                                println!("No ASN information found.");
+                            } else {
+                                println!("\n{} ASN records added to inventory.", observations.len());
+                            }
+
+                            process::exit(EXIT_SUCCESS);
+                        }
+                        Err(e) => {
+                            eprintln!("Error looking up ASN: {}", e);
+                            eprintln!("\nMake sure asnmap is installed: https://github.com/projectdiscovery/asnmap");
+                            process::exit(EXIT_EXTERNAL_TOOL_ERROR);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving DNS: {}", e);
+                    process::exit(EXIT_EXTERNAL_TOOL_ERROR);
+                }
+            }
+        },
+        ProbeKind::Hosting => {
+            use std::collections::HashMap;
+
+            // Run DNS probe first
+            let dns_obs = match crate::app::probe::probe_dns(target, storage) {
+                Ok(obs) => Some(obs),
+                Err(e) => {
+                    eprintln!("Warning: DNS probe failed: {}", e);
+                    None
+                }
+            };
+
+            // Run HTTP probe
+            let http_obs = match crate::app::probe::http_check(target, storage) {
+                Ok(obs) => Some(obs),
+                Err(e) => {
+                    eprintln!("Warning: HTTP probe failed: {}", e);
+                    None
+                }
+            };
+
+            // Run ASN probe if we have IPs
+            let mut asn_by_ip: HashMap<String, crate::app::probe::AsnObservation> = HashMap::new();
+            if let Some(ref dns) = dns_obs {
+                let ip_map = crate::app::probe::asn::build_ip_host_map(&[dns.clone()]);
+                if !ip_map.is_empty() {
+                    if let Ok(asn_obs) = crate::app::probe::probe_asn_batch(&ip_map, storage) {
+                        for obs in asn_obs {
+                            asn_by_ip.insert(obs.target.clone(), obs);
+                        }
+                    }
+                }
+            }
+
+            // Run hosting detection
+            match crate::hosting::detect_hosting(
+                target,
+                dns_obs.as_ref(),
+                http_obs.as_ref(),
+                &asn_by_ip,
+                storage,
+            ) {
+                Ok(obs) => {
+                    println!("Hosting detection completed for {}", target);
+                    println!();
+
+                    if let Some(provider) = &obs.provider_name {
+                        let category = obs.provider_category.as_deref().unwrap_or("Unknown");
+                        println!("Provider: {} ({})", provider, category);
+                    } else {
+                        println!("Provider: UNKNOWN");
+                    }
+
+                    if obs.cdn_detected {
+                        let cdn = obs.cdn_name.as_deref().unwrap_or("Unknown");
+                        println!("CDN:      {} (detected)", cdn);
+                    }
+
+                    println!("Confidence: {} (via {})", obs.confidence, obs.detection_method);
+
+                    if !obs.evidence.is_empty() {
+                        println!("\nEvidence:");
+                        for ev in &obs.evidence {
+                            println!("  - {}", ev);
+                        }
+                    }
+
+                    println!("\nHosting observation added to inventory.");
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error detecting hosting: {}", e);
+                    process::exit(EXIT_GENERAL_ERROR);
+                }
             }
         },
     }

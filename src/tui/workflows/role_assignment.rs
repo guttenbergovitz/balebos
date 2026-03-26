@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_start() {
         let mut workflow = RoleAssignWorkflow::new();
-        let proj_id = ProjectId(12345);
+        let proj_id = ProjectId::new(12345);
         workflow.start(proj_id);
         assert_eq!(workflow.project, Some(proj_id));
         assert_eq!(workflow.assign_type, Some(true));
@@ -137,20 +137,20 @@ mod tests {
         let mut workflow = RoleAssignWorkflow::new();
         assert!(!workflow.is_complete());
 
-        workflow.project = Some(ProjectId(123));
+        workflow.project = Some(ProjectId::new(123));
         assert!(!workflow.is_complete());
 
         workflow.target = Some("person_id".to_string());
         assert!(!workflow.is_complete());
 
-        workflow.role = Some(Role::Developer);
+        workflow.role = Some(Role::Technician);
         assert!(workflow.is_complete());
     }
 
     #[test]
     fn test_reset() {
         let mut workflow = RoleAssignWorkflow::new();
-        workflow.project = Some(ProjectId(123));
+        workflow.project = Some(ProjectId::new(123));
         workflow.target = Some("person".to_string());
         workflow.step = RoleAssignStep::SelectRole;
 

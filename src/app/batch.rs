@@ -1,12 +1,14 @@
 use crate::app::probe;
 use crate::domain::normalize_domain;
 use crate::error::Result;
+use crate::hosting;
 use crate::storage::{StorageEngine, StorageEngineExt};
-use std::sync::Arc;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Statistics gathered during batch processing
@@ -94,7 +96,7 @@ pub fn batch_process(
         .unwrap_or_default();
 
     // Step 1: Scan all domains (Parallel)
-    println!("🔍 Step 1/5: Scanning domains and RDAP info (parallel)...");
+    println!("🔍 Step 1/7: Scanning domains and RDAP info (parallel)...");
 
     // Process domains in parallel
     let results: Vec<_> = domains
@@ -177,7 +179,7 @@ pub fn batch_process(
     println!();
 
     // Step 2: Probe subdomains for all domains
-    println!("🕷️  Step 2/5: Discovering subdomains in batch...");
+    println!("{} Step 2/7: Discovering subdomains in batch...", '\u{1F577}');
     let mut valid_domains = Vec::new();
     for domain in &domains {
         if !crate::ignore::is_ignored(domain, ignore_patterns) {
@@ -211,7 +213,7 @@ pub fn batch_process(
     let all_assets = get_all_assets(storage)?;
 
     // Step 3: Probe DNS for all domains and subdomains
-    println!("📡 Step 3/5: Resolving DNS records...");
+    println!("📡 Step 3/7: Resolving DNS records...");
 
     let mut dns_targets = Vec::new();
     for asset in &all_assets {
@@ -242,7 +244,7 @@ pub fn batch_process(
     println!();
 
     // Step 4: Probe HTTP for all domains and subdomains
-    println!("🌐 Step 4/5: Checking HTTP status...");
+    println!("🌐 Step 4/7: Checking HTTP status...");
 
     let mut http_targets = Vec::new();
     for asset in &all_assets {
@@ -251,30 +253,118 @@ pub fn batch_process(
         }
     }
 
+    // Store HTTP observations for later hosting detection
+    let mut http_observations = Vec::new();
+
     if http_targets.is_empty() {
         println!("  → No targets to check");
     } else {
-        print!("  ⟳ Checking {} targets in batch ", http_targets.len());
+        print!("  {} Checking {} targets in batch ", '\u{27F3}', http_targets.len());
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
         match probe::probe_http_batch(&http_targets, storage) {
             Ok(observations) => {
-                println!(" ✓");
+                println!(" {}", '\u{2713}');
                 println!("  → Recorded {} HTTP observations", observations.len());
 
                 // For batch stats, we estimate based on observations returned
-                for obs in observations {
+                for obs in &observations {
                     if obs.status.is_some() {
                         stats.http_checks_completed += 1;
                     } else if obs.error_kind.is_some() {
                         stats.http_errors += 1;
                     }
                 }
+                http_observations = observations;
             }
             Err(e) => {
-                println!(" ✗");
+                println!(" {}", '\u{2717}');
                 println!("  → HTTP batch probe failed: {}", e);
+            }
+        }
+    }
+    println!();
+
+    // Step 5: Probe ASN for all unique IPs
+    println!("🔍 Step 5/7: Looking up ASN information...");
+
+    // Get latest DNS observations for IP extraction
+    let dns_records = storage.read_all_records()?.dns_observations;
+
+    // Build IP to host mapping
+    let ip_to_host = probe::asn::build_ip_host_map(&dns_records);
+
+    let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
+
+    if ip_to_host.is_empty() {
+        println!("  → No IPs to look up");
+    } else {
+        print!("  {} Looking up {} unique IPs ", '\u{27F3}', ip_to_host.len());
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        match probe::probe_asn_batch(&ip_to_host, storage) {
+            Ok(observations) => {
+                println!(" {}", '\u{2713}');
+                println!("  → Recorded {} ASN records", observations.len());
+                for obs in observations {
+                    asn_by_ip.insert(obs.target.clone(), obs);
+                }
+            }
+            Err(e) => {
+                println!(" {}", '\u{2717}');
+                println!("  → ASN lookup failed: {} (is asnmap installed?)", e);
+            }
+        }
+    }
+    println!();
+
+    // Step 6: Detect hosting providers
+    println!("🏠 Step 6/7: Detecting hosting providers...");
+
+    // Build lookup maps for hosting detection
+    let mut dns_map: HashMap<String, probe::DnsObservation> = HashMap::new();
+    for obs in dns_records {
+        dns_map.entry(obs.target.clone()).or_insert(obs);
+    }
+
+    let mut http_map: HashMap<String, probe::HttpObservation> = HashMap::new();
+    for obs in http_observations {
+        http_map.entry(obs.target.clone()).or_insert(obs);
+    }
+
+    if all_assets.is_empty() {
+        println!("  → No targets to analyze");
+    } else {
+        print!("  {} Analyzing {} targets ", '\u{27F3}', all_assets.len());
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        match hosting::detect_hosting_batch(
+            &all_assets,
+            &dns_map,
+            &http_map,
+            &asn_by_ip,
+            storage,
+        ) {
+            Ok(observations) => {
+                println!(" {}", '\u{2713}');
+
+                // Count detection results
+                let detected_count = observations.iter().filter(|o| o.provider_id.is_some()).count();
+                let cdn_count = observations.iter().filter(|o| o.cdn_detected).count();
+
+                println!(
+                    "  → Analyzed {} assets: {} providers identified, {} behind CDN",
+                    observations.len(),
+                    detected_count,
+                    cdn_count
+                );
+            }
+            Err(e) => {
+                println!(" {}", '\u{2717}');
+                println!("  → Hosting detection failed: {}", e);
             }
         }
     }
@@ -317,10 +407,34 @@ pub fn run_single_recon(
     }
 
     // 5. Batch DNS Probe
-    let _ = probe::probe_dns_batch(&targets, storage);
+    let dns_observations = probe::probe_dns_batch(&targets, storage).unwrap_or_default();
 
     // 6. Batch HTTP Probe
-    let _ = probe::probe_http_batch(&targets, storage);
+    let http_observations = probe::probe_http_batch(&targets, storage).unwrap_or_default();
+
+    // 7. ASN Probe
+    let ip_to_host = probe::asn::build_ip_host_map(&dns_observations);
+    let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
+    if !ip_to_host.is_empty() {
+        if let Ok(asn_obs) = probe::probe_asn_batch(&ip_to_host, storage) {
+            for obs in asn_obs {
+                asn_by_ip.insert(obs.target.clone(), obs);
+            }
+        }
+    }
+
+    // 8. Hosting Detection
+    let mut dns_map: HashMap<String, probe::DnsObservation> = HashMap::new();
+    for obs in dns_observations {
+        dns_map.entry(obs.target.clone()).or_insert(obs);
+    }
+
+    let mut http_map: HashMap<String, probe::HttpObservation> = HashMap::new();
+    for obs in http_observations {
+        http_map.entry(obs.target.clone()).or_insert(obs);
+    }
+
+    let _ = hosting::detect_hosting_batch(&targets, &dns_map, &http_map, &asn_by_ip, storage);
 
     Ok(())
 }

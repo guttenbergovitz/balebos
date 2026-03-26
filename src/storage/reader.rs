@@ -1,4 +1,4 @@
-use crate::app::probe::{DnsObservation, HttpObservation};
+use crate::app::probe::{AsnObservation, DnsObservation, HostingObservation, HttpObservation};
 use crate::error::Result;
 use crate::inventory::{AssetTag, InventoryItem, ItemType};
 use crate::org::{
@@ -22,6 +22,8 @@ pub struct Records {
     pub items: Vec<InventoryItem>,
     pub http_observations: Vec<HttpObservation>,
     pub dns_observations: Vec<DnsObservation>,
+    pub asn_observations: Vec<AsnObservation>,
+    pub hosting_observations: Vec<HostingObservation>,
     pub asset_tags: Vec<AssetTag>,
     // Organizational records
     pub persons: Vec<PersonRecord>,
@@ -63,6 +65,16 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::DnsRecord => {
                 if let Ok(obs) = serde_json::from_str::<DnsObservation>(&line) {
                     records.dns_observations.push(obs);
+                }
+            }
+            ItemType::AsnRecord => {
+                if let Ok(obs) = serde_json::from_str::<AsnObservation>(&line) {
+                    records.asn_observations.push(obs);
+                }
+            }
+            ItemType::HostingDetection => {
+                if let Ok(obs) = serde_json::from_str::<HostingObservation>(&line) {
+                    records.hosting_observations.push(obs);
                 }
             }
             ItemType::OrgPerson => {
