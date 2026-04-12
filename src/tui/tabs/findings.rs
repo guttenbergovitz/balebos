@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::tui::app::App;
+use crate::tui::state::findings::FindingStatus;
 
 /// Render the Findings tab content.
 pub fn draw_findings(f: &mut Frame, app: &mut App, area: Rect) {
@@ -78,8 +79,18 @@ fn draw_findings_table(f: &mut Frame, app: &mut App, area: Rect) {
             let _is_selected = app.findings.table_state.selected() == Some(i);
             let is_expanded = app.findings.expanded_findings.contains(&finding.id);
 
-            // Status indicator (TODO: need to check finding events for status)
-            let status_icon = "○"; // Default to open
+            // Status indicator based on events
+            let status = app.findings.get_finding_status(&finding.id);
+            let status_icon = match status {
+                FindingStatus::Open => "○",
+                FindingStatus::Acknowledged => "✓",
+                FindingStatus::Resolved => "●",
+            };
+            let status_color = match status {
+                FindingStatus::Open => Color::Yellow,
+                FindingStatus::Acknowledged => Color::Cyan,
+                FindingStatus::Resolved => Color::Green,
+            };
 
             // Severity color
             let severity_color = match finding.severity {
@@ -92,7 +103,7 @@ fn draw_findings_table(f: &mut Frame, app: &mut App, area: Rect) {
 
             // Main row
             let cells = vec![
-                Span::styled(status_icon, Style::default().fg(Color::Cyan)),
+                Span::styled(status_icon, Style::default().fg(status_color)),
                 Span::styled(
                     finding.severity.to_string(),
                     Style::default()

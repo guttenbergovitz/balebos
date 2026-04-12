@@ -3,7 +3,7 @@
 use ratatui::widgets::TableState;
 use std::collections::HashSet;
 
-use crate::app::Finding;
+use crate::app::{Finding, FindingEvent};
 
 /// State for the Findings tab.
 #[derive(Debug, Default)]
@@ -22,6 +22,9 @@ pub struct FindingsState {
 
     /// All findings loaded from storage
     pub all_findings: Vec<Finding>,
+
+    /// All finding events loaded from storage
+    pub all_events: Vec<FindingEvent>,
 }
 
 /// Filter options for findings
@@ -37,6 +40,14 @@ pub enum FindingFilter {
     Info,
 }
 
+/// Status of a finding based on events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FindingStatus {
+    Open,
+    Acknowledged,
+    Resolved,
+}
+
 impl FindingsState {
     pub fn new() -> Self {
         Self {
@@ -45,6 +56,7 @@ impl FindingsState {
             expanded_findings: HashSet::new(),
             visible_findings: Vec::new(),
             all_findings: Vec::new(),
+            all_events: Vec::new(),
         }
     }
 
@@ -58,6 +70,27 @@ impl FindingsState {
             .collect();
     }
 
+    /// Get status of a finding based on events
+    pub fn get_finding_status(&self, finding_id: &str) -> FindingStatus {
+        let has_resolved = self.all_events.iter().any(|e| {
+            e.finding_id == finding_id && e.event_type == crate::app::FindingEventType::Resolved
+        });
+
+        if has_resolved {
+            return FindingStatus::Resolved;
+        }
+
+        let has_acknowledged = self.all_events.iter().any(|e| {
+            e.finding_id == finding_id && e.event_type == crate::app::FindingEventType::Acknowledged
+        });
+
+        if has_acknowledged {
+            return FindingStatus::Acknowledged;
+        }
+
+        FindingStatus::Open
+    }
+
     /// Check if a finding matches the current filter
     fn matches_filter(&self, finding: &Finding) -> bool {
         match self.filter {
@@ -68,7 +101,16 @@ impl FindingsState {
             Some(FindingFilter::Medium) => finding.severity == crate::app::FindingSeverity::Medium,
             Some(FindingFilter::Low) => finding.severity == crate::app::FindingSeverity::Low,
             Some(FindingFilter::Info) => finding.severity == crate::app::FindingSeverity::Info,
-            _ => true, // Open/Acknowledged/Resolved filters need finding events to determine status
+            Some(FindingFilter::Open) => {
+                self.get_finding_status(&finding.id) == FindingStatus::Open
+            }
+            Some(FindingFilter::Acknowledged) => {
+                self.get_finding_status(&finding.id) == FindingStatus::Acknowledged
+            }
+            Some(FindingFilter::Resolved) => {
+                self.get_finding_status(&finding.id) == FindingStatus::Resolved
+            }
+            None => true,
         }
     }
 
@@ -167,7 +209,7 @@ impl FindingsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Finding, FindingCategory, FindingSeverity};
+    use crate::app::{Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity};
 
     fn create_test_finding(id: &str, severity: FindingSeverity) -> Finding {
         Finding::new(
@@ -177,6 +219,16 @@ mod tests {
             "example.com",
             &format!("Test finding {}", id),
         )
+    }
+
+    fn create_test_event(finding_id: &str, event_type: FindingEventType) -> FindingEvent {
+        FindingEvent {
+            item_type: crate::inventory::ItemType::FindingEvent,
+            id: format!("event-{}", finding_id),
+            finding_id: finding_id.to_string(),
+            event_type,
+            created_at: chrono::Utc::now(),
+        }
     }
 
     #[test]
@@ -220,6 +272,76 @@ mod tests {
         state.filter = None;
         state.apply_filter();
         assert_eq!(state.visible_findings.len(), 5);
+    }
+
+    #[test]
+    fn test_get_finding_status() {
+        let mut state = FindingsState::new();
+
+        // Add test finding
+        let finding = create_test_finding("1", FindingSeverity::Medium);
+        let finding_id = finding.id.clone();
+        state.all_findings = vec![finding];
+
+        // Initially should be open
+        assert_eq!(state.get_finding_status(&finding_id), FindingStatus::Open);
+
+        // Add acknowledged event
+        state.all_events = vec![create_test_event(
+            &finding_id,
+            FindingEventType::Acknowledged,
+        )];
+        assert_eq!(
+            state.get_finding_status(&finding_id),
+            FindingStatus::Acknowledged
+        );
+
+        // Add resolved event (should override acknowledged)
+        state.all_events = vec![
+            create_test_event(&finding_id, FindingEventType::Acknowledged),
+            create_test_event(&finding_id, FindingEventType::Resolved),
+        ];
+        assert_eq!(
+            state.get_finding_status(&finding_id),
+            FindingStatus::Resolved
+        );
+    }
+
+    #[test]
+    fn test_status_filter() {
+        let mut state = FindingsState::new();
+
+        // Create findings with different statuses
+        let finding1 = create_test_finding("1", FindingSeverity::Medium);
+        let finding2 = create_test_finding("2", FindingSeverity::Medium);
+        let finding3 = create_test_finding("3", FindingSeverity::Medium);
+
+        state.all_findings = vec![finding1.clone(), finding2.clone(), finding3.clone()];
+
+        // Add events to change statuses
+        state.all_events = vec![
+            create_test_event(&finding1.id, FindingEventType::Acknowledged),
+            create_test_event(&finding2.id, FindingEventType::Resolved),
+            // finding3 remains open
+        ];
+
+        // Test open filter
+        state.filter = Some(FindingFilter::Open);
+        state.apply_filter();
+        assert_eq!(state.visible_findings.len(), 1);
+        assert_eq!(state.visible_findings[0].id, finding3.id);
+
+        // Test acknowledged filter
+        state.filter = Some(FindingFilter::Acknowledged);
+        state.apply_filter();
+        assert_eq!(state.visible_findings.len(), 1);
+        assert_eq!(state.visible_findings[0].id, finding1.id);
+
+        // Test resolved filter
+        state.filter = Some(FindingFilter::Resolved);
+        state.apply_filter();
+        assert_eq!(state.visible_findings.len(), 1);
+        assert_eq!(state.visible_findings[0].id, finding2.id);
     }
 
     #[test]
