@@ -260,7 +260,79 @@ Assigns an external company (no brand) to a Project with a specific contractor r
 
 ---
 
-## 6. Domain Registration Record
+## 6. Finding Record
+
+Persisted issue detected by inventory checks. Findings track operational problems with severity, category, and lifecycle state.
+
+- **`item_type`**: `"finding"`
+- **`id`**: UUID v4
+- **`severity`**: One of `"Critical"`, `"High"`, `"Medium"`, `"Low"`, `"Info"`
+- **`category`**: One of `"Security"`, `"Compliance"`, `"Financial"`, `"Lifecycle"`, `"Operational"`, `"Governance"`
+- **`check_name`**: Name of the check that produced this finding (e.g., `"staleness"`, `"tls_expiry"`)
+- **`target`**: Affected asset (domain, subdomain, etc.)
+- **`message`**: Human-readable description of the issue
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{
+  "item_type": "finding",
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "severity": "High",
+  "category": "Lifecycle",
+  "check_name": "staleness",
+  "target": "api.example.com",
+  "message": "Domain not seen in 21 days (threshold: 14 days)",
+  "created_at": "2026-04-12T10:30:00Z"
+}
+```
+
+**Deduplication:**
+Findings are deduplicated by `check_name` + `target` combination. If an open finding already exists for the same check and target, a new finding is not created.
+
+---
+
+## 7. Finding Event Record
+
+Lifecycle events for findings. Events track state transitions (acknowledge, resolve) as append-only records.
+
+- **`item_type`**: `"finding_event"`
+- **`id`**: Unique string (usually `event:{finding_id}:{timestamp}`)
+- **`finding_id`**: UUID of the related finding
+- **`event_type`**: One of `"Acknowledged"`, `"Resolved"`
+- **`created_at`**: RFC3339 Timestamp
+
+**Example (acknowledge):**
+```json
+{
+  "item_type": "finding_event",
+  "id": "event:f47ac10b-58cc-4372-a567-0e02b2c3d479:1712922600",
+  "finding_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "event_type": "Acknowledged",
+  "created_at": "2026-04-12T11:00:00Z"
+}
+```
+
+**Example (resolve):**
+```json
+{
+  "item_type": "finding_event",
+  "id": "event:f47ac10b-58cc-4372-a567-0e02b2c3d479:1712926200",
+  "finding_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "event_type": "Resolved",
+  "created_at": "2026-04-12T12:00:00Z"
+}
+```
+
+**Finding Status Determination:**
+A finding's current status is determined by querying its events:
+- **Resolved** - Has a `Resolved` event (most recent wins)
+- **Acknowledged** - Has an `Acknowledged` event but no `Resolved` event
+- **Open** - No events (or only informational events)
+
+---
+
+## 8. Domain Registration Record
 
 Captures RDAP/WHOIS registration data for a domain, including registrar, expiration dates, and contact information.
 

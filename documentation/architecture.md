@@ -139,7 +139,48 @@ Balebos enforces simple operational invariants:
 - low-frequency observations reduce confidence
 - absence of data is treated as a signal
 
-Violations of these invariants are reported as issues.
+Violations of these invariants are reported as findings.
+
+### Findings
+
+Findings are the primary mechanism for tracking operational issues in Balebos. Unlike ephemeral issues that were previously printed and discarded, findings are:
+
+- **Persisted** - Stored as append-only records in the inventory
+- **Queryable** - Can be listed, filtered, and analyzed over time
+- **Auditable** - Complete lifecycle history (created, acknowledged, resolved)
+- **Deduplicated** - Same check + target combination won't create duplicates
+- **Auto-resolving** - Close automatically when conditions are fixed
+
+#### Finding Lifecycle
+
+```
+Created → Open → Acknowledged → Resolved
+   ↓
+Auto-resolved (when condition fixed)
+```
+
+1. **Created** - A check detects an issue and creates a finding
+2. **Open** - Default state, requires attention
+3. **Acknowledged** - Seen but not yet fixed (suppresses alerts)
+4. **Resolved** - Fixed either manually or automatically
+
+#### Severity Levels
+
+- **Critical** - Immediate action required (expired certs, outages)
+- **High** - Address soon (certs expiring, stale production assets)
+- **Medium** - Worth investigating (low confidence, unknown sources)
+- **Low** - Minor issues (missing checks)
+- **Info** - Informational observations
+
+#### Categories
+
+Findings are categorized to support different operational workflows:
+- **Security** - Certificate issues, TLS problems
+- **Compliance** - Policy violations
+- **Financial** - Cost-related concerns
+- **Lifecycle** - Stale assets, deprecation
+- **Operational** - HTTP errors, DNS issues
+- **Governance** - Ownership, tagging
 
 ### Anomaly Detection
 
@@ -149,6 +190,8 @@ Rather than just collecting data, Balebos actively analyzes it for anomalies:
 - Items from unknown or untrusted sources
 - Items with suspicious patterns
 - Unexpected changes in the inventory
+
+Detected anomalies are persisted as findings with appropriate severity and category.
 
 ### Synthesis for Decision Making
 
@@ -226,6 +269,51 @@ Balebos uses exit codes to signal system state:
 - 41 → external tool error
 
 This allows integration with automation and alerting systems for specific response types.
+
+## Findings System
+
+### Motivation
+
+The original `check` command printed issues to stdout and exited. This had several limitations:
+- No historical record of what was detected
+- No way to track if issues were getting better or worse
+- No acknowledgment or resolution workflow
+- Report module had to parse strings to count issues
+
+The findings system replaces ephemeral issues with persisted records.
+
+### Implementation
+
+**Finding Structure:**
+```rust
+pub struct Finding {
+    pub id: String,                    // UUID
+    pub severity: FindingSeverity,     // Info, Low, Medium, High, Critical
+    pub category: FindingCategory,     // Security, Compliance, etc.
+    pub check_name: String,            // Which check produced this
+    pub target: String,                // Affected asset
+    pub message: String,               // Human-readable description
+    pub created_at: DateTime<Utc>,
+}
+```
+
+**Lifecycle Events:**
+```rust
+pub struct FindingEvent {
+    pub finding_id: String,
+    pub event_type: FindingEventType,  // Acknowledged, Resolved
+    pub created_at: DateTime<Utc>,
+}
+```
+
+### Auto-Resolution
+
+Findings automatically resolve when the underlying condition is fixed:
+- Staleness finding → Resolved when asset seen recently
+- HTTP error finding → Resolved when HTTP returns success
+- Low confidence finding → Resolved when multiple observations exist
+
+This ensures the findings list reflects current reality without manual cleanup.
 
 ## v0.2.0 Features
 

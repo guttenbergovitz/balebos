@@ -136,6 +136,21 @@ Balebos includes a comprehensive Terminal User Interface (TUI) for interactive e
     - `e`: Edit project details.
     - `r`: **Assign Role** - launch a wizard to assign a Person to the project with a specific role.
 
+#### Findings Tab (Issue Tracking)
+- **Browse**: Navigate findings with severity and status indicators.
+- **Status Icons**: 
+  - ○ Yellow - Open (requires attention)
+  - ✓ Cyan - Acknowledged (seen but not fixed)
+  - ● Green - Resolved (fixed or auto-resolved)
+- **Filtering**: Press `f` to cycle through filters:
+  - Severity: Critical, High, Medium, Low, Info
+  - Status: Open, Acknowledged, Resolved
+- **Details**: Press **Space** or **Enter** to expand a finding and see full details.
+- **Actions**:
+    - `a`: Acknowledge selected finding
+    - `r`: Resolve selected finding
+    - `s`: Run findings scan in background
+
 #### Form Helpers
 - **Autocomplete**: Many forms (like assigning a project or selecting a brand) feature live search. Type a fragment of the name, use **Up** / **Down** to pick from the matches, and press **Enter** to select.
 - **Fixed Layout**: Modals are optimized for visibility across different terminal sizes.
@@ -259,6 +274,98 @@ This command analyzes inventory data for:
 - Suspicious subdomain patterns
 - HTTP status errors (4xx, 5xx)
 - Missing HTTP checks
+
+Findings are persisted to storage with deduplication. Duplicate detection prevents creating multiple findings for the same issue.
+
+#### Persisted Findings Management
+
+Balebos persists findings as append-only records, allowing you to track issues over time:
+
+**Run checks and persist findings:**
+```bash
+balebos finding run
+```
+
+This command:
+- Runs all inventory checks
+- Creates new findings for detected issues
+- Auto-resolves findings that are no longer valid
+- Applies deduplication to avoid duplicates
+- Returns exit code based on severity
+
+**List findings:**
+```bash
+# List all findings
+balebos finding list
+
+# List only open (unresolved) findings
+balebos finding list --status open
+
+# List acknowledged findings
+balebos finding list --status acknowledged
+
+# List resolved findings
+balebos finding list --status resolved
+
+# Filter by severity
+balebos finding list --severity critical
+balebos finding list --severity high
+balebos finding list --severity medium
+balebos finding list --severity low
+balebos finding list --severity info
+```
+
+**Show finding details:**
+```bash
+balebos finding show <finding-id>
+```
+
+**Acknowledge a finding:**
+```bash
+balebos finding acknowledge <finding-id>
+# or
+balebos finding ack <finding-id>
+```
+Acknowledging indicates you've seen the finding but haven't fixed it yet.
+
+**Resolve a finding:**
+```bash
+balebos finding resolve <finding-id>
+```
+Resolving marks the finding as fixed. Note: Many findings auto-resolve when the underlying issue is fixed.
+
+##### Finding Severity Levels
+
+Findings have five severity levels:
+- **Critical** - Immediate action required (e.g., expired certificate, production outage)
+- **High** - Should be addressed soon (e.g., certificate expiring soon, stale production domain)
+- **Medium** - Worth investigating (e.g., low confidence item, unknown source)
+- **Low** - Minor issues (e.g., missing HTTP check on non-critical domain)
+- **Info** - Informational only (e.g., observation notes)
+
+##### Finding Categories
+
+Findings are categorized by domain:
+- **Security** - Certificate issues, TLS problems, security-related anomalies
+- **Compliance** - Policy violations, regulatory concerns
+- **Financial** - Cost-related issues, expired domains
+- **Lifecycle** - Stale assets, deprecated services
+- **Operational** - HTTP errors, DNS issues, infrastructure problems
+- **Governance** - Ownership, tagging, organizational issues
+
+##### Auto-Resolve Behavior
+
+Findings automatically resolve when the underlying condition is fixed:
+- **staleness** - Resolved when domain is seen within 14 days
+- **low_confidence** - Resolved when domain has multiple observations
+- **missing_http_check** - Resolved when HTTP check completes successfully
+- **http_server_error** - Resolved when HTTP returns 200
+- **http_client_error** - Resolved when HTTP returns 200
+- **tls_error** - Resolved when TLS handshake succeeds
+- **connection_error** - Resolved when connection succeeds
+- **timeout** - Resolved when request completes
+
+Auto-resolution creates a `resolved` event in the finding's history.
 
 #### Tracking Changes
 

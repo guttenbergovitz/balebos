@@ -137,6 +137,44 @@ Analyzes your inventory for:
 - HTTP errors
 - Missing checks
 
+### Findings Management
+
+Balebos persists findings to track issues over time:
+
+```bash
+# Run checks and persist findings
+balebos finding run
+
+# List all findings
+balebos finding list
+
+# List only open (unresolved) issues
+balebos finding list --status open
+
+# List high severity findings
+balebos finding list --severity high
+
+# Show finding details
+balebos finding show <finding-id>
+
+# Acknowledge a finding (seen but not fixed)
+balebos finding acknowledge <finding-id>
+
+# Resolve a finding manually
+balebos finding resolve <finding-id>
+```
+
+**Finding Status:**
+- **Open** (○) - Issue detected, requires attention
+- **Acknowledged** (✓) - Seen but not yet fixed
+- **Resolved** (●) - Fixed or auto-resolved
+
+**Auto-Resolution:**
+Findings automatically resolve when the underlying issue is fixed:
+- Stale domain → Resolved when seen again
+- HTTP error → Resolved when HTTP check succeeds
+- Low confidence → Resolved when multiple observations exist
+
 ### Track Changes
 
 ```bash
@@ -257,7 +295,8 @@ balebos check > /reports/issues.txt
 
 - Read the [Usage Guide](guides/usage.md) for detailed command reference
 - Check the [Architecture Documentation](architecture.md) for design details
-- Review the [CHANGELOG](../CHANGELOG.md) to see what's new in v0.2.0
+- Review the [Findings Management Guide](findings.md) for issue tracking
+- Review the [CHANGELOG](../CHANGELOG.md) to see what's new
 
 ## Troubleshooting
 
@@ -291,6 +330,13 @@ Balebos now supports DuckDB, which solves most performance issues. Ensure you ar
 export BALEBOS_STORAGE=duckdb
 ```
 For very large inventories (>1M records), DuckDB's analytical engine will significantly outperform sequential JSONL processing.
+
+### Findings not auto-resolving
+
+If a finding doesn't auto-resolve after fixing the issue:
+1. Run `balebos finding run` to trigger the auto-resolve check
+2. If still not resolved, manually resolve with `balebos finding resolve <id>`
+3. Check that the fix is actually working (e.g., HTTP check returns 200)
 
 ## Getting Help
 

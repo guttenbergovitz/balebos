@@ -25,6 +25,7 @@ Balebos is designed so that system state does not depend on constant human atten
 - tracks changes over time
 - exposes system state via API / queries
 - highlights drift and unknowns
+- persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
 
 ## Quick Start
 
@@ -36,6 +37,12 @@ docker compose run --rm balebos ui
 
 # Scan a domain
 docker compose run --rm balebos scan example.com
+
+# Run checks and persist findings
+balebos finding run
+
+# List open findings
+balebos finding list
 ```
 
 ## Documentation
@@ -45,6 +52,7 @@ docker compose run --rm balebos scan example.com
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
   - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
   - [Tag Management](documentation/guides/tag-management.md) - Asset tagging and organization
+  - [Findings Management](documentation/guides/findings.md) - Persisted issues and lifecycle tracking
 - **Technical Specs**
   - [Architecture Overview](documentation/architecture.md) - Design principles and layers
   - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
@@ -115,6 +123,15 @@ balebos report
 # Launch interactive TUI dashboard
 balebos ui
 
+# Finding management
+balebos finding run                    # Run checks and persist new findings
+balebos finding list                   # List all findings
+balebos finding list --status open     # List only open findings
+balebos finding list --severity high   # List high severity findings
+balebos finding show <id>              # Show finding details
+balebos finding acknowledge <id>       # Acknowledge a finding
+balebos finding resolve <id>           # Resolve a finding manually
+
 # Tag management
 balebos tag add example.com to-review
 balebos tag add example.com priority-high
@@ -166,9 +183,11 @@ This approach ensures:
 2. **Validation** - Structural checks ensure only valid domain names enter the system
 3. **Normalization** - Assets are normalized for consistent storage and analysis
 4. **Anomaly detection** - Identification of suspicious patterns and deviations
-5. **Operational monitoring** - Regular reports highlighting changes requiring attention
-6. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
-7. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
+5. **Findings** - Persisted issues with severity, category, and lifecycle (open/acknowledged/resolved)
+6. **Auto-resolve** - Findings automatically close when underlying issues are fixed
+7. **Operational monitoring** - Regular reports highlighting changes requiring attention
+8. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+9. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
 
 ### Organizational Model
 
