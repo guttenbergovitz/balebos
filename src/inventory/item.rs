@@ -39,6 +39,10 @@ pub enum ItemType {
     OrgDomainRegistration,
     #[serde(rename = "asset_tag")]
     AssetTag,
+    #[serde(rename = "finding")]
+    Finding,
+    #[serde(rename = "finding_event")]
+    FindingEvent,
 }
 
 // This struct represents an item in our inventory storage

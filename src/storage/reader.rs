@@ -1,3 +1,4 @@
+use crate::app::finding::{Finding, FindingEvent};
 use crate::app::probe::{AsnObservation, DnsObservation, HostingObservation, HttpObservation};
 use crate::error::Result;
 use crate::inventory::{AssetTag, InventoryItem, ItemType};
@@ -25,6 +26,8 @@ pub struct Records {
     pub asn_observations: Vec<AsnObservation>,
     pub hosting_observations: Vec<HostingObservation>,
     pub asset_tags: Vec<AssetTag>,
+    pub findings: Vec<Finding>,
+    pub finding_events: Vec<FindingEvent>,
     // Organizational records
     pub persons: Vec<PersonRecord>,
     pub companies: Vec<CompanyRecord>,
@@ -125,6 +128,16 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::AssetTag => {
                 if let Ok(tag) = serde_json::from_str::<AssetTag>(&line) {
                     records.asset_tags.push(tag);
+                }
+            }
+            ItemType::Finding => {
+                if let Ok(f) = serde_json::from_str::<Finding>(&line) {
+                    records.findings.push(f);
+                }
+            }
+            ItemType::FindingEvent => {
+                if let Ok(e) = serde_json::from_str::<FindingEvent>(&line) {
+                    records.finding_events.push(e);
                 }
             }
         }

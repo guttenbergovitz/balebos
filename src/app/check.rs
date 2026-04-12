@@ -1,8 +1,9 @@
+use crate::app::finding::{Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity};
 use crate::app::probe::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::error::Result;
 use crate::inventory::{InventoryItem, ItemType};
-use crate::storage::StorageEngine;
+use crate::storage::{StorageEngine, StorageEngineExt};
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -38,12 +39,21 @@ impl Issue {
     }
 }
 
-// Check for domains that haven't been seen in X days (defaults to 14)
-fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
-    // Group items by domain name
+impl From<&Finding> for Issue {
+    fn from(finding: &Finding) -> Self {
+        let severity = match finding.severity {
+            FindingSeverity::Critical | FindingSeverity::High => Severity::Critical,
+            _ => Severity::Warning,
+        };
+        Issue::new(severity, &finding.message)
+    }
+}
+
+// --- Internal check functions producing Finding ---
+
+fn check_staleness_findings(items: &[InventoryItem], days_threshold: u64) -> Vec<Finding> {
     let mut domain_latest: HashMap<&String, DateTime<Utc>> = HashMap::new();
 
-    // Find the latest timestamp for each domain
     for item in items
         .iter()
         .filter(|item| item.item_type == ItemType::Domain)
@@ -56,27 +66,29 @@ fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
         }
     }
 
-    // Current time for comparison
     let now = Utc::now();
+    let mut findings = Vec::new();
 
-    // Check which domains are stale
-    let mut issues = Vec::new();
     for (domain, latest) in domain_latest {
         let age = now.signed_duration_since(latest);
         let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
 
         if age_days >= days_threshold {
             let message = format!("Domain {} last seen {} days ago", domain, age_days);
-            issues.push(Issue::warning(&message));
+            findings.push(Finding::new(
+                FindingSeverity::Medium,
+                FindingCategory::Lifecycle,
+                "staleness",
+                domain,
+                &message,
+            ));
         }
     }
 
-    issues
+    findings
 }
 
-// Check for domains that have been seen only once
-fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
-    // Count occurrences of each domain
+fn check_low_confidence_findings(items: &[InventoryItem]) -> Vec<Finding> {
     let mut domain_counts: HashMap<&String, u32> = HashMap::new();
 
     for item in items
@@ -86,24 +98,25 @@ fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
         *domain_counts.entry(&item.name).or_insert(0) += 1;
     }
 
-    // Find domains seen only once
-    let mut issues = Vec::new();
+    let mut findings = Vec::new();
     for (domain, count) in domain_counts {
         if count == 1 {
             let message = format!("Domain {} seen only once", domain);
-            issues.push(Issue::warning(&message));
+            findings.push(Finding::new(
+                FindingSeverity::Low,
+                FindingCategory::Operational,
+                "low_confidence",
+                domain,
+                &message,
+            ));
         }
     }
 
-    issues
+    findings
 }
 
-// Check for unknown sources in the inventory
-fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
-    // Define known sources
+fn check_unknown_sources_findings(items: &[InventoryItem]) -> Vec<Finding> {
     let known_sources: HashSet<&str> = ["cli"].iter().copied().collect();
-
-    // Find unknown sources
     let mut unknown_sources: HashSet<&String> = HashSet::new();
 
     for item in items {
@@ -112,84 +125,101 @@ fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
         }
     }
 
-    // Create issues for unknown sources
-    let mut issues = Vec::new();
+    let mut findings = Vec::new();
     for source in unknown_sources {
         let message = format!("Unknown source: {}", source);
-        issues.push(Issue::critical(&message));
+        findings.push(Finding::new(
+            FindingSeverity::High,
+            FindingCategory::Security,
+            "unknown_source",
+            source,
+            &message,
+        ));
     }
 
-    issues
+    findings
 }
 
-// Check for unnormalized or invalid domain data
-fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
-    let mut issues = Vec::new();
+fn check_invalid_data_findings(items: &[InventoryItem]) -> Vec<Finding> {
+    let mut findings = Vec::new();
 
     for item in items
         .iter()
         .filter(|item| item.item_type == ItemType::Domain)
     {
-        // Check if domain is properly normalized
         let normalized = normalize_domain(&item.name);
         if normalized != item.name {
             let message = format!(
                 "Domain {} is not normalized (should be {})",
                 item.name, normalized
             );
-            issues.push(Issue::warning(&message));
+            findings.push(Finding::new(
+                FindingSeverity::Low,
+                FindingCategory::Operational,
+                "invalid_data",
+                &item.name,
+                &message,
+            ));
         }
 
-        // Check for uppercase domains
         if item.name.chars().any(|c| c.is_uppercase()) {
             let message = format!("Domain {} contains uppercase characters", item.name);
-            issues.push(Issue::warning(&message));
+            findings.push(Finding::new(
+                FindingSeverity::Low,
+                FindingCategory::Operational,
+                "invalid_data",
+                &item.name,
+                &message,
+            ));
         }
     }
 
-    issues
+    findings
 }
 
-// Check for suspicious subdomains that don't match expected patterns
-fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
-    // Common legitimate patterns for subdomains
+fn check_subdomain_patterns_findings(items: &[InventoryItem]) -> Vec<Finding> {
     let allowed_patterns = vec![
         "www", "api", "dev", "staging", "test", "admin", "mail", "smtp", "ftp", "blog", "shop",
         "store", "support",
     ];
 
-    let mut issues = Vec::new();
+    let mut findings = Vec::new();
 
     for item in items
         .iter()
         .filter(|item| item.item_type == ItemType::Subdomain)
     {
-        // Check if subdomain starts with any allowed pattern
         let subdomain_parts: Vec<&str> = item.name.split('.').collect();
 
         if subdomain_parts.is_empty() {
             continue;
         }
 
-        // Get the first part of the subdomain (before first dot)
         let first_part = subdomain_parts[0];
 
-        // If it doesn't match any allowed pattern, flag it
         if !allowed_patterns
             .iter()
             .any(|pattern| first_part.contains(pattern))
         {
             let message = format!("Suspicious subdomain pattern: {}", item.name);
-            issues.push(Issue::warning(&message));
+            findings.push(Finding::new(
+                FindingSeverity::Medium,
+                FindingCategory::Security,
+                "suspicious_subdomain",
+                &item.name,
+                &message,
+            ));
         }
     }
 
-    issues
+    findings
 }
 
-// Check for HTTP status issues
-fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservation]) -> Vec<Issue> {
-    let mut issues = Vec::new();
+fn check_http_status_findings(
+    items: &[InventoryItem],
+    http_observations: &[HttpObservation],
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
 
     // Find the latest HTTP check for each domain
     let mut domain_latest_http: HashMap<String, &HttpObservation> = HashMap::new();
@@ -211,59 +241,86 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
 
     // Check HTTP status codes and errors
     for (domain, observation) in &domain_latest_http {
-        // If there was a network error
         if let Some(error_kind) = &observation.error_kind {
             match error_kind {
                 HttpErrorKind::DnsNotFound => {
-                    issues.push(Issue::critical(&format!(
-                        "Domain {} - DNS lookup failed",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Critical,
+                        FindingCategory::Operational,
+                        "dns_not_found",
+                        domain,
+                        &format!("Domain {} - DNS lookup failed", domain),
+                    ));
                 }
                 HttpErrorKind::Timeout => {
-                    issues.push(Issue::warning(&format!(
-                        "Domain {} - HTTP check timed out",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Medium,
+                        FindingCategory::Operational,
+                        "http_timeout",
+                        domain,
+                        &format!("Domain {} - HTTP check timed out", domain),
+                    ));
                 }
                 HttpErrorKind::TlsError => {
-                    issues.push(Issue::warning(&format!(
-                        "Domain {} - TLS/certificate error",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Medium,
+                        FindingCategory::Security,
+                        "tls_error",
+                        domain,
+                        &format!("Domain {} - TLS/certificate error", domain),
+                    ));
                 }
                 HttpErrorKind::ConnectionError => {
-                    issues.push(Issue::warning(&format!(
-                        "Domain {} - Connection error",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Medium,
+                        FindingCategory::Operational,
+                        "connection_error",
+                        domain,
+                        &format!("Domain {} - Connection error", domain),
+                    ));
                 }
                 HttpErrorKind::TooManyRedirects => {
-                    issues.push(Issue::warning(&format!(
-                        "Domain {} - Too many redirects",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Low,
+                        FindingCategory::Operational,
+                        "too_many_redirects",
+                        domain,
+                        &format!("Domain {} - Too many redirects", domain),
+                    ));
                 }
                 HttpErrorKind::ProbeError => {
-                    issues.push(Issue::warning(&format!(
-                        "Domain {} - HTTP probe failed",
-                        domain
-                    )));
+                    findings.push(Finding::new(
+                        FindingSeverity::Low,
+                        FindingCategory::Operational,
+                        "probe_error",
+                        domain,
+                        &format!("Domain {} - HTTP probe failed", domain),
+                    ));
                 }
             }
-        }
-        // If request succeeded, check HTTP status codes
-        else if let Some(status) = observation.status {
+        } else if let Some(status) = observation.status {
             if status >= 500 {
-                issues.push(Issue::critical(&format!(
-                    "Domain {} returned HTTP status {} (server error)",
-                    domain, status
-                )));
+                findings.push(Finding::new(
+                    FindingSeverity::Critical,
+                    FindingCategory::Operational,
+                    "http_server_error",
+                    domain,
+                    &format!(
+                        "Domain {} returned HTTP status {} (server error)",
+                        domain, status
+                    ),
+                ));
             } else if status >= 400 {
-                issues.push(Issue::warning(&format!(
-                    "Domain {} returned HTTP status {} (client error)",
-                    domain, status
-                )));
+                findings.push(Finding::new(
+                    FindingSeverity::Medium,
+                    FindingCategory::Operational,
+                    "http_client_error",
+                    domain,
+                    &format!(
+                        "Domain {} returned HTTP status {} (client error)",
+                        domain, status
+                    ),
+                ));
             }
         }
 
@@ -274,25 +331,43 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
             let days_until_expiry = time_until_expiry.num_days();
 
             if days_until_expiry < 0 {
-                issues.push(Issue::critical(&format!(
-                    "Domain {} - TLS certificate EXPIRED on {}",
+                findings.push(Finding::new(
+                    FindingSeverity::Critical,
+                    FindingCategory::Security,
+                    "tls_expired",
                     domain,
-                    tls.not_after.format("%Y-%m-%d")
-                )));
+                    &format!(
+                        "Domain {} - TLS certificate EXPIRED on {}",
+                        domain,
+                        tls.not_after.format("%Y-%m-%d")
+                    ),
+                ));
             } else if days_until_expiry < 14 {
-                issues.push(Issue::critical(&format!(
-                    "Domain {} - TLS certificate expires in {} days ({})",
+                findings.push(Finding::new(
+                    FindingSeverity::High,
+                    FindingCategory::Security,
+                    "tls_expiring_soon",
                     domain,
-                    days_until_expiry,
-                    tls.not_after.format("%Y-%m-%d")
-                )));
+                    &format!(
+                        "Domain {} - TLS certificate expires in {} days ({})",
+                        domain,
+                        days_until_expiry,
+                        tls.not_after.format("%Y-%m-%d")
+                    ),
+                ));
             } else if days_until_expiry < 30 {
-                issues.push(Issue::warning(&format!(
-                    "Domain {} - TLS certificate expires in {} days ({})",
+                findings.push(Finding::new(
+                    FindingSeverity::Medium,
+                    FindingCategory::Security,
+                    "tls_expiring_soon",
                     domain,
-                    days_until_expiry,
-                    tls.not_after.format("%Y-%m-%d")
-                )));
+                    &format!(
+                        "Domain {} - TLS certificate expires in {} days ({})",
+                        domain,
+                        days_until_expiry,
+                        tls.not_after.format("%Y-%m-%d")
+                    ),
+                ));
             }
         }
     }
@@ -301,18 +376,15 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
     let now = Utc::now();
     let one_day = chrono::Duration::days(1);
 
-    // Build set of domains in inventory
     let domains: HashSet<String> = items
         .iter()
         .filter(|item| item.item_type == ItemType::Domain)
         .map(|item| item.name.clone())
         .collect();
 
-    // Check which domains are missing HTTP observations
     for domain in domains {
         match domain_latest_http.get(&domain) {
             Some(obs) => {
-                // Check if the last observation is older than 24 hours
                 let age = now.signed_duration_since(obs.checked_at);
                 if age > one_day {
                     let message = format!(
@@ -320,22 +392,118 @@ fn check_http_status(items: &[InventoryItem], http_observations: &[HttpObservati
                         domain,
                         obs.checked_at.format("%Y-%m-%d %H:%M")
                     );
-                    issues.push(Issue::warning(&message));
+                    findings.push(Finding::new(
+                        FindingSeverity::Low,
+                        FindingCategory::Operational,
+                        "missing_http_check",
+                        &domain,
+                        &message,
+                    ));
                 }
             }
             None => {
-                // This domain has no HTTP observations at all
                 let message = format!("No HTTP checks found for domain {}", domain);
-                issues.push(Issue::warning(&message));
+                findings.push(Finding::new(
+                    FindingSeverity::Low,
+                    FindingCategory::Operational,
+                    "missing_http_check",
+                    &domain,
+                    &message,
+                ));
             }
         }
     }
 
-    issues
+    findings
 }
 
-// Run all checks and collect issues
-pub fn check_inventory(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) -> Result<Vec<Issue>> {
+// Run all checks and return findings (internal helper)
+fn run_all_checks(
+    items: &[InventoryItem],
+    http_observations: &[HttpObservation],
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    findings.extend(check_staleness_findings(items, 14));
+    findings.extend(check_low_confidence_findings(items));
+    findings.extend(check_unknown_sources_findings(items));
+    findings.extend(check_invalid_data_findings(items));
+    findings.extend(check_subdomain_patterns_findings(items));
+    findings.extend(check_http_status_findings(items, http_observations));
+
+    findings
+}
+
+// Determine whether a finding is "open" (no Resolved event exists for it)
+fn open_finding_keys(
+    findings: &[Finding],
+    finding_events: &[FindingEvent],
+) -> HashSet<(String, String)> {
+    let resolved_ids: HashSet<&String> = finding_events
+        .iter()
+        .filter(|e| e.event_type == FindingEventType::Resolved)
+        .map(|e| &e.finding_id)
+        .collect();
+
+    findings
+        .iter()
+        .filter(|f| !resolved_ids.contains(&f.id))
+        .map(|f| (f.check_name.clone(), f.target.clone()))
+        .collect()
+}
+
+/// Run all checks and persist new (non-duplicate) findings to storage.
+///
+/// A finding is considered a duplicate if an open finding with the same
+/// `check_name` and `target` already exists.
+pub fn run_checks_and_persist(
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) -> Result<Vec<Finding>> {
+    let records = storage.read_all_records()?;
+    let items = records.items;
+    let http_observations = records.http_observations;
+
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Filter out ignored items
+    let filtered_items: Vec<InventoryItem> = items
+        .into_iter()
+        .filter(|item| !crate::ignore::is_ignored(&item.name, ignore_patterns))
+        .collect();
+
+    let filtered_http_observations: Vec<HttpObservation> = http_observations
+        .into_iter()
+        .filter(|obs| !crate::ignore::is_ignored(&obs.target, ignore_patterns))
+        .collect();
+
+    // Run checks
+    let candidate_findings = run_all_checks(&filtered_items, &filtered_http_observations);
+
+    // Determine which check_name+target combos are already open
+    let existing_keys = open_finding_keys(&records.findings, &records.finding_events);
+
+    // Deduplicate
+    let new_findings: Vec<Finding> = candidate_findings
+        .into_iter()
+        .filter(|f| !existing_keys.contains(&(f.check_name.clone(), f.target.clone())))
+        .collect();
+
+    // Persist each new finding
+    for finding in &new_findings {
+        storage.save(finding)?;
+    }
+
+    Ok(new_findings)
+}
+
+// Run all checks and collect issues (backward-compatible)
+pub fn check_inventory(
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) -> Result<Vec<Issue>> {
     let records = storage.read_all_records()?;
     let items = records.items;
     let http_observations = records.http_observations;
@@ -366,27 +534,52 @@ pub fn check_inventory(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[Stri
         );
     }
 
-    let mut issues = Vec::new();
-
-    // Run each check using filtered items
-    issues.extend(check_staleness(&filtered_items, 14)); // 14 days threshold
-    issues.extend(check_low_confidence(&filtered_items));
-    issues.extend(check_unknown_sources(&filtered_items));
-    issues.extend(check_invalid_data(&filtered_items));
-    issues.extend(check_subdomain_patterns(&filtered_items)); // Check for suspicious subdomains
-
-    // Filter HTTP observations for ignored domains
     let filtered_http_observations: Vec<HttpObservation> = http_observations
         .into_iter()
         .filter(|obs| !crate::ignore::is_ignored(&obs.target, ignore_patterns))
         .collect();
 
-    issues.extend(check_http_status(
-        &filtered_items,
-        &filtered_http_observations,
-    )); // Check HTTP status issues
+    // Run checks via Finding-based internals, then convert to Issue
+    let findings = run_all_checks(&filtered_items, &filtered_http_observations);
+    let issues: Vec<Issue> = findings.iter().map(Issue::from).collect();
 
     Ok(issues)
+}
+
+#[cfg(test)]
+fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
+    check_staleness_findings(items, days_threshold)
+        .iter()
+        .map(Issue::from)
+        .collect()
+}
+
+fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
+    check_low_confidence_findings(items)
+        .iter()
+        .map(Issue::from)
+        .collect()
+}
+
+fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
+    check_unknown_sources_findings(items)
+        .iter()
+        .map(Issue::from)
+        .collect()
+}
+
+fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
+    check_invalid_data_findings(items)
+        .iter()
+        .map(Issue::from)
+        .collect()
+}
+
+fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
+    check_subdomain_patterns_findings(items)
+        .iter()
+        .map(Issue::from)
+        .collect()
 }
 
 #[cfg(test)]
