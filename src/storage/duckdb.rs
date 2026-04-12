@@ -40,7 +40,10 @@ impl DuckDbStorage {
                 println!("Migrating data from {} to DuckDB...", jsonl_path);
                 // read_json_objects is better for JSONL where we want the whole object in one column
                 match conn.execute(
-                    &format!("INSERT INTO events (data) SELECT * FROM read_json_objects('{}')", jsonl_path),
+                    &format!(
+                        "INSERT INTO events (data) SELECT * FROM read_json_objects('{}')",
+                        jsonl_path
+                    ),
                     [],
                 ) {
                     Ok(n) => println!("Successfully migrated {} records.", n),

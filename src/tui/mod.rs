@@ -1,13 +1,12 @@
 pub mod app;
 pub mod model;
+pub mod quotes;
 pub mod state;
 pub mod tabs;
 pub mod ui;
 pub mod workflows;
-pub mod quotes;
 
 use crate::storage::StorageEngine;
-use std::sync::Arc;
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
 use crate::tui::state::OrgPane;
 use crossterm::{
@@ -17,6 +16,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
@@ -64,9 +64,13 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Filtering => handle_filtering_mode(app, key.code),
                     InputMode::TagAdding => handle_tag_adding_mode(app, key.code),
                     InputMode::TagSelecting => handle_tag_selecting_mode(app, key.code)?,
-                    InputMode::TagFilterSelecting => handle_tag_filter_selecting_mode(app, key.code),
+                    InputMode::TagFilterSelecting => {
+                        handle_tag_filter_selecting_mode(app, key.code)
+                    }
                     InputMode::TagRemoving => handle_tag_removing_mode(app, key.code),
-                    InputMode::TagRemovingSelecting => handle_tag_removing_selecting_mode(app, key.code)?,
+                    InputMode::TagRemovingSelecting => {
+                        handle_tag_removing_selecting_mode(app, key.code)?
+                    }
                     InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => {
                         handle_org_adding_mode(app, key.code)
                     }

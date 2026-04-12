@@ -1,4 +1,6 @@
-use crate::app::finding::{Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity};
+use crate::app::finding::{
+    Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity,
+};
 use crate::app::probe::{HttpErrorKind, HttpObservation};
 use crate::domain::normalize_domain;
 use crate::error::Result;
@@ -24,7 +26,7 @@ pub struct Issue {
 
 impl Issue {
     fn new(severity: Severity, message: &str) -> Self {
-        Self {
+        Issue {
             severity,
             message: message.to_string(),
         }
@@ -34,6 +36,7 @@ impl Issue {
         Self::new(Severity::Warning, message)
     }
 
+    #[allow(dead_code)]
     fn critical(message: &str) -> Self {
         Self::new(Severity::Critical, message)
     }
@@ -418,10 +421,7 @@ fn check_http_status_findings(
 }
 
 // Run all checks and return findings (internal helper)
-fn run_all_checks(
-    items: &[InventoryItem],
-    http_observations: &[HttpObservation],
-) -> Vec<Finding> {
+fn run_all_checks(items: &[InventoryItem], http_observations: &[HttpObservation]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(check_staleness_findings(items, 14));
@@ -554,6 +554,7 @@ fn check_staleness(items: &[InventoryItem], days_threshold: u64) -> Vec<Issue> {
         .collect()
 }
 
+#[cfg(test)]
 fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
     check_low_confidence_findings(items)
         .iter()
@@ -561,6 +562,7 @@ fn check_low_confidence(items: &[InventoryItem]) -> Vec<Issue> {
         .collect()
 }
 
+#[cfg(test)]
 fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
     check_unknown_sources_findings(items)
         .iter()
@@ -568,6 +570,7 @@ fn check_unknown_sources(items: &[InventoryItem]) -> Vec<Issue> {
         .collect()
 }
 
+#[cfg(test)]
 fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
     check_invalid_data_findings(items)
         .iter()
@@ -575,6 +578,7 @@ fn check_invalid_data(items: &[InventoryItem]) -> Vec<Issue> {
         .collect()
 }
 
+#[cfg(test)]
 fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
     check_subdomain_patterns_findings(items)
         .iter()

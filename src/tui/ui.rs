@@ -21,7 +21,7 @@ use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Clear old status messages
     app.clear_old_status();
-    
+
     let show_filter = app.input_mode == InputMode::Filtering
         || !app.filter.is_empty()
         || app.inventory.hide_external_redirects
@@ -32,11 +32,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(3), // Header/Stats
         Constraint::Length(3), // Tab bar
     ];
-    
+
     if show_filter {
         constraints.push(Constraint::Length(3)); // Filter Bar
     }
-    
+
     constraints.push(Constraint::Min(10)); // Main View (flexible)
     constraints.push(Constraint::Length(3)); // Status Bar (always visible - increased for better visibility)
     constraints.push(Constraint::Length(3)); // Footer/Help
@@ -51,12 +51,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     idx += 1;
     draw_tab_bar(f, app, chunks[idx]);
     idx += 1;
-    
+
     if show_filter {
         draw_filter_bar(f, app, chunks[idx]);
         idx += 1;
     }
-    
+
     draw_main_content(f, app, chunks[idx]);
     idx += 1;
     draw_status_bar(f, app, chunks[idx]); // Always show status bar
@@ -265,15 +265,16 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     use crate::tui::quotes::get_random_quote;
-    
+
     let scan_status_locked = app.scan_status.lock().unwrap_or_else(|p| p.into_inner());
     let (scan_msg, scan_time) = scan_status_locked.clone();
     drop(scan_status_locked);
-    
+
     // Check if status expired (older than 5 seconds) or empty
     let now = chrono::Utc::now();
-    let should_show_status = !scan_msg.is_empty() && (now.signed_duration_since(scan_time).num_seconds() < 5);
-    
+    let should_show_status =
+        !scan_msg.is_empty() && (now.signed_duration_since(scan_time).num_seconds() < 5);
+
     let status_text = if should_show_status {
         scan_msg
     } else if let Some((ref msg, msg_time)) = app.status_message {
@@ -288,7 +289,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let status_style = if status_text.starts_with('✓') {
         Style::default().fg(Color::Green)
-    } else if status_text.contains("error") || status_text.contains("failed") || status_text.starts_with('❌') {
+    } else if status_text.contains("error")
+        || status_text.contains("failed")
+        || status_text.starts_with('❌')
+    {
         Style::default().fg(Color::Red)
     } else if status_text.starts_with('⟳') {
         Style::default().fg(Color::Cyan)
@@ -381,12 +385,20 @@ fn draw_tag_filter_select_modal(f: &mut Frame, app: &App) {
         let mut lines = vec![];
         if let Some(ref current_tag) = app.inventory.filter_tag {
             lines.push(Line::from(vec![
-                Span::styled("Current filter: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(current_tag.as_str(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Current filter: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    current_tag.as_str(),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]));
             lines.push(Line::from(""));
         }
-        
+
         // Show list of tags
         for (i, tag) in app.available_tags.iter().enumerate() {
             let style = if i == app.tag_select_index {
@@ -412,7 +424,10 @@ fn draw_tag_select_modal(f: &mut Frame, app: &App) {
         .unwrap_or("(none)");
 
     let block = Block::default()
-        .title(format!(" Select Tag for '{}' (↑/↓: navigate, Enter: select, n: new, Esc: cancel) ", asset_name))
+        .title(format!(
+            " Select Tag for '{}' (↑/↓: navigate, Enter: select, n: new, Esc: cancel) ",
+            asset_name
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .style(Style::default().bg(Color::Black));
@@ -465,7 +480,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .selected_asset()
         .map(|a| a.name.as_str())
         .unwrap_or("(none)");
-    
+
     // Get all unique tags
     let all_tags: Vec<String> = app
         .model
@@ -476,7 +491,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    
+
     // Get current tags for this asset
     let current_tags = app
         .model
@@ -489,7 +504,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
                 .join("\n")
         })
         .unwrap_or_else(|| "  (none)".to_string());
-    
+
     let available_tags = if all_tags.is_empty() {
         "  (no existing tags)".to_string()
     } else {
@@ -499,7 +514,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    
+
     let text = format!(
         "Add tag to '{}':\n\nCurrent tags:\n{}\n\nAvailable tags:\n{}\n\nNew tag: {}_",
         asset_name, current_tags, available_tags, app.input
@@ -510,7 +525,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .style(Style::default().bg(Color::Black));
-    
+
     let paragraph = Paragraph::new(text)
         .style(Style::default().fg(Color::Yellow))
         .block(block);
@@ -527,7 +542,10 @@ fn draw_tag_remove_select_modal(f: &mut Frame, app: &App) {
         .unwrap_or("(none)");
 
     let block = Block::default()
-        .title(format!(" Remove Tag from '{}' (↑/↓: navigate, Enter: remove, Esc: cancel) ", asset_name))
+        .title(format!(
+            " Remove Tag from '{}' (↑/↓: navigate, Enter: remove, Esc: cancel) ",
+            asset_name
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red))
         .style(Style::default().bg(Color::Black));
@@ -580,7 +598,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
         .selected_asset()
         .map(|a| a.name.as_str())
         .unwrap_or("(none)");
-    
+
     // Show current tags
     let current_tags = app
         .selected_asset()
@@ -592,7 +610,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
                 .join("\n")
         })
         .unwrap_or_else(|| "  (no tags)".to_string());
-    
+
     let text = format!(
         "Remove tag from '{}':\n\nCurrent tags:\n{}\n\nTag to remove: {}_",
         asset_name, current_tags, app.input
@@ -603,7 +621,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red))
         .style(Style::default().bg(Color::Black));
-    
+
     let paragraph = Paragraph::new(text)
         .style(Style::default().fg(Color::Yellow))
         .block(block);
@@ -611,7 +629,6 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
     f.render_widget(paragraph, area);
 }
-
 
 fn draw_assign_modal(f: &mut Frame, app: &App) {
     let area = fixed_size_centered_rect(60, 20, f.area());

@@ -168,11 +168,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         ],
     )
     .header(header)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title),
-    )
+    .block(Block::default().borders(Borders::ALL).title(title))
     .row_highlight_style(selected_style);
 
     f.render_stateful_widget(t, area, &mut app.inventory.table_state);
@@ -456,7 +452,10 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
 
         if let Some(provider) = &hosting.provider_name {
             let category = hosting.provider_category.as_deref().unwrap_or("Unknown");
-            text.push(Line::from(format!("  Provider: {} ({})", provider, category)));
+            text.push(Line::from(format!(
+                "  Provider: {} ({})",
+                provider, category
+            )));
         } else {
             text.push(Line::from(Span::styled(
                 "  Provider: UNKNOWN",
@@ -465,7 +464,10 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         }
 
         if hosting.cdn_detected {
-            let cdn = hosting.cdn_name.clone().unwrap_or_else(|| "Unknown CDN".to_string());
+            let cdn = hosting
+                .cdn_name
+                .clone()
+                .unwrap_or_else(|| "Unknown CDN".to_string());
             text.push(Line::from(vec![
                 Span::raw("  CDN:      "),
                 Span::styled(cdn, Style::default().fg(Color::Yellow)),

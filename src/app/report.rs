@@ -35,7 +35,10 @@ pub struct Report {
     pub needs_attention: bool,
 }
 
-pub fn generate_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) -> Result<Report> {
+pub fn generate_report(
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) -> Result<Report> {
     // Get stats
     let stats = get_domain_stats(storage)?;
 

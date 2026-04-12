@@ -46,13 +46,13 @@ pub fn get_random_quote() -> &'static str {
         "\"How many programmers does it take to change a light bulb? None, that's a hardware problem.\" - Unknown",
         "\"Why do Java developers wear glasses? Because they don't C#.\" - Unknown",
     ];
-    
+
     use std::time::{SystemTime, UNIX_EPOCH};
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    
+
     // Change quote every 30 seconds
     QUOTES[((seconds / 30) as usize) % QUOTES.len()]
 }

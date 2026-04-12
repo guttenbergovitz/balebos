@@ -156,6 +156,6 @@ pub fn read_records(file_path: &str) -> Result<Records> {
 
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
-    
+
     parse_records(reader.lines().map_while(|r| r.ok()))
 }

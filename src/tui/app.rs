@@ -94,10 +94,10 @@ pub enum InputMode {
     Editing,
     Filtering,
     TagAdding,
-    TagSelecting,  // Selecting existing tag to add to asset
-    TagFilterSelecting,  // Selecting tag for filtering view
-    TagRemoving,  // Manual tag removal (typing)
-    TagRemovingSelecting,  // NEW: Selecting tag to remove from asset
+    TagSelecting,         // Selecting existing tag to add to asset
+    TagFilterSelecting,   // Selecting tag for filtering view
+    TagRemoving,          // Manual tag removal (typing)
+    TagRemovingSelecting, // NEW: Selecting tag to remove from asset
     OrgAdding(OrgAddType),
     OrgEditing(OrgAddType, usize), // (type, selected_index)
     Assigning,
@@ -142,11 +142,11 @@ pub struct App {
     pub is_scanning: Arc<Mutex<bool>>,
     pub scan_status: Arc<Mutex<(String, chrono::DateTime<chrono::Utc>)>>,
     pub ignore_patterns: Vec<String>,
-    
+
     // Tag selection state
     pub tag_select_index: usize,
     pub available_tags: Vec<String>,
-    
+
     // Status message (for toasts/notifications)
     pub status_message: Option<(String, chrono::DateTime<chrono::Utc>)>,
 }
@@ -189,11 +189,11 @@ impl App {
             is_scanning: Arc::new(Mutex::new(false)),
             scan_status: Arc::new(Mutex::new((String::new(), chrono::Utc::now()))),
             ignore_patterns,
-            
+
             // Tag selection state
             tag_select_index: 0,
             available_tags: vec![],
-            
+
             // Status message
             status_message: None,
         };
@@ -760,9 +760,9 @@ impl App {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();
-        
+
         self.tag_select_index = 0;
-        
+
         if self.available_tags.is_empty() {
             // No tags available
             self.inventory.filter_tag = None;
@@ -797,9 +797,9 @@ impl App {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();
-        
+
         self.tag_select_index = 0;
-        
+
         if self.available_tags.is_empty() {
             // No tags to select, go straight to manual entry
             self.input_mode = InputMode::TagAdding;
@@ -828,7 +828,7 @@ impl App {
     pub fn tag_select_confirm(&mut self) -> crate::error::Result<()> {
         if let Some(tag) = self.available_tags.get(self.tag_select_index) {
             let tag = tag.clone();
-            
+
             // Check if we have marked assets for bulk operation
             let targets: Vec<String> = if !self.inventory.marked_assets.is_empty() {
                 self.inventory.marked_assets.iter().cloned().collect()
@@ -844,14 +844,14 @@ impl App {
             for asset_name in targets {
                 crate::app::tags::add_tag(&self.storage, &asset_name, &tag)?;
             }
-            
+
             if count > 1 {
                 self.set_status(format!("✓ Tagged {} assets with '{}'", count, tag));
                 self.inventory.clear_marks();
             } else {
                 self.set_status(format!("✓ Tagged with '{}'", tag));
             }
-            
+
             self.refresh()?;
             self.input_mode = InputMode::Normal;
         }
@@ -879,14 +879,14 @@ impl App {
         for asset_name in targets {
             crate::app::tags::add_tag(&self.storage, &asset_name, &tag)?;
         }
-        
+
         if count > 1 {
             self.set_status(format!("✓ Tagged {} assets with '{}'", count, tag));
             self.inventory.clear_marks();
         } else {
             self.set_status(format!("✓ Tagged with '{}'", tag));
         }
-        
+
         self.refresh()?;
         Ok(())
     }
@@ -912,14 +912,14 @@ impl App {
         for asset_name in targets {
             crate::app::tags::remove_tag(&self.storage, &asset_name, &tag)?;
         }
-        
+
         if count > 1 {
             self.set_status(format!("✓ Removed '{}' from {} assets", tag, count));
             self.inventory.clear_marks();
         } else {
             self.set_status(format!("✓ Removed tag '{}'", tag));
         }
-        
+
         self.refresh()?;
         Ok(())
     }
@@ -937,9 +937,9 @@ impl App {
             .get(&asset_name)
             .map(|tags| tags.iter().cloned().collect())
             .unwrap_or_default();
-        
+
         self.tag_select_index = 0;
-        
+
         if self.available_tags.is_empty() {
             // No tags to remove
             self.input_mode = InputMode::Normal;
@@ -951,7 +951,7 @@ impl App {
     pub fn tag_remove_select_confirm(&mut self) -> crate::error::Result<()> {
         if let Some(tag) = self.available_tags.get(self.tag_select_index) {
             let tag = tag.clone();
-            
+
             // Check if we have marked assets for bulk operation
             let targets: Vec<String> = if !self.inventory.marked_assets.is_empty() {
                 self.inventory.marked_assets.iter().cloned().collect()
@@ -967,14 +967,14 @@ impl App {
             for asset_name in targets {
                 crate::app::tags::remove_tag(&self.storage, &asset_name, &tag)?;
             }
-            
+
             if count > 1 {
                 self.set_status(format!("✓ Removed '{}' from {} assets", tag, count));
                 self.inventory.clear_marks();
             } else {
                 self.set_status(format!("✓ Removed tag '{}'", tag));
             }
-            
+
             self.refresh()?;
             self.input_mode = InputMode::Normal;
         }

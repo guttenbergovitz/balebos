@@ -14,14 +14,18 @@ use exit_codes::*;
 use ignore::load_ignore_patterns;
 use std::process;
 
-use app::probe::HttpErrorKind;
-use app::{
+use crate::app::finding::FindingSeverity;
+use crate::app::probe::HttpErrorKind;
+use crate::app::{
     batch_process, check_inventory, display_domain_status, display_domain_tree, export_status_csv,
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
-use cli::{parse_command, Command, OrgCommand, ProbeKind, TagCommand};
-use crate::storage::{StorageEngine, JsonlStorage};
+use crate::storage::{JsonlStorage, StorageEngine, StorageEngineExt};
+use cli::{
+    parse_command, Command, FindingCommand, FindingSeverityFilter, FindingStatus, OrgCommand,
+    ProbeKind, TagCommand,
+};
 use std::sync::Arc;
 
 fn print_usage() {
@@ -43,6 +47,15 @@ fn print_usage() {
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
     eprintln!();
+    eprintln!("Finding management:");
+    eprintln!("  balebos finding run                - Run checks and persist findings");
+    eprintln!("  balebos finding list               - List findings");
+    eprintln!("  balebos finding list --status open - List open findings");
+    eprintln!("  balebos finding list --severity high - List high severity findings");
+    eprintln!("  balebos finding show <id>          - Show finding details");
+    eprintln!("  balebos finding acknowledge <id>   - Acknowledge a finding");
+    eprintln!("  balebos finding resolve <id>       - Resolve a finding");
+    eprintln!();
     eprintln!("Tag management:");
     eprintln!("  balebos tag add <asset> <tag>      - Add a tag to an asset");
     eprintln!("  balebos tag add-bulk <tag> <asset1> <asset2> ... - Add tag to multiple assets");
@@ -54,7 +67,9 @@ fn print_usage() {
     eprintln!("Organizational management:");
     eprintln!("  balebos org person add <first> <last> <email>  - Add a person");
     eprintln!("  balebos org person list                        - List all persons");
-    eprintln!("  balebos org company add <name> <country>       - Add a company (ISO 3166-1 alpha-2)");
+    eprintln!(
+        "  balebos org company add <name> <country>       - Add a company (ISO 3166-1 alpha-2)"
+    );
     eprintln!("  balebos org company list                       - List all companies");
     eprintln!("  balebos org brand add <name>                   - Add a brand");
     eprintln!("  balebos org brand list                         - List all brands");
@@ -75,7 +90,9 @@ fn main() {
         {
             let use_duckdb = std::env::var("BALEBOS_STORAGE").unwrap_or_default() == "duckdb";
             if use_duckdb {
-                Arc::new(crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap())
+                Arc::new(
+                    crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap(),
+                )
             } else {
                 Arc::new(JsonlStorage::new("data/inventory.jsonl"))
             }
@@ -109,6 +126,268 @@ fn main() {
         Command::Ui => cmd_ui(storage),
         Command::Org(org_cmd) => cmd_org(org_cmd, &storage),
         Command::Tag(tag_cmd) => cmd_tag(tag_cmd, &storage),
+        Command::Finding(finding_cmd) => cmd_finding(finding_cmd, &storage, &ignore_patterns),
+    }
+}
+
+fn cmd_finding(
+    finding_cmd: FindingCommand,
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) {
+    use crate::app::finding::{Finding, FindingEvent, FindingEventType};
+
+    match finding_cmd {
+        FindingCommand::Run => {
+            match crate::app::check::run_checks_and_persist(storage, ignore_patterns) {
+                Ok(findings) => {
+                    if findings.is_empty() {
+                        println!("No new findings detected.");
+                        process::exit(EXIT_SUCCESS);
+                    }
+
+                    println!("Found {} new findings:", findings.len());
+                    println!();
+
+                    for finding in &findings {
+                        println!(
+                            "[{}] {} - {}",
+                            finding.severity, finding.check_name, finding.target
+                        );
+                        println!("  {}", finding.message);
+                        println!("  ID: {}", finding.id);
+                        println!();
+                    }
+
+                    println!("All findings have been persisted to storage.");
+                    println!("Use 'balebos finding list' to view all findings.");
+                    println!("Use 'balebos finding acknowledge <id>' or 'balebos finding resolve <id>' to manage findings.");
+
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error running checks: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            }
+        }
+        FindingCommand::List { status, severity } => {
+            match storage.read_all_records() {
+                Ok(records) => {
+                    let findings = records.findings;
+                    let events = records.finding_events;
+
+                    // Filter by status
+                    let filtered_by_status: Vec<&Finding> = match status {
+                        Some(FindingStatus::Open) => {
+                            let resolved_ids: std::collections::HashSet<&String> = events
+                                .iter()
+                                .filter(|e| e.event_type == FindingEventType::Resolved)
+                                .map(|e| &e.finding_id)
+                                .collect();
+                            findings
+                                .iter()
+                                .filter(|f| !resolved_ids.contains(&f.id))
+                                .collect()
+                        }
+                        Some(FindingStatus::Acknowledged) => {
+                            let acknowledged_ids: std::collections::HashSet<&String> = events
+                                .iter()
+                                .filter(|e| e.event_type == FindingEventType::Acknowledged)
+                                .map(|e| &e.finding_id)
+                                .collect();
+                            findings
+                                .iter()
+                                .filter(|f| acknowledged_ids.contains(&f.id))
+                                .collect()
+                        }
+                        Some(FindingStatus::Resolved) => {
+                            let resolved_ids: std::collections::HashSet<&String> = events
+                                .iter()
+                                .filter(|e| e.event_type == FindingEventType::Resolved)
+                                .map(|e| &e.finding_id)
+                                .collect();
+                            findings
+                                .iter()
+                                .filter(|f| resolved_ids.contains(&f.id))
+                                .collect()
+                        }
+                        None => findings.iter().collect(),
+                    };
+
+                    // Filter by severity
+                    let filtered: Vec<&Finding> = match severity {
+                        Some(FindingSeverityFilter::Info) => filtered_by_status
+                            .iter()
+                            .filter(|f| matches!(f.severity, FindingSeverity::Info))
+                            .copied()
+                            .collect(),
+                        Some(FindingSeverityFilter::Low) => filtered_by_status
+                            .iter()
+                            .filter(|f| matches!(f.severity, FindingSeverity::Low))
+                            .copied()
+                            .collect(),
+                        Some(FindingSeverityFilter::Medium) => filtered_by_status
+                            .iter()
+                            .filter(|f| matches!(f.severity, FindingSeverity::Medium))
+                            .copied()
+                            .collect(),
+                        Some(FindingSeverityFilter::High) => filtered_by_status
+                            .iter()
+                            .filter(|f| matches!(f.severity, FindingSeverity::High))
+                            .copied()
+                            .collect(),
+                        Some(FindingSeverityFilter::Critical) => filtered_by_status
+                            .iter()
+                            .filter(|f| matches!(f.severity, FindingSeverity::Critical))
+                            .copied()
+                            .collect(),
+                        None => filtered_by_status,
+                    };
+
+                    if filtered.is_empty() {
+                        println!("No findings found.");
+                        process::exit(EXIT_SUCCESS);
+                    }
+
+                    println!("Findings ({}):", filtered.len());
+                    println!();
+
+                    for finding in filtered {
+                        // Determine status
+                        let is_resolved = events.iter().any(|e| {
+                            e.finding_id == finding.id && e.event_type == FindingEventType::Resolved
+                        });
+                        let is_acknowledged = events.iter().any(|e| {
+                            e.finding_id == finding.id
+                                && e.event_type == FindingEventType::Acknowledged
+                        });
+
+                        let status_str = if is_resolved {
+                            "[RESOLVED]"
+                        } else if is_acknowledged {
+                            "[ACKNOWLEDGED]"
+                        } else {
+                            "[OPEN]"
+                        };
+
+                        println!(
+                            "{} [{}] {} - {}",
+                            status_str, finding.severity, finding.check_name, finding.target
+                        );
+                        println!("  {}", finding.message);
+                        println!("  ID: {}", finding.id);
+                        println!("  Created: {}", finding.created_at.format("%Y-%m-%d %H:%M"));
+                        println!();
+                    }
+
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error reading findings: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            }
+        }
+        FindingCommand::Show { id } => match storage.read_all_records() {
+            Ok(records) => {
+                let finding = records.findings.iter().find(|f| f.id == id);
+
+                match finding {
+                    Some(f) => {
+                        let events: Vec<&FindingEvent> = records
+                            .finding_events
+                            .iter()
+                            .filter(|e| e.finding_id == id)
+                            .collect();
+
+                        println!("Finding Details");
+                        println!("================");
+                        println!("ID: {}", f.id);
+                        println!("Severity: {}", f.severity);
+                        println!("Category: {}", f.category);
+                        println!("Check: {}", f.check_name);
+                        println!("Target: {}", f.target);
+                        println!("Message: {}", f.message);
+                        println!("Created: {}", f.created_at.format("%Y-%m-%d %H:%M:%S"));
+                        println!();
+
+                        if events.is_empty() {
+                            println!("Status: OPEN (no events)");
+                        } else {
+                            println!("Events ({}):", events.len());
+                            for event in events {
+                                println!(
+                                    "  - {} at {}",
+                                    event.event_type,
+                                    event.created_at.format("%Y-%m-%d %H:%M:%S")
+                                );
+                            }
+                        }
+
+                        process::exit(EXIT_SUCCESS);
+                    }
+                    None => {
+                        eprintln!("Finding with ID '{}' not found.", id);
+                        process::exit(EXIT_NOT_FOUND);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading findings: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        FindingCommand::Acknowledge { id } => match storage.read_all_records() {
+            Ok(records) => {
+                let finding_exists = records.findings.iter().any(|f| f.id == id);
+                if !finding_exists {
+                    eprintln!("Finding with ID '{}' not found.", id);
+                    process::exit(EXIT_NOT_FOUND);
+                }
+
+                let event = FindingEvent::acknowledge(&id);
+                match storage.save(&event) {
+                    Ok(()) => {
+                        println!("Finding {} acknowledged.", id);
+                        process::exit(EXIT_SUCCESS);
+                    }
+                    Err(e) => {
+                        eprintln!("Error acknowledging finding: {}", e);
+                        process::exit(EXIT_STORAGE_ERROR);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading findings: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        FindingCommand::Resolve { id } => match storage.read_all_records() {
+            Ok(records) => {
+                let finding_exists = records.findings.iter().any(|f| f.id == id);
+                if !finding_exists {
+                    eprintln!("Finding with ID '{}' not found.", id);
+                    process::exit(EXIT_NOT_FOUND);
+                }
+
+                let event = FindingEvent::resolve(&id);
+                match storage.save(&event) {
+                    Ok(()) => {
+                        println!("Finding {} resolved.", id);
+                        process::exit(EXIT_SUCCESS);
+                    }
+                    Err(e) => {
+                        eprintln!("Error resolving finding: {}", e);
+                        process::exit(EXIT_STORAGE_ERROR);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading findings: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
     }
 }
 
@@ -197,9 +476,7 @@ fn cmd_status(export: Option<cli::ExportArgs>, storage: &Arc<dyn StorageEngine>)
 
         let result = match export_args.format.as_str() {
             "csv" => export_status_csv(storage, &output_file),
-            "markdown" | "md" => {
-                export_status_markdown(storage, &output_file)
-            }
+            "markdown" | "md" => export_status_markdown(storage, &output_file),
             "html" => export_status_html(storage, &output_file),
             _ => {
                 eprintln!("Unknown format: {}", export_args.format);
@@ -466,9 +743,18 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                 }
 
                 if !observation.redirect_chain.is_empty() {
-                    println!("\nRedirect chain ({} hops):", observation.redirect_chain.len());
+                    println!(
+                        "\nRedirect chain ({} hops):",
+                        observation.redirect_chain.len()
+                    );
                     for (i, hop) in observation.redirect_chain.iter().enumerate() {
-                        println!("  {}. {} ({}) -> {}", i + 1, hop.url, hop.status, hop.redirect_to);
+                        println!(
+                            "  {}. {} ({}) -> {}",
+                            i + 1,
+                            hop.url,
+                            hop.status,
+                            hop.redirect_to
+                        );
                     }
                     if let Some(final_url) = &observation.final_url {
                         println!("  Final URL: {}", final_url);
@@ -555,13 +841,19 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                             println!("ASN lookup completed for {}", target);
 
                             for obs in &observations {
-                                println!("  {} -> AS{} {} ({})", obs.target, obs.asn, obs.org, obs.country);
+                                println!(
+                                    "  {} -> AS{} {} ({})",
+                                    obs.target, obs.asn, obs.org, obs.country
+                                );
                             }
 
                             if observations.is_empty() {
                                 println!("No ASN information found.");
                             } else {
-                                println!("\n{} ASN records added to inventory.", observations.len());
+                                println!(
+                                    "\n{} ASN records added to inventory.",
+                                    observations.len()
+                                );
                             }
 
                             process::exit(EXIT_SUCCESS);
@@ -578,7 +870,7 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                     process::exit(EXIT_EXTERNAL_TOOL_ERROR);
                 }
             }
-        },
+        }
         ProbeKind::Hosting => {
             use std::collections::HashMap;
 
@@ -637,7 +929,10 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                         println!("CDN:      {} (detected)", cdn);
                     }
 
-                    println!("Confidence: {} (via {})", obs.confidence, obs.detection_method);
+                    println!(
+                        "Confidence: {} (via {})",
+                        obs.confidence, obs.detection_method
+                    );
 
                     if !obs.evidence.is_empty() {
                         println!("\nEvidence:");
@@ -654,7 +949,7 @@ fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
                     process::exit(EXIT_GENERAL_ERROR);
                 }
             }
-        },
+        }
     }
 }
 
@@ -687,7 +982,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
             email,
         } => match add_person(storage, &first_name, &last_name, &email, None) {
             Ok(rec) => {
-                println!("Person added: {} {} <{}>", rec.first_name, rec.last_name, rec.email);
+                println!(
+                    "Person added: {} {} <{}>",
+                    rec.first_name, rec.last_name, rec.email
+                );
                 println!("ID: {}", rec.id);
                 process::exit(EXIT_SUCCESS);
             }
@@ -703,7 +1001,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 } else {
                     println!("Persons ({}):", persons.len());
                     for p in persons {
-                        println!("  {} - {} {} <{}>", p.id, p.first_name, p.last_name, p.email);
+                        println!(
+                            "  {} - {} {} <{}>",
+                            p.id, p.first_name, p.last_name, p.email
+                        );
                     }
                 }
                 process::exit(EXIT_SUCCESS);
@@ -721,7 +1022,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
             let country_code = match CountryCode::for_alpha2(&country) {
                 Ok(code) => code,
                 Err(_) => {
-                    eprintln!("Invalid country code: {}. Use ISO 3166-1 alpha-2 (e.g., DE, PL, US)", country);
+                    eprintln!(
+                        "Invalid country code: {}. Use ISO 3166-1 alpha-2 (e.g., DE, PL, US)",
+                        country
+                    );
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
@@ -766,7 +1070,13 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                         } else {
                             String::new()
                         };
-                        println!("  {} - {} ({}){}", c.id, c.name, c.country.name(), brand_info);
+                        println!(
+                            "  {} - {} ({}){}",
+                            c.id,
+                            c.name,
+                            c.country.name(),
+                            brand_info
+                        );
                     }
                 }
                 process::exit(EXIT_SUCCESS);
@@ -885,7 +1195,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 "manager" => Role::Manager,
                 "technician" => Role::Technician,
                 _ => {
-                    eprintln!("Invalid role: {}. Valid roles: owner, manager, technician", role);
+                    eprintln!(
+                        "Invalid role: {}. Valid roles: owner, manager, technician",
+                        role
+                    );
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
@@ -893,9 +1206,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 Ok(rec) => {
                     println!(
                         "Person {} assigned to project {} as {}",
-                        person,
-                        rec.project,
-                        rec.role
+                        person, rec.project, rec.role
                     );
                     process::exit(EXIT_SUCCESS);
                 }
@@ -929,7 +1240,10 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 "manager" => Role::Manager,
                 "technician" => Role::Technician,
                 _ => {
-                    eprintln!("Invalid role: {}. Valid roles: owner, manager, technician", role);
+                    eprintln!(
+                        "Invalid role: {}. Valid roles: owner, manager, technician",
+                        role
+                    );
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
@@ -937,9 +1251,7 @@ fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 Ok(rec) => {
                     println!(
                         "Company {} assigned to project {} as {}",
-                        company,
-                        rec.project,
-                        rec.role
+                        company, rec.project, rec.role
                     );
                     process::exit(EXIT_SUCCESS);
                 }
@@ -981,7 +1293,7 @@ fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
         TagCommand::AddBulk { asset_names, tag } => {
             let mut success_count = 0;
             let mut error_count = 0;
-            
+
             for asset_name in &asset_names {
                 match add_tag(storage, asset_name, &tag) {
                     Ok(()) => {
@@ -994,13 +1306,13 @@ fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
                     }
                 }
             }
-            
+
             println!("\nBulk tagging complete:");
             println!("  Success: {}", success_count);
             if error_count > 0 {
                 println!("  Failed:  {}", error_count);
             }
-            
+
             if error_count > 0 {
                 process::exit(EXIT_GENERAL_ERROR);
             } else {
@@ -1014,15 +1326,13 @@ fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
                 process::exit(EXIT_GENERAL_ERROR);
             }
         },
-        TagCommand::List { asset_name } => {
-            match list_tags(storage, asset_name.as_deref()) {
-                Ok(()) => process::exit(EXIT_SUCCESS),
-                Err(e) => {
-                    eprintln!("Error listing tags: {}", e);
-                    process::exit(EXIT_GENERAL_ERROR);
-                }
+        TagCommand::List { asset_name } => match list_tags(storage, asset_name.as_deref()) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error listing tags: {}", e);
+                process::exit(EXIT_GENERAL_ERROR);
             }
-        }
+        },
         TagCommand::ListTags => match list_all_tag_names(storage) {
             Ok(()) => process::exit(EXIT_SUCCESS),
             Err(e) => {

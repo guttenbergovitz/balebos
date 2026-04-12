@@ -1,3 +1,6 @@
 pub mod router;
 
-pub use self::router::{parse_command, Command, ExportArgs, OrgCommand, ProbeKind, TagCommand};
+pub use self::router::{
+    parse_command, Command, ExportArgs, FindingCommand, FindingSeverityFilter, FindingStatus,
+    OrgCommand, ProbeKind, TagCommand,
+};

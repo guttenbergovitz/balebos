@@ -13,6 +13,7 @@ pub enum Command {
     Ui,
     Org(OrgCommand),
     Tag(TagCommand),
+    Finding(FindingCommand),
 }
 
 pub enum ProbeKind {
@@ -96,6 +97,38 @@ pub enum TagCommand {
     },
 }
 
+/// Finding management commands.
+pub enum FindingCommand {
+    Run,
+    List {
+        status: Option<FindingStatus>,
+        severity: Option<FindingSeverityFilter>,
+    },
+    Show {
+        id: String,
+    },
+    Acknowledge {
+        id: String,
+    },
+    Resolve {
+        id: String,
+    },
+}
+
+pub enum FindingStatus {
+    Open,
+    Acknowledged,
+    Resolved,
+}
+
+pub enum FindingSeverityFilter {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
 /// Parse command-line arguments into a structured Command.
 ///
 /// Returns `None` if no valid command is recognized
@@ -165,6 +198,7 @@ pub fn parse_command() -> Option<Command> {
         }
         "org" => parse_org_command(&args),
         "tag" => parse_tag_command(&args),
+        "finding" => parse_finding_command(&args),
         _ => None,
     }
 }
@@ -283,6 +317,65 @@ fn parse_tag_command(args: &[String]) -> Option<Command> {
         "by-tag" => {
             let tag = args.get(3)?.clone();
             Some(Command::Tag(TagCommand::ListByTag { tag }))
+        }
+        _ => None,
+    }
+}
+
+fn parse_finding_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "run" => Some(Command::Finding(FindingCommand::Run)),
+        "list" => {
+            let mut status = None;
+            let mut severity = None;
+
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--status" | "-s" => {
+                        i += 1;
+                        if i < args.len() {
+                            status = match args[i].as_str() {
+                                "open" => Some(FindingStatus::Open),
+                                "acknowledged" => Some(FindingStatus::Acknowledged),
+                                "resolved" => Some(FindingStatus::Resolved),
+                                _ => return None,
+                            };
+                        }
+                    }
+                    "--severity" | "-l" => {
+                        i += 1;
+                        if i < args.len() {
+                            severity = match args[i].as_str() {
+                                "info" => Some(FindingSeverityFilter::Info),
+                                "low" => Some(FindingSeverityFilter::Low),
+                                "medium" => Some(FindingSeverityFilter::Medium),
+                                "high" => Some(FindingSeverityFilter::High),
+                                "critical" => Some(FindingSeverityFilter::Critical),
+                                _ => return None,
+                            };
+                        }
+                    }
+                    _ => return None,
+                }
+                i += 1;
+            }
+
+            Some(Command::Finding(FindingCommand::List { status, severity }))
+        }
+        "show" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Show { id }))
+        }
+        "acknowledge" | "ack" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Acknowledge { id }))
+        }
+        "resolve" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Resolve { id }))
         }
         _ => None,
     }

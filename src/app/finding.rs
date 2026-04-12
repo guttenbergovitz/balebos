@@ -50,6 +50,15 @@ impl std::fmt::Display for FindingCategory {
     }
 }
 
+impl std::fmt::Display for FindingEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FindingEventType::Acknowledged => write!(f, "Acknowledged"),
+            FindingEventType::Resolved => write!(f, "Resolved"),
+        }
+    }
+}
+
 /// A persisted finding produced by a check.
 ///
 /// Findings are append-only records. Lifecycle transitions (acknowledge, resolve)

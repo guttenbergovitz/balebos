@@ -2,11 +2,11 @@ use super::types::{HttpErrorKind, HttpObservation, RedirectHop, TlsObservation};
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
 use crate::storage::{StorageEngine, StorageEngineExt};
-use std::sync::Arc;
 use chrono::Utc;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
 

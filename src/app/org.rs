@@ -113,7 +113,11 @@ pub fn add_brand(storage: &Arc<dyn StorageEngine>, name: &str) -> Result<BrandRe
     Ok(record)
 }
 
-pub fn update_brand(storage: &Arc<dyn StorageEngine>, id: BrandId, name: &str) -> Result<BrandRecord> {
+pub fn update_brand(
+    storage: &Arc<dyn StorageEngine>,
+    id: BrandId,
+    name: &str,
+) -> Result<BrandRecord> {
     let record = BrandRecord::new(id, name.to_string());
     storage.save(&record)?;
     Ok(record)
@@ -217,7 +221,9 @@ pub fn set_asset_importance(
     Ok(record)
 }
 
-pub fn list_asset_assignments(storage: &Arc<dyn StorageEngine>) -> Result<Vec<AssetAssignmentRecord>> {
+pub fn list_asset_assignments(
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<AssetAssignmentRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.asset_assignments)
 }
@@ -248,7 +254,9 @@ pub fn assign_company_to_project(
     Ok(record)
 }
 
-pub fn list_role_assignments(storage: &Arc<dyn StorageEngine>) -> Result<Vec<RoleAssignmentRecord>> {
+pub fn list_role_assignments(
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<RoleAssignmentRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.role_assignments)
 }
@@ -272,22 +280,34 @@ pub fn assign_contractor_to_project(
 // Lookup helpers
 // ---------------------------------------------------------------------------
 
-pub fn find_person_by_id(storage: &Arc<dyn StorageEngine>, id: PersonId) -> Result<Option<PersonRecord>> {
+pub fn find_person_by_id(
+    storage: &Arc<dyn StorageEngine>,
+    id: PersonId,
+) -> Result<Option<PersonRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.persons.into_iter().find(|p| p.id == id))
 }
 
-pub fn find_company_by_id(storage: &Arc<dyn StorageEngine>, id: CompanyId) -> Result<Option<CompanyRecord>> {
+pub fn find_company_by_id(
+    storage: &Arc<dyn StorageEngine>,
+    id: CompanyId,
+) -> Result<Option<CompanyRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.companies.into_iter().find(|c| c.id == id))
 }
 
-pub fn find_brand_by_id(storage: &Arc<dyn StorageEngine>, id: BrandId) -> Result<Option<BrandRecord>> {
+pub fn find_brand_by_id(
+    storage: &Arc<dyn StorageEngine>,
+    id: BrandId,
+) -> Result<Option<BrandRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.brands.into_iter().find(|b| b.id == id))
 }
 
-pub fn find_project_by_id(storage: &Arc<dyn StorageEngine>, id: ProjectId) -> Result<Option<ProjectRecord>> {
+pub fn find_project_by_id(
+    storage: &Arc<dyn StorageEngine>,
+    id: ProjectId,
+) -> Result<Option<ProjectRecord>> {
     let records = storage.read_all_records()?;
     Ok(records.projects.into_iter().find(|p| p.id == id))
 }

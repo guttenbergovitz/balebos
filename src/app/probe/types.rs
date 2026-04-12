@@ -117,8 +117,8 @@ pub struct DnsObservation {
 pub struct AsnObservation {
     pub item_type: ItemType,
     pub id: String,
-    pub target: String,  // IP address that was looked up
-    pub host: String,    // Original hostname (for correlation)
+    pub target: String, // IP address that was looked up
+    pub host: String,   // Original hostname (for correlation)
 
     pub asn: u32,
     pub org: String,

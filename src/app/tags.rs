@@ -14,7 +14,7 @@ pub fn add_tag(storage: &Arc<dyn StorageEngine>, asset_name: &str, tag: &str) ->
 pub fn remove_tag(storage: &Arc<dyn StorageEngine>, asset_name: &str, tag: &str) -> Result<()> {
     let records = storage.read_all_records()?;
     let active_tags = get_active_tags(&records.asset_tags);
-    
+
     // Check if tag exists
     let has_tag = active_tags
         .get(asset_name)
@@ -62,7 +62,7 @@ pub fn list_tags(storage: &Arc<dyn StorageEngine>, asset_name: Option<&str>) -> 
 
         println!("All asset tags:");
         println!("{}", "=".repeat(50));
-        
+
         for (asset, tags) in &active_tags {
             let mut sorted_tags: Vec<_> = tags.iter().collect();
             sorted_tags.sort();
@@ -71,12 +71,10 @@ pub fn list_tags(storage: &Arc<dyn StorageEngine>, asset_name: Option<&str>) -> 
                 println!("  • {}", tag);
             }
         }
-        
-        let all_unique_tags: BTreeSet<_> = active_tags
-            .values()
-            .flat_map(|tags| tags.iter())
-            .collect();
-        
+
+        let all_unique_tags: BTreeSet<_> =
+            active_tags.values().flat_map(|tags| tags.iter()).collect();
+
         println!("\n{}", "=".repeat(50));
         println!("Total unique tags: {}", all_unique_tags.len());
         println!("Tagged assets: {}", active_tags.len());
@@ -88,11 +86,8 @@ pub fn list_tags(storage: &Arc<dyn StorageEngine>, asset_name: Option<&str>) -> 
 pub fn list_all_tag_names(storage: &Arc<dyn StorageEngine>) -> Result<()> {
     let records = storage.read_all_records()?;
     let active_tags = get_active_tags(&records.asset_tags);
-    
-    let all_unique_tags: BTreeSet<_> = active_tags
-        .values()
-        .flat_map(|tags| tags.iter())
-        .collect();
+
+    let all_unique_tags: BTreeSet<_> = active_tags.values().flat_map(|tags| tags.iter()).collect();
 
     if all_unique_tags.is_empty() {
         println!("No tags defined");
@@ -148,15 +143,12 @@ pub fn get_active_tags(all_tags: &[AssetTag]) -> BTreeMap<String, BTreeSet<Strin
             // Sort by timestamp to get latest state
             let mut sorted = tag_records.clone();
             sorted.sort_by_key(|t| t.tagged_at);
-            
+
             // Check if last record is removal
             if let Some(last) = sorted.last() {
                 if last.removed_at.is_none() {
                     // Active tag
-                    active
-                        .entry(asset.clone())
-                        .or_default()
-                        .insert(tag_name);
+                    active.entry(asset.clone()).or_default().insert(tag_name);
                 }
             }
         }

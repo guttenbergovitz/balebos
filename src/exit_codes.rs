@@ -11,6 +11,7 @@ pub const EXIT_STORAGE_ERROR: i32 = 3;
 
 // Domain-related errors
 pub const EXIT_DOMAIN_NOT_FOUND: i32 = 11;
+pub const EXIT_NOT_FOUND: i32 = 12;
 
 // Check/report specific
 pub const EXIT_CRITICAL_ISSUES: i32 = 20;

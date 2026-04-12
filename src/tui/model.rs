@@ -4,8 +4,8 @@ use crate::org::{
     ProjectId, ProjectRecord, RoleAssignmentRecord,
 };
 use crate::storage::StorageEngine;
-use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// Hosting information for display in TUI
 #[derive(Debug, Clone)]

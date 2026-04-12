@@ -179,7 +179,10 @@ pub fn batch_process(
     println!();
 
     // Step 2: Probe subdomains for all domains
-    println!("{} Step 2/7: Discovering subdomains in batch...", '\u{1F577}');
+    println!(
+        "{} Step 2/7: Discovering subdomains in batch...",
+        '\u{1F577}'
+    );
     let mut valid_domains = Vec::new();
     for domain in &domains {
         if !crate::ignore::is_ignored(domain, ignore_patterns) {
@@ -259,7 +262,11 @@ pub fn batch_process(
     if http_targets.is_empty() {
         println!("  → No targets to check");
     } else {
-        print!("  {} Checking {} targets in batch ", '\u{27F3}', http_targets.len());
+        print!(
+            "  {} Checking {} targets in batch ",
+            '\u{27F3}',
+            http_targets.len()
+        );
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
@@ -300,7 +307,11 @@ pub fn batch_process(
     if ip_to_host.is_empty() {
         println!("  → No IPs to look up");
     } else {
-        print!("  {} Looking up {} unique IPs ", '\u{27F3}', ip_to_host.len());
+        print!(
+            "  {} Looking up {} unique IPs ",
+            '\u{27F3}',
+            ip_to_host.len()
+        );
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
@@ -341,18 +352,15 @@ pub fn batch_process(
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
-        match hosting::detect_hosting_batch(
-            &all_assets,
-            &dns_map,
-            &http_map,
-            &asn_by_ip,
-            storage,
-        ) {
+        match hosting::detect_hosting_batch(&all_assets, &dns_map, &http_map, &asn_by_ip, storage) {
             Ok(observations) => {
                 println!(" {}", '\u{2713}');
 
                 // Count detection results
-                let detected_count = observations.iter().filter(|o| o.provider_id.is_some()).count();
+                let detected_count = observations
+                    .iter()
+                    .filter(|o| o.provider_id.is_some())
+                    .count();
                 let cdn_count = observations.iter().filter(|o| o.cdn_detected).count();
 
                 println!(
@@ -444,7 +452,8 @@ fn get_all_assets(storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
     use std::collections::HashSet;
 
     let mut seen = HashSet::new();
-    let mut assets: Vec<String> = storage.read_all_records()?
+    let mut assets: Vec<String> = storage
+        .read_all_records()?
         .items
         .into_iter()
         .filter_map(|item| {

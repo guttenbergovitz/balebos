@@ -27,8 +27,8 @@ use crate::error::Result;
 /// ```
 use crate::inventory::ItemType;
 use crate::storage::StorageEngine;
-use std::sync::Arc;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 // Tree node representing a domain or subdomain with its children
 #[derive(Debug, Clone)]
