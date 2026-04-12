@@ -70,11 +70,20 @@ fn print_usage() {
 }
 
 fn main() {
-    let use_duckdb = std::env::var("BALEBOS_STORAGE").unwrap_or_default() == "duckdb";
-    let storage: Arc<dyn StorageEngine> = if use_duckdb {
-        Arc::new(crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap())
-    } else {
-        Arc::new(JsonlStorage::new("data/inventory.jsonl"))
+    let storage: Arc<dyn StorageEngine> = {
+        #[cfg(feature = "duckdb")]
+        {
+            let use_duckdb = std::env::var("BALEBOS_STORAGE").unwrap_or_default() == "duckdb";
+            if use_duckdb {
+                Arc::new(crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap())
+            } else {
+                Arc::new(JsonlStorage::new("data/inventory.jsonl"))
+            }
+        }
+        #[cfg(not(feature = "duckdb"))]
+        {
+            Arc::new(JsonlStorage::new("data/inventory.jsonl"))
+        }
     };
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
