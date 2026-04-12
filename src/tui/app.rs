@@ -7,7 +7,9 @@ use crate::error::BalebosError;
 use crate::org::BrandId;
 use crate::storage::StorageEngine;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
-use crate::tui::state::{FormState, InventoryState, OrgPane, OrgState, ProjectsState};
+use crate::tui::state::{
+    FindingsState, FormState, InventoryState, OrgPane, OrgState, ProjectsState,
+};
 use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -16,11 +18,17 @@ pub enum Tab {
     Inventory,
     Organization,
     Projects,
+    Findings,
 }
 
 impl Tab {
     pub fn all() -> &'static [Tab] {
-        &[Tab::Inventory, Tab::Organization, Tab::Projects]
+        &[
+            Tab::Inventory,
+            Tab::Organization,
+            Tab::Projects,
+            Tab::Findings,
+        ]
     }
 
     pub fn title(&self) -> &'static str {
@@ -28,6 +36,7 @@ impl Tab {
             Tab::Inventory => "Inventory",
             Tab::Organization => "Organization",
             Tab::Projects => "Projects",
+            Tab::Findings => "Findings",
         }
     }
 }
@@ -123,6 +132,7 @@ pub struct App {
     pub inventory: InventoryState,
     pub organization: OrgState,
     pub projects: ProjectsState,
+    pub findings: FindingsState,
 
     // Input handling
     pub input: String,
@@ -170,6 +180,7 @@ impl App {
             inventory: InventoryState::new(),
             organization: OrgState::new(),
             projects: ProjectsState::new(),
+            findings: FindingsState::new(),
 
             // Input handling
             input: String::new(),
@@ -1296,6 +1307,64 @@ impl App {
             self.input = asset.name.clone();
             self.start_scan();
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Findings tab methods
+    // ---------------------------------------------------------------------------
+
+    pub fn load_findings(&mut self) -> Result<(), BalebosError> {
+        // Read all records from storage
+        let records = self.storage.read_all_records()?;
+
+        // Extract findings
+        self.findings.all_findings = records.findings;
+        self.findings.apply_filter();
+
+        if !self.findings.visible_findings.is_empty() {
+            self.findings.table_state.select(Some(0));
+        }
+
+        Ok(())
+    }
+
+    pub fn findings_next(&mut self) {
+        self.findings.next();
+    }
+
+    pub fn findings_previous(&mut self) {
+        self.findings.previous();
+    }
+
+    pub fn acknowledge_finding(&mut self) {
+        if let Some(idx) = self.findings.table_state.selected() {
+            if let Some(finding) = self.findings.visible_findings.get(idx) {
+                // TODO: Implement acknowledge in storage
+                self.set_status(format!("Acknowledged finding: {}", finding.check_name));
+            }
+        }
+    }
+
+    pub fn resolve_finding(&mut self) {
+        if let Some(idx) = self.findings.table_state.selected() {
+            if let Some(finding) = self.findings.visible_findings.get(idx) {
+                // TODO: Implement resolve in storage
+                self.set_status(format!("Resolved finding: {}", finding.check_name));
+            }
+        }
+    }
+
+    pub fn run_findings_scan(&mut self) {
+        // TODO: Run checks and persist findings
+        self.set_status("Running findings scan...".to_string());
+    }
+
+    pub fn toggle_findings_filter(&mut self) {
+        self.findings.cycle_filter();
+    }
+
+    pub fn toggle_finding_expand(&mut self) {
+        self.findings.toggle_expand();
     }
 }
 

@@ -14,7 +14,8 @@ use exit_codes::*;
 use ignore::load_ignore_patterns;
 use std::process;
 
-use crate::app::finding::FindingSeverity;
+use crate::app::check::get_open_findings_as_issues;
+use crate::app::finding::{FindingCategory, FindingSeverity};
 use crate::app::probe::HttpErrorKind;
 use crate::app::{
     batch_process, check_inventory, display_domain_status, display_domain_tree, export_status_csv,
@@ -55,6 +56,8 @@ fn print_usage() {
     eprintln!("  balebos finding show <id>          - Show finding details");
     eprintln!("  balebos finding acknowledge <id>   - Acknowledge a finding");
     eprintln!("  balebos finding resolve <id>       - Resolve a finding");
+    eprintln!("  balebos finding stats              - Show findings statistics");
+    eprintln!("  balebos finding cleanup [--days N] - Cleanup old findings (default: 90 days)");
     eprintln!();
     eprintln!("Tag management:");
     eprintln!("  balebos tag add <asset> <tag>      - Add a tag to an asset");
@@ -388,6 +391,127 @@ fn cmd_finding(
                 process::exit(EXIT_STORAGE_ERROR);
             }
         },
+        FindingCommand::Stats => match storage.read_all_records() {
+            Ok(records) => {
+                let total_findings = records.findings.len();
+
+                let open_findings: Vec<&Finding> = records
+                    .findings
+                    .iter()
+                    .filter(|f| {
+                        !records.finding_events.iter().any(|e| {
+                            e.finding_id == f.id && e.event_type == FindingEventType::Resolved
+                        })
+                    })
+                    .collect();
+
+                let acknowledged_findings = records
+                    .finding_events
+                    .iter()
+                    .filter(|e| e.event_type == FindingEventType::Acknowledged)
+                    .count();
+
+                let resolved_findings = records
+                    .finding_events
+                    .iter()
+                    .filter(|e| e.event_type == FindingEventType::Resolved)
+                    .count();
+
+                // Group by severity
+                let mut by_severity: std::collections::HashMap<FindingSeverity, usize> =
+                    std::collections::HashMap::new();
+                for finding in &open_findings {
+                    *by_severity.entry(finding.severity).or_insert(0) += 1;
+                }
+
+                // Group by check name
+                let mut by_check: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
+                for finding in &open_findings {
+                    *by_check.entry(finding.check_name.clone()).or_insert(0) += 1;
+                }
+
+                // Group by category
+                let mut by_category: std::collections::HashMap<FindingCategory, usize> =
+                    std::collections::HashMap::new();
+                for finding in &open_findings {
+                    *by_category.entry(finding.category).or_insert(0) += 1;
+                }
+
+                println!("Findings Statistics");
+                println!("===================");
+                println!();
+
+                println!("Summary:");
+                println!("- Total findings: {}", total_findings);
+                println!("- Open findings: {}", open_findings.len());
+                println!("- Acknowledged: {}", acknowledged_findings);
+                println!("- Resolved: {}", resolved_findings);
+
+                if total_findings > 0 {
+                    let resolution_rate =
+                        (resolved_findings as f64 / total_findings as f64) * 100.0;
+                    println!("- Resolution rate: {:.1}%", resolution_rate);
+                }
+                println!();
+
+                if !open_findings.is_empty() {
+                    println!("Open Findings by Severity:");
+                    let mut severities: Vec<_> = by_severity.iter().collect();
+                    severities.sort_by_key(|(severity, _)| match severity {
+                        FindingSeverity::Critical => 0,
+                        FindingSeverity::High => 1,
+                        FindingSeverity::Medium => 2,
+                        FindingSeverity::Low => 3,
+                        FindingSeverity::Info => 4,
+                    });
+
+                    for (severity, count) in severities {
+                        println!("  - {}: {}", severity, count);
+                    }
+                    println!();
+
+                    println!("Open Findings by Check:");
+                    let mut checks: Vec<_> = by_check.iter().collect();
+                    checks.sort_by(|a, b| b.1.cmp(a.1)); // Sort by count descending
+
+                    for (check, count) in checks {
+                        println!("  - {}: {}", check, count);
+                    }
+                    println!();
+
+                    println!("Open Findings by Category:");
+                    let mut categories: Vec<_> = by_category.iter().collect();
+                    categories.sort_by(|a, b| b.1.cmp(a.1)); // Sort by count descending
+
+                    for (category, count) in categories {
+                        println!("  - {}: {}", category, count);
+                    }
+                }
+
+                process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Error reading findings: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
+        FindingCommand::Cleanup { days } => {
+            let max_age_days = days.unwrap_or(90); // Default 90 days retention
+
+            println!("Cleaning up findings older than {} days...", max_age_days);
+
+            match storage.cleanup_old_records(max_age_days) {
+                Ok(()) => {
+                    println!("Cleanup completed successfully.");
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error during cleanup: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            }
+        }
     }
 }
 
@@ -577,18 +701,47 @@ fn cmd_diff(storage: &Arc<dyn StorageEngine>) {
 }
 
 fn cmd_check(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
+    // Get current issues from check_inventory (real-time checks)
     match check_inventory(storage, ignore_patterns) {
-        Ok(issues) => {
-            if issues.is_empty() {
+        Ok(current_issues) => {
+            // Get open findings from storage
+            let open_findings_issues_result = get_open_findings_as_issues(storage, ignore_patterns);
+
+            // Combine current issues with open findings
+            let mut all_issues = current_issues;
+            let open_findings_count = match &open_findings_issues_result {
+                Ok(issues) => {
+                    all_issues.extend(issues.clone());
+                    issues.len()
+                }
+                Err(e) => {
+                    eprintln!("Error reading open findings: {}", e);
+                    0
+                }
+            };
+
+            // Remove duplicates (same message)
+            let mut unique_issues = Vec::new();
+            let mut seen_messages = std::collections::HashSet::new();
+
+            for issue in all_issues {
+                if !seen_messages.contains(&issue.message) {
+                    seen_messages.insert(issue.message.clone());
+                    unique_issues.push(issue);
+                }
+            }
+
+            if unique_issues.is_empty() {
                 println!("No issues found in inventory.");
+                println!("Note: Run 'balebos finding run' to persist findings for tracking.");
                 process::exit(EXIT_SUCCESS);
             }
 
-            let critical_count = issues
+            let critical_count = unique_issues
                 .iter()
                 .filter(|i| i.severity == Severity::Critical)
                 .count();
-            let warning_count = issues
+            let warning_count = unique_issues
                 .iter()
                 .filter(|i| i.severity == Severity::Warning)
                 .count();
@@ -597,24 +750,47 @@ fn cmd_check(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
             println!("----------------------");
             println!(
                 "Found {} issues ({} critical, {} warnings)",
-                issues.len(),
+                unique_issues.len(),
                 critical_count,
                 warning_count
             );
 
+            // Show note about findings if there are open findings
+            if open_findings_count > 0 {
+                println!(
+                    "(Includes {} open findings from previous checks)",
+                    open_findings_count
+                );
+                println!(
+                    "Use 'balebos finding list' to see details or 'balebos finding run' to update."
+                );
+            }
+
             if critical_count > 0 {
                 println!("\nCRITICAL ISSUES:");
-                for issue in issues.iter().filter(|i| i.severity == Severity::Critical) {
+                for issue in unique_issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::Critical)
+                {
                     println!("! {}", issue.message);
                 }
             }
 
             if warning_count > 0 {
                 println!("\nWARNINGS:");
-                for issue in issues.iter().filter(|i| i.severity == Severity::Warning) {
+                for issue in unique_issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::Warning)
+                {
                     println!("- {}", issue.message);
                 }
             }
+
+            println!("\nManagement commands:");
+            println!("- 'balebos finding run' - Run checks and persist findings");
+            println!("- 'balebos finding list' - List all open findings");
+            println!("- 'balebos finding acknowledge <id>' - Acknowledge a finding");
+            println!("- 'balebos finding resolve <id>' - Resolve a finding");
 
             if critical_count > 0 {
                 process::exit(EXIT_CRITICAL_ISSUES);
@@ -675,6 +851,18 @@ fn cmd_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
                     report.missing_http_checks,
                     "",
                 );
+            }
+
+            println!("\nFindings:");
+            if report.open_findings == 0
+                && report.acknowledged_findings == 0
+                && report.resolved_findings == 0
+            {
+                println!("- no findings tracked");
+            } else {
+                print_issue_line("open findings", report.open_findings, "");
+                print_issue_line("acknowledged findings", report.acknowledged_findings, "");
+                print_issue_line("resolved findings", report.resolved_findings, "");
             }
             println!();
 

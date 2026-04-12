@@ -112,6 +112,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         KeyCode::Char('1') => app.set_tab(Tab::Inventory),
         KeyCode::Char('2') => app.set_tab(Tab::Organization),
         KeyCode::Char('3') => app.set_tab(Tab::Projects),
+        KeyCode::Char('4') => app.set_tab(Tab::Findings),
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
@@ -120,6 +121,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
             Tab::Inventory => handle_inventory_keys(app, code),
             Tab::Organization => handle_organization_keys(app, code),
             Tab::Projects => handle_projects_keys(app, code),
+            Tab::Findings => handle_findings_keys(app, code),
         },
     }
     Ok(())
@@ -274,6 +276,33 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('c') => {
             app.start_contractor_assign();
+        }
+        _ => {}
+    }
+}
+
+fn handle_findings_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.findings_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.findings_previous();
+        }
+        KeyCode::Char('a') => {
+            app.acknowledge_finding();
+        }
+        KeyCode::Char('r') => {
+            app.resolve_finding();
+        }
+        KeyCode::Char('s') => {
+            app.run_findings_scan();
+        }
+        KeyCode::Char('f') => {
+            app.toggle_findings_filter();
+        }
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            app.toggle_finding_expand();
         }
         _ => {}
     }

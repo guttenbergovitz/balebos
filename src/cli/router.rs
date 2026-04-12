@@ -113,6 +113,10 @@ pub enum FindingCommand {
     Resolve {
         id: String,
     },
+    Stats,
+    Cleanup {
+        days: Option<u32>,
+    },
 }
 
 pub enum FindingStatus {
@@ -376,6 +380,26 @@ fn parse_finding_command(args: &[String]) -> Option<Command> {
         "resolve" => {
             let id = args.get(3)?.clone();
             Some(Command::Finding(FindingCommand::Resolve { id }))
+        }
+        "stats" => Some(Command::Finding(FindingCommand::Stats)),
+        "cleanup" => {
+            let mut days = None;
+
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--days" | "-d" => {
+                        i += 1;
+                        if i < args.len() {
+                            days = args[i].parse::<u32>().ok();
+                        }
+                    }
+                    _ => return None,
+                }
+                i += 1;
+            }
+
+            Some(Command::Finding(FindingCommand::Cleanup { days }))
         }
         _ => None,
     }

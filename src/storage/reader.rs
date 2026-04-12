@@ -13,8 +13,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 #[derive(Deserialize)]
-struct RecordHeader {
-    item_type: ItemType,
+pub struct RecordHeader {
+    pub item_type: ItemType,
 }
 
 /// All typed records extracted from a heterogeneous JSONL log.
@@ -158,4 +158,14 @@ pub fn read_records(file_path: &str) -> Result<Records> {
     let reader = BufReader::new(file);
 
     parse_records(reader.lines().map_while(|r| r.ok()))
+}
+
+/// Parse only findings from storage
+pub fn parse_findings_from_items(items: Vec<crate::inventory::InventoryItem>) -> Vec<Finding> {
+    Vec::new() // Not implemented - use parse_records instead
+}
+
+/// Get findings from Records
+pub fn get_findings(records: &Records) -> Vec<Finding> {
+    records.findings.clone()
 }

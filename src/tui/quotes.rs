@@ -17,7 +17,7 @@ pub fn get_random_quote() -> &'static str {
         "\"Code reviews should be a conversation, not an inquisition.\" - Unknown",
         "\"Sometimes it pays to stay in bed on Monday rather than spending the rest of the week debugging Monday's code.\" - Dan Solomon",
         "\"Any code of your own that you haven't looked at for six or more months might as well have been written by someone else.\" - Eagleson's Law",
-        
+
         // Monty Python
         "\"It's just a flesh wound!\" - Monty Python",
         "\"I didn't vote for you!\" - Monty Python",
@@ -27,7 +27,7 @@ pub fn get_random_quote() -> &'static str {
         "\"You can debug anything if you're properly motivated.\" - Monty Python (inspired)",
         "\"She turned me into a newt! I got better.\" - Monty Python",
         "\"Stop right there! This is the sort of thing up with which I will not put!\" - Monty Python (Winston Churchill)",
-        
+
         // Computer Science
         "\"There are only two kinds of programming languages: those people complain about and those nobody uses.\" - Bjarne Stroustrup",
         "\"A designer knows he has achieved perfection not when there is nothing left to add, but when there is nothing left to take away.\" - Antoine de Saint-Exupéry",
@@ -36,7 +36,7 @@ pub fn get_random_quote() -> &'static str {
         "\"Genius is one percent inspiration and ninety-nine percent perspiration.\" - Thomas Edison",
         "\"Technology is at best a necessary evil.\" - David Pogue",
         "\"The Internet treats censorship as a damage and routes around it.\" - John Gilmore",
-        
+
         // Wisdom
         "\"The art of programming is the art of organizing complexity.\" - Edsger Dijkstra",
         "\"If you think you understand recursion, read this sentence again.\" - Unknown",

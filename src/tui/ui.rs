@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
+use crate::tui::tabs::{draw_findings, draw_inventory, draw_organization, draw_projects};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -191,6 +191,7 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         Tab::Inventory => 0,
         Tab::Organization => 1,
         Tab::Projects => 2,
+        Tab::Findings => 3,
     };
 
     let tabs = Tabs::new(titles)
@@ -256,6 +257,7 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
         Tab::Inventory => draw_inventory(f, app, area),
         Tab::Organization => draw_organization(f, app, area),
         Tab::Projects => draw_projects(f, app, area),
+        Tab::Findings => draw_findings(f, app, area),
     }
 }
 
@@ -315,13 +317,16 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
+            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
         }
         Tab::Organization => {
-            " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
+            " q: Quit | R: Refresh | 1-4: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
         }
         Tab::Projects => {
-            " q: Quit | R: Refresh | 1-3: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
+            " q: Quit | R: Refresh | 1-4: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
+        }
+        Tab::Findings => {
+            " q: Quit | R: Refresh | 1-4: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
         }
     };
 

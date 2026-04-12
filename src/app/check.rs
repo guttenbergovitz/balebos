@@ -496,7 +496,152 @@ pub fn run_checks_and_persist(
         storage.save(finding)?;
     }
 
+    // Auto-resolve findings that are no longer valid
+    auto_resolve_findings(storage, &filtered_items, &filtered_http_observations)?;
+
     Ok(new_findings)
+}
+
+/// Automatically resolve findings that are no longer valid
+fn auto_resolve_findings(
+    storage: &Arc<dyn StorageEngine>,
+    items: &[InventoryItem],
+    http_observations: &[HttpObservation],
+) -> Result<()> {
+    use std::collections::HashMap;
+
+    let records = storage.read_all_records()?;
+
+    // Get all open findings
+    let open_findings: Vec<&Finding> = records
+        .findings
+        .iter()
+        .filter(|f| {
+            // Check if finding is resolved
+            !records
+                .finding_events
+                .iter()
+                .any(|e| e.finding_id == f.id && e.event_type == FindingEventType::Resolved)
+        })
+        .collect();
+
+    // Group items by domain for quick lookup
+    let mut domain_items: HashMap<&String, Vec<&InventoryItem>> = HashMap::new();
+    for item in items {
+        if item.item_type == ItemType::Domain {
+            domain_items.entry(&item.name).or_default().push(item);
+        }
+    }
+
+    // Group HTTP observations by domain
+    let mut domain_http_obs: HashMap<&String, Vec<&HttpObservation>> = HashMap::new();
+    for obs in http_observations {
+        domain_http_obs.entry(&obs.target).or_default().push(obs);
+    }
+
+    let now = Utc::now();
+
+    for finding in open_findings {
+        let should_auto_resolve = match finding.check_name.as_str() {
+            "staleness" => {
+                // Check if domain is no longer stale
+                if let Some(domain_items_list) = domain_items.get(&finding.target) {
+                    // Find the latest item for this domain
+                    let latest_item = domain_items_list.iter().max_by_key(|i| i.discovered_at);
+                    if let Some(item) = latest_item {
+                        let age = now.signed_duration_since(item.discovered_at);
+                        let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+                        age_days < 14 // No longer stale if seen within 14 days
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            "low_confidence" => {
+                // Check if domain now has multiple observations
+                if let Some(domain_items_list) = domain_items.get(&finding.target) {
+                    domain_items_list.len() > 1
+                } else {
+                    false
+                }
+            }
+            "missing_http_check" => {
+                // Check if there's now a recent HTTP observation
+                if let Some(obs_list) = domain_http_obs.get(&finding.target) {
+                    let latest_obs = obs_list.iter().max_by_key(|o| o.checked_at);
+                    if let Some(obs) = latest_obs {
+                        let age = now.signed_duration_since(obs.checked_at);
+                        let age_hours = age.num_hours();
+                        age_hours < 24 // Has recent check (within 24h)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            "http_server_error" | "http_client_error" | "tls_error" | "connection_error"
+            | "timeout" => {
+                // Check if the latest HTTP observation no longer has the error
+                if let Some(obs_list) = domain_http_obs.get(&finding.target) {
+                    let latest_obs = obs_list.iter().max_by_key(|o| o.checked_at);
+                    if let Some(obs) = latest_obs {
+                        // Check if the error is resolved
+                        match finding.check_name.as_str() {
+                            "http_server_error" => obs.status.map(|s| s < 500).unwrap_or(false),
+                            "http_client_error" => obs.status.map(|s| s < 400).unwrap_or(false),
+                            "tls_error" => obs.error_kind != Some(HttpErrorKind::TlsError),
+                            "connection_error" => {
+                                obs.error_kind != Some(HttpErrorKind::ConnectionError)
+                            }
+                            "timeout" => obs.error_kind != Some(HttpErrorKind::Timeout),
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false, // Don't auto-resolve other check types
+        };
+
+        if should_auto_resolve {
+            let event = FindingEvent::resolve(&finding.id);
+            storage.save(&event)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Get open findings as issues (for display in check command)
+pub fn get_open_findings_as_issues(
+    storage: &Arc<dyn StorageEngine>,
+    _ignore_patterns: &[String],
+) -> Result<Vec<Issue>> {
+    let records = storage.read_all_records()?;
+
+    // Get all open findings
+    let open_findings: Vec<&Finding> = records
+        .findings
+        .iter()
+        .filter(|f| {
+            // Check if finding is resolved
+            !records
+                .finding_events
+                .iter()
+                .any(|e| e.finding_id == f.id && e.event_type == FindingEventType::Resolved)
+        })
+        .collect();
+
+    // Convert to issues
+    let issues: Vec<Issue> = open_findings.iter().map(|f| Issue::from(*f)).collect();
+
+    Ok(issues)
 }
 
 // Run all checks and collect issues (backward-compatible)

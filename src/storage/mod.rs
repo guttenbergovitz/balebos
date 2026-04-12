@@ -12,6 +12,12 @@ pub trait StorageEngine: Send + Sync {
     fn save_string(&self, json: &str) -> Result<()>;
     fn save_string_batch(&self, json_lines: &[String]) -> Result<()>;
     fn read_all_records(&self) -> Result<crate::storage::reader::Records>;
+
+    /// Cleanup old records based on retention policy
+    fn cleanup_old_records(&self, max_age_days: u32) -> Result<()> {
+        // Default implementation does nothing
+        Ok(())
+    }
 }
 
 pub trait StorageEngineExt {
