@@ -32,6 +32,7 @@ ENV LIBRARY_PATH=/opt/duckdb
 # Copy project files
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY data ./data
 
 # Build the application in release mode
 RUN cargo build --release
