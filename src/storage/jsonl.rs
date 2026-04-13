@@ -18,6 +18,10 @@ impl JsonlStorage {
             filepath: filepath.to_string(),
         }
     }
+    
+    pub fn filepath(&self) -> &str {
+        &self.filepath
+    }
 }
 
 impl StorageEngine for JsonlStorage {

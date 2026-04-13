@@ -1,4 +1,5 @@
 pub mod datafusion;
+pub mod hybrid;
 pub mod jsonl;
 pub mod migration;
 pub mod reader;

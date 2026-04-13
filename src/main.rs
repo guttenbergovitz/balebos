@@ -96,23 +96,34 @@ fn print_usage() {
 }
 
 fn main() {
-    let storage: Arc<dyn StorageEngine> = {
-        #[cfg(feature = "duckdb")]
-        {
-            let use_duckdb = std::env::var("BALEBOS_STORAGE").unwrap_or_default() == "duckdb";
-            if use_duckdb {
-                Arc::new(
-                    crate::storage::duckdb::DuckDbStorage::new("data/inventory.duckdb").unwrap(),
-                )
-            } else {
-                Arc::new(JsonlStorage::new("data/inventory.jsonl"))
+    // Initialize hybrid storage (JSONL for reads, Parquet for analytics)
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    
+    let storage: Arc<dyn StorageEngine> = rt.block_on(async {
+        let hybrid = crate::storage::hybrid::HybridStorage::new(
+            "data/inventory.jsonl",
+            "data/parquet",
+        )
+        .await
+        .expect("Failed to initialize storage");
+        
+        // Run migration if needed
+        match hybrid.migrate_if_needed().await {
+            Ok(Some(report)) => {
+                eprintln!(
+                    "Migrated {} records to Parquet storage",
+                    report.migrated_records
+                );
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("Warning: migration failed: {}", e);
             }
         }
-        #[cfg(not(feature = "duckdb"))]
-        {
-            Arc::new(JsonlStorage::new("data/inventory.jsonl"))
-        }
-    };
+        
+        Arc::new(hybrid) as Arc<dyn StorageEngine>
+    });
+    
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
     let command = match parse_command() {
