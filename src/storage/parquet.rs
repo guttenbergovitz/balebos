@@ -18,6 +18,16 @@ use crate::inventory::ItemType;
 use crate::storage::reader::{parse_records, Records};
 use crate::storage::StorageEngine;
 
+fn storage_io_err(msg: impl Into<String>) -> BalebosError {
+    BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::other(
+        msg.into(),
+    )))
+}
+
+fn polars_err(e: impl std::fmt::Display) -> BalebosError {
+    storage_io_err(format!("Polars error: {}", e))
+}
+
 /// Polars-based Parquet storage with in-memory buffering
 pub struct ParquetStorage {
     base_dir: PathBuf,
@@ -49,6 +59,7 @@ impl ParquetStorage {
     }
 
     /// Set buffer size (number of records before auto-flush)
+    #[allow(dead_code)]
     pub fn with_buffer_size(mut self, size: usize) -> Self {
         self.buffer_size = size;
         self
@@ -71,40 +82,25 @@ impl ParquetStorage {
             return Ok(());
         }
 
-        // Generate schema from first object with all Utf8 columns
         let schema = values
             .iter()
             .find_map(|v| v.as_object())
             .map(Self::build_utf8_schema)
-            .ok_or_else(|| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Expected JSON object for schema inference",
-                )))
-            })?;
+            .ok_or_else(|| storage_io_err("Expected JSON object for schema inference"))?;
 
         let mut json_bytes = Vec::new();
         for value in values {
-            serde_json::to_writer(&mut json_bytes, value).map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("JSON serialize error: {}", e),
-                )))
-            })?;
+            serde_json::to_writer(&mut json_bytes, value)
+                .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
             json_bytes.push(b'\n');
         }
 
         let cursor = Cursor::new(json_bytes);
-        let mut new_df = JsonReader::new(cursor)
+        let new_df = JsonReader::new(cursor)
             .with_json_format(JsonFormat::JsonLines)
             .with_schema(schema)
             .finish()
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Polars JSON parse error: {}", e),
-                )))
-            })?;
+            .map_err(polars_err)?;
 
         let file_path = self.type_file_path(item_type);
 
@@ -113,28 +109,11 @@ impl ParquetStorage {
                 file_path.to_string_lossy().as_ref().into(),
                 ScanArgsParquet::default(),
             )
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Parquet scan error: {}", e),
-                )))
-            })?
+            .map_err(polars_err)?
             .collect()
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Polars collect error: {}", e),
-                )))
-            })?;
+            .map_err(polars_err)?;
 
-            existing
-                .vstack_mut(&mut new_df)
-                .map_err(|e| {
-                    BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("DataFrame vstack error: {}", e),
-                    )))
-                })?;
+            existing.vstack_mut(&new_df).map_err(polars_err)?;
             existing
         } else {
             new_df
@@ -143,36 +122,28 @@ impl ParquetStorage {
         let file = File::create(&file_path)?;
         ParquetWriter::new(file)
             .finish(&mut df)
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Parquet write error: {}", e),
-                )))
-            })?;
+            .map_err(polars_err)?;
 
         Ok(())
     }
 
     /// Flush buffered records to Parquet
     pub fn flush(&self) -> Result<()> {
-        let mut buf = self.buffer.lock().map_err(|e| {
-            BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Mutex poison: {}", e),
-            )))
-        })?;
+        let mut buf = self
+            .buffer
+            .lock()
+            .map_err(|e| storage_io_err(format!("Mutex poison: {}", e)))?;
 
         if buf.is_empty() {
             return Ok(());
         }
 
-        // Group by item_type
         let mut by_type: HashMap<ItemType, Vec<serde_json::Value>> = HashMap::new();
         for value in buf.drain(..) {
             let item_type = value
                 .get("item_type")
                 .and_then(|v| v.as_str())
-                .and_then(|s| serde_json::from_str::<ItemType>(&format!("\"{}\"", s)).ok())
+                .map(parse_item_type)
                 .unwrap_or(ItemType::Domain);
             by_type.entry(item_type).or_default().push(value);
         }
@@ -187,25 +158,50 @@ impl ParquetStorage {
     }
 }
 
+fn parse_item_type(s: &str) -> ItemType {
+    match s {
+        "domain" => ItemType::Domain,
+        "subdomain" => ItemType::Subdomain,
+        "http_check" => ItemType::HttpCheck,
+        "dns_record" => ItemType::DnsRecord,
+        "asn_record" => ItemType::AsnRecord,
+        "hosting_detection" => ItemType::HostingDetection,
+        "org_person" => ItemType::OrgPerson,
+        "org_company" => ItemType::OrgCompany,
+        "org_brand" => ItemType::OrgBrand,
+        "org_project" => ItemType::OrgProject,
+        "org_asset_assignment" => ItemType::OrgAssetAssignment,
+        "org_role_assignment" => ItemType::OrgRoleAssignment,
+        "org_contractor_assignment" => ItemType::OrgContractorAssignment,
+        "org_asset_importance" => ItemType::OrgAssetImportance,
+        "org_domain_registration" => ItemType::OrgDomainRegistration,
+        "asset_tag" => ItemType::AssetTag,
+        "finding" => ItemType::Finding,
+        "finding_event" => ItemType::FindingEvent,
+        "lifecycle_event" => ItemType::LifecycleEvent,
+        _ => ItemType::Domain,
+    }
+}
+
+macro_rules! extend_records {
+    ($vec:expr, $records:ident, $field:ident) => {
+        $vec.extend($records.$field.iter().map(|r| serde_json::to_string(r).unwrap()));
+    };
+}
+
 impl StorageEngine for ParquetStorage {
     fn name(&self) -> String {
         "parquet".to_string()
     }
 
     fn save_string(&self, json: &str) -> Result<()> {
-        let value: serde_json::Value = serde_json::from_str(json).map_err(|e| {
-            BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("JSON parse error: {}", e),
-            )))
-        })?;
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|e| storage_io_err(format!("JSON parse error: {}", e)))?;
 
-        let mut buf = self.buffer.lock().map_err(|e| {
-            BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Mutex poison: {}", e),
-            )))
-        })?;
+        let mut buf = self
+            .buffer
+            .lock()
+            .map_err(|e| storage_io_err(format!("Mutex poison: {}", e)))?;
 
         buf.push(value);
         let should_flush = buf.len() >= self.buffer_size;
@@ -219,16 +215,15 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn save_string_batch(&self, json_lines: &[String]) -> Result<()> {
-        let mut buf = self.buffer.lock().map_err(|e| {
-            BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Mutex poison: {}", e),
-            )))
-        })?;
+        let mut buf = self
+            .buffer
+            .lock()
+            .map_err(|e| storage_io_err(format!("Mutex poison: {}", e)))?;
 
         for line in json_lines {
-            if let Ok(value) = serde_json::from_str(line) {
-                buf.push(value);
+            match serde_json::from_str(line) {
+                Ok(value) => buf.push(value),
+                Err(e) => eprintln!("Warning: skipping invalid JSON line: {}", e),
             }
         }
 
@@ -258,19 +253,9 @@ impl StorageEngine for ParquetStorage {
                 path.to_string_lossy().as_ref().into(),
                 ScanArgsParquet::default(),
             )
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Parquet scan error: {}", e),
-                )))
-            })?
+            .map_err(polars_err)?
             .collect()
-            .map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Polars collect error: {}", e),
-                )))
-            })?;
+            .map_err(polars_err)?;
 
             if df.height() == 0 {
                 continue;
@@ -280,23 +265,12 @@ impl StorageEngine for ParquetStorage {
             JsonWriter::new(&mut json_buf)
                 .with_json_format(JsonFormat::JsonLines)
                 .finish(&mut df)
-                .map_err(|e| {
-                    BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("JSON write error: {}", e),
-                    )))
-                })?;
+                .map_err(polars_err)?;
 
-            let json_str = String::from_utf8(json_buf).map_err(|e| {
-                BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("UTF-8 error: {}", e),
-                )))
-            })?;
+            let json_str = String::from_utf8(json_buf)
+                .map_err(|e| storage_io_err(format!("UTF-8 error: {}", e)))?;
 
-            for line in json_str.lines() {
-                all_lines.push(line.to_string());
-            }
+            all_lines.extend(json_str.lines().map(|s| s.to_string()));
         }
 
         parse_records(all_lines.into_iter())
@@ -308,7 +282,6 @@ impl StorageEngine for ParquetStorage {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(max_age_days as i64);
         let mut records = self.read_all_records()?;
 
-        // Filter all vectors by created_at / discovered_at / checked_at / tagged_at
         records.items.retain(|r| r.discovered_at >= cutoff);
         records.http_observations.retain(|r| r.checked_at >= cutoff);
         records.dns_observations.retain(|r| r.checked_at >= cutoff);
@@ -328,7 +301,6 @@ impl StorageEngine for ParquetStorage {
         records.domain_registrations.retain(|r| r.created_at >= cutoff);
         records.lifecycle_events.retain(|r| r.created_at >= cutoff);
 
-        // Remove all existing parquet files
         for entry in std::fs::read_dir(&self.base_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -337,26 +309,25 @@ impl StorageEngine for ParquetStorage {
             }
         }
 
-        // Rewrite filtered records
         let mut all_records = Vec::new();
-        all_records.extend(records.items.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.http_observations.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.dns_observations.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.asn_observations.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.hosting_observations.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.asset_tags.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.findings.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.finding_events.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.persons.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.companies.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.brands.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.projects.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.asset_assignments.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.role_assignments.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.contractor_assignments.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.asset_importances.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.domain_registrations.iter().map(|r| serde_json::to_string(r).unwrap()));
-        all_records.extend(records.lifecycle_events.iter().map(|r| serde_json::to_string(r).unwrap()));
+        extend_records!(all_records, records, items);
+        extend_records!(all_records, records, http_observations);
+        extend_records!(all_records, records, dns_observations);
+        extend_records!(all_records, records, asn_observations);
+        extend_records!(all_records, records, hosting_observations);
+        extend_records!(all_records, records, asset_tags);
+        extend_records!(all_records, records, findings);
+        extend_records!(all_records, records, finding_events);
+        extend_records!(all_records, records, persons);
+        extend_records!(all_records, records, companies);
+        extend_records!(all_records, records, brands);
+        extend_records!(all_records, records, projects);
+        extend_records!(all_records, records, asset_assignments);
+        extend_records!(all_records, records, role_assignments);
+        extend_records!(all_records, records, contractor_assignments);
+        extend_records!(all_records, records, asset_importances);
+        extend_records!(all_records, records, domain_registrations);
+        extend_records!(all_records, records, lifecycle_events);
 
         if !all_records.is_empty() {
             self.save_string_batch(&all_records)?;
