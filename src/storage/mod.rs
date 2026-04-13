@@ -1,5 +1,7 @@
-#[cfg(feature = "duckdb")]
-pub mod duckdb;
+pub mod datafusion;
+// duckdb temporarily disabled
+// #[cfg(feature = "duckdb")]
+// pub mod duckdb;
 pub mod jsonl;
 pub mod reader;
 

@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::domain::Domain;
 
 /// Type discriminator for all records in the JSONL storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ItemType {
     #[serde(rename = "domain")]
     Domain,
@@ -45,6 +45,32 @@ pub enum ItemType {
     FindingEvent,
     #[serde(rename = "lifecycle_event")]
     LifecycleEvent,
+}
+
+impl ItemType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ItemType::Domain => "domain",
+            ItemType::Subdomain => "subdomain",
+            ItemType::HttpCheck => "http_check",
+            ItemType::DnsRecord => "dns_record",
+            ItemType::AsnRecord => "asn_record",
+            ItemType::HostingDetection => "hosting_detection",
+            ItemType::OrgPerson => "org_person",
+            ItemType::OrgCompany => "org_company",
+            ItemType::OrgBrand => "org_brand",
+            ItemType::OrgProject => "org_project",
+            ItemType::OrgAssetAssignment => "org_asset_assignment",
+            ItemType::OrgRoleAssignment => "org_role_assignment",
+            ItemType::OrgContractorAssignment => "org_contractor_assignment",
+            ItemType::OrgAssetImportance => "org_asset_importance",
+            ItemType::OrgDomainRegistration => "org_domain_registration",
+            ItemType::AssetTag => "asset_tag",
+            ItemType::Finding => "finding",
+            ItemType::FindingEvent => "finding_event",
+            ItemType::LifecycleEvent => "lifecycle_event",
+        }
+    }
 }
 
 // This struct represents an item in our inventory storage
