@@ -643,75 +643,55 @@ fn handle_asset_details_mode(app: &mut App, code: KeyCode) {
 
 fn handle_lifecycle_editing_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
     use crate::inventory::AssetLifecycle;
-    
+
+    fn apply_lifecycle(app: &mut App, state: AssetLifecycle) -> crate::error::Result<()> {
+        let targets: Vec<String> = if app.inventory.marked_assets.is_empty() {
+            app.selected_asset()
+                .map(|a| vec![a.name.clone()])
+                .unwrap_or_default()
+        } else {
+            app.inventory.marked_assets.iter().cloned().collect()
+        };
+
+        for name in targets {
+            let _ = crate::app::set_lifecycle(
+                &app.storage,
+                &name,
+                state,
+                Some("Set from TUI"),
+                "tui",
+            );
+        }
+        if !app.inventory.marked_assets.is_empty() {
+            app.inventory.clear_marks();
+        }
+        app.refresh()?;
+        Ok(())
+    }
+
     match code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.input.clear();
         }
         KeyCode::Char('1') => {
-            if let Some(asset) = app.selected_asset() {
-                let _ = crate::app::set_lifecycle(
-                    &app.storage,
-                    &asset.name,
-                    AssetLifecycle::Active,
-                    Some("Set from TUI"),
-                    "tui",
-                );
-                app.refresh()?;
-            }
+            apply_lifecycle(app, AssetLifecycle::Active)?;
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char('2') => {
-            if let Some(asset) = app.selected_asset() {
-                let _ = crate::app::set_lifecycle(
-                    &app.storage,
-                    &asset.name,
-                    AssetLifecycle::UnderReview,
-                    Some("Set from TUI"),
-                    "tui",
-                );
-                app.refresh()?;
-            }
+            apply_lifecycle(app, AssetLifecycle::UnderReview)?;
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char('3') => {
-            if let Some(asset) = app.selected_asset() {
-                let _ = crate::app::set_lifecycle(
-                    &app.storage,
-                    &asset.name,
-                    AssetLifecycle::Deprecated,
-                    Some("Set from TUI"),
-                    "tui",
-                );
-                app.refresh()?;
-            }
+            apply_lifecycle(app, AssetLifecycle::Deprecated)?;
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char('4') => {
-            if let Some(asset) = app.selected_asset() {
-                let _ = crate::app::set_lifecycle(
-                    &app.storage,
-                    &asset.name,
-                    AssetLifecycle::Decommissioned,
-                    Some("Set from TUI"),
-                    "tui",
-                );
-                app.refresh()?;
-            }
+            apply_lifecycle(app, AssetLifecycle::Decommissioned)?;
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char('5') => {
-            if let Some(asset) = app.selected_asset() {
-                let _ = crate::app::set_lifecycle(
-                    &app.storage,
-                    &asset.name,
-                    AssetLifecycle::Abandoned,
-                    Some("Set from TUI"),
-                    "tui",
-                );
-                app.refresh()?;
-            }
+            apply_lifecycle(app, AssetLifecycle::Abandoned)?;
             app.input_mode = InputMode::Normal;
         }
         _ => {}

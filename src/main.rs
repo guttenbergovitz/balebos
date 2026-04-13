@@ -586,8 +586,19 @@ fn cmd_list(unique: bool, storage: &Arc<dyn StorageEngine>) {
             } else {
                 let label = if unique { "Unique" } else { "All" };
                 println!("{} domains in inventory ({}):", label, domains.len());
+                let records = storage.read_all_records().ok();
                 for domain in domains {
-                    println!("- {}", domain);
+                    let lifecycle = records.as_ref().and_then(|r| {
+                        crate::inventory::get_current_lifecycle(&r.lifecycle_events, &domain)
+                    });
+                    match lifecycle {
+                        Some(state) => {
+                            println!("- {} ({})", domain, state);
+                        }
+                        None => {
+                            println!("- {}", domain);
+                        }
+                    }
                 }
             }
             process::exit(EXIT_SUCCESS);
@@ -1676,14 +1687,19 @@ fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) {
         }
     };
 
-    // Build asset list from inventory items
-    let asset_names: Vec<String> = records
+    // Build asset list from inventory items and all observations
+    let mut asset_names: std::collections::HashSet<String> = records
         .items
         .iter()
         .map(|i| i.name.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
         .collect();
+    for obs in &records.http_observations {
+        asset_names.insert(obs.target.clone());
+    }
+    for obs in &records.dns_observations {
+        asset_names.insert(obs.target.clone());
+    }
+    let asset_names: Vec<String> = asset_names.into_iter().collect();
 
     // Build owner map from asset assignments
     let assigned_assets: HashSet<String> = records

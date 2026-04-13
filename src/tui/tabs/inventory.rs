@@ -34,7 +34,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     let selected_style = Style::default()
         .add_modifier(Modifier::REVERSED)
         .fg(Color::Yellow);
-    let header_cells = ["Asset", "Risk", "Status", "Tech"]
+    let header_cells = ["Asset", "Risk", "Life", "Status", "Tech"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan)));
     let header = Row::new(header_cells)
@@ -100,6 +100,12 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                 "-".to_string()
             };
 
+            let lifecycle = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+            let (life_text, life_color) = match lifecycle {
+                Some(state) => (state.icon().to_string(), state.color()),
+                None => ("-".to_string(), Color::DarkGray),
+            };
+
             let mut status_style = Style::default();
             let mut status_text = "-".to_string();
 
@@ -158,6 +164,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                     name_span,
                 ])),
                 Cell::from(risk_text).style(Style::default().fg(risk_fg)),
+                Cell::from(life_text).style(Style::default().fg(life_color)),
                 Cell::from(status_text).style(status_style),
                 Cell::from(tech),
             ]))
@@ -176,9 +183,10 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     let t = Table::new(
         rows,
         [
-            Constraint::Percentage(40),
+            Constraint::Percentage(35),
             Constraint::Percentage(8),
-            Constraint::Percentage(22),
+            Constraint::Percentage(6),
+            Constraint::Percentage(21),
             Constraint::Percentage(30),
         ],
     )
