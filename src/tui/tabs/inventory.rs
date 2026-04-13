@@ -198,6 +198,19 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         Line::from(""),
     ];
 
+    // Lifecycle
+    let lifecycle = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+    if let Some(state) = lifecycle {
+        text.push(Line::from(vec![
+            Span::styled("Lifecycle: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{} {}", state.icon(), state),
+                Style::default().fg(state.color()),
+            ),
+        ]));
+        text.push(Line::from(""));
+    }
+
     // Tags
     if let Some(tags) = app.model.asset_tags.get(&asset.name) {
         if !tags.is_empty() {

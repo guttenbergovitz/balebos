@@ -80,6 +80,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                         handle_contractor_assigning_mode(app, key.code)
                     }
                     InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
+                    InputMode::LifecycleEditing => handle_lifecycle_editing_mode(app, key.code)?,
                 }
             }
         }
@@ -171,6 +172,12 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
             if app.selected_asset().is_some() {
                 app.asset_details_scroll = 0;
                 app.input_mode = InputMode::AssetDetails;
+            }
+        }
+        KeyCode::Char('L') => {
+            // Set lifecycle for selected asset
+            if app.selected_asset().is_some() {
+                app.input_mode = InputMode::LifecycleEditing;
             }
         }
         KeyCode::Down | KeyCode::Char('j') => app.next(),
@@ -629,4 +636,82 @@ fn handle_asset_details_mode(app: &mut App, code: KeyCode) {
         }
         _ => {}
     }
+}
+
+fn handle_lifecycle_editing_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    use crate::inventory::AssetLifecycle;
+    
+    match code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        KeyCode::Char('1') => {
+            if let Some(asset) = app.selected_asset() {
+                let _ = crate::app::set_lifecycle(
+                    &app.storage,
+                    &asset.name,
+                    AssetLifecycle::Active,
+                    Some("Set from TUI"),
+                    "tui",
+                );
+                app.refresh()?;
+            }
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('2') => {
+            if let Some(asset) = app.selected_asset() {
+                let _ = crate::app::set_lifecycle(
+                    &app.storage,
+                    &asset.name,
+                    AssetLifecycle::UnderReview,
+                    Some("Set from TUI"),
+                    "tui",
+                );
+                app.refresh()?;
+            }
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('3') => {
+            if let Some(asset) = app.selected_asset() {
+                let _ = crate::app::set_lifecycle(
+                    &app.storage,
+                    &asset.name,
+                    AssetLifecycle::Deprecated,
+                    Some("Set from TUI"),
+                    "tui",
+                );
+                app.refresh()?;
+            }
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('4') => {
+            if let Some(asset) = app.selected_asset() {
+                let _ = crate::app::set_lifecycle(
+                    &app.storage,
+                    &asset.name,
+                    AssetLifecycle::Decommissioned,
+                    Some("Set from TUI"),
+                    "tui",
+                );
+                app.refresh()?;
+            }
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('5') => {
+            if let Some(asset) = app.selected_asset() {
+                let _ = crate::app::set_lifecycle(
+                    &app.storage,
+                    &asset.name,
+                    AssetLifecycle::Abandoned,
+                    Some("Set from TUI"),
+                    "tui",
+                );
+                app.refresh()?;
+            }
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
 }

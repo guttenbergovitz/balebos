@@ -113,6 +113,7 @@ pub enum InputMode {
     RoleAssigning(RoleAssignStep),
     ContractorAssigning(ContractorAssignStep),
     AssetDetails,
+    LifecycleEditing,     // Editing asset lifecycle state
 }
 
 // Re-export workflow step types for convenience

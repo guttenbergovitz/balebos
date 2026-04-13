@@ -189,6 +189,7 @@ pub struct TuiModel {
     pub groups: Vec<DomainGroup>,
     pub stats: GlobalStats,
     pub asset_tags: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    pub lifecycle_events: Vec<crate::inventory::LifecycleEvent>,
 }
 
 pub struct GlobalStats {
@@ -604,6 +605,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         groups: final_groups,
         stats,
         asset_tags,
+        lifecycle_events: records.lifecycle_events,
     })
 }
 

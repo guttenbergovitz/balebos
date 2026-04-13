@@ -97,6 +97,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::AssetDetails {
         draw_asset_details_modal(f, app);
     }
+    if app.input_mode == InputMode::LifecycleEditing {
+        draw_lifecycle_edit_modal(f, app);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,3 +1207,76 @@ fn draw_asset_details_modal(f: &mut Frame, app: &App) {
 }
 
 use crate::tui::app::{ContractorAssignStep, RoleAssignStep};
+
+fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
+    use crate::inventory::AssetLifecycle;
+    
+    let area = centered_rect(50, 40, f.area());
+    let block = Block::default()
+        .title(" Set Asset Lifecycle State (Esc to cancel) ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("1. ", Style::default().fg(Color::Green)),
+            Span::raw(" "),
+            Span::styled("Active", Style::default().fg(Color::Green)),
+            Span::raw(" - Normal operations"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("2. ", Style::default().fg(Color::Yellow)),
+            Span::raw(" "),
+            Span::styled("Under Review", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Being evaluated"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("3. ", Style::default().fg(Color::Magenta)),
+            Span::raw(" "),
+            Span::styled("Deprecated", Style::default().fg(Color::Magenta)),
+            Span::raw(" - Scheduled for removal"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("4. ", Style::default().fg(Color::Gray)),
+            Span::raw(" "),
+            Span::styled("Decommissioned", Style::default().fg(Color::Gray)),
+            Span::raw(" - Removed but tracked"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("5. ", Style::default().fg(Color::Red)),
+            Span::raw(" "),
+            Span::styled("Abandoned", Style::default().fg(Color::Red)),
+            Span::raw(" - No owner, stale"),
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "Current: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            if let Some(asset) = app.selected_asset() {
+                let state = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+                match state {
+                    Some(s) => Span::styled(
+                        format!("{} {}", s.icon(), s),
+                        Style::default().fg(s.color()),
+                    ),
+                    None => Span::styled("Not set", Style::default().fg(Color::DarkGray)),
+                }
+            } else {
+                Span::raw("No asset selected")
+            },
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text).block(block);
+    f.render_widget(paragraph, area);
+}
