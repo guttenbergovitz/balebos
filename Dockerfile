@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Builder
 # ==========================================
-FROM --platform=$BUILDPLATFORM rust:1.88-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.94.1-bookworm AS builder
 
 WORKDIR /app
 

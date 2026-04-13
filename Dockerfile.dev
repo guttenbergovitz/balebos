@@ -52,7 +52,7 @@ RUN ARCH=$(cat /tools/.arch) && \
 # ==========================================
 # Dev runtime
 # ==========================================
-FROM rust:1.88-bookworm
+FROM rust:1.94.1-bookworm
 
 WORKDIR /app
 
