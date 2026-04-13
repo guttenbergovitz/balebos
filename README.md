@@ -21,7 +21,7 @@ Balebos is designed so that system state does not depend on constant human atten
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in a high-performance OLAP engine (DuckDB) with auto-migration from JSONL
+- stores state in columnar format (Apache Parquet) with DataFusion query engine
 - tracks changes over time
 - exposes system state via API / queries
 - highlights drift and unknowns
@@ -72,7 +72,7 @@ Balebos exists to make that visible and controlled.
 
 - no magic
 - deterministic pipelines
-- simple storage over complex infrastructure (JSONL for interchange, DuckDB for speed)
+- simple storage over complex infrastructure (JSONL for interchange, Parquet for analytics)
 - visibility over abstraction
 - cost-aware by default
 
@@ -170,19 +170,11 @@ balebos org assign company 333444 --project 345678 --role technician
 ### Data Storage
 
 Balebos uses a tiered storage approach:
-- **DuckDB (`.duckdb`)** - Primary high-performance storage for TUI and analysis.
-- **JSONL (`.jsonl`)** - Backward compatibility and data interchange.
+- **Apache Parquet** - Columnar storage for fast analytical queries
+- **DataFusion** - Query engine with SQL support
+- **JSONL (`.jsonl`)** - Backup, interchange, and audit trail
 
-By default, the system looks for `data/inventory.jsonl`. You can enable DuckDB backend by setting an environment variable:
-```bash
-export BALEBOS_STORAGE=duckdb
-```
-
-This approach ensures:
-- Built-in auto-migration from existing JSONL files
-- Sub-second queries even with millions of records
-- Easy backup and version control via text files
-- Native SQL support for ad-hoc analysis
+Storage is automatically partitioned by record type and date for optimal performance. JSONL files remain available for backup and external processing.
 
 ### Core Concepts
 
@@ -369,7 +361,7 @@ Balebos integrates with external tools to leverage proven solutions:
 git clone https://github.com/yourusername/balebos.git
 cd balebos
 
-# Build the binary (requires DuckDB library in LIBRARY_PATH)
+# Build the binary
 make build
 
 # Run Balebos
@@ -387,7 +379,7 @@ A `Makefile` is provided for common tasks:
 ### Dependencies
 
 - Rust 1.88+
-- [DuckDB](https://duckdb.org/) (for high-performance storage)
+- Apache Parquet (for columnar storage)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
   - [dnsx](https://github.com/projectdiscovery/dnsx)
