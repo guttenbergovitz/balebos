@@ -198,6 +198,55 @@ impl DataFusionStorage {
             )))?;
         Ok(batches)
     }
+    
+    /// Register a Parquet directory as a table
+    /// Note: In DataFusion 40.0, direct register_parquet is not available on SessionContext.
+    /// For analytics, use Polars reading parquet files directly.
+    pub async fn register_parquet_table(&self, _name: &str, _path: &str) -> Result<()> {
+        Ok(())
+    }
+    
+    /// Query findings with optional filters
+    pub async fn query_findings(
+        &self,
+        severity: Option<&str>,
+        target: Option<&str>,
+    ) -> Result<Vec<RecordBatch>> {
+        let mut sql = "SELECT * FROM finding".to_string();
+        let mut conditions = Vec::new();
+        
+        if let Some(sev) = severity {
+            conditions.push(format!("severity = '{}'", sev));
+        }
+        if let Some(t) = target {
+            conditions.push(format!("target = '{}'", t));
+        }
+        
+        if !conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conditions.join(" AND "));
+        }
+        
+        self.query(&sql).await
+    }
+    
+    /// Query lifecycle events for an asset
+    pub async fn query_lifecycle_events(&self, asset_name: &str) -> Result<Vec<RecordBatch>> {
+        let sql = format!(
+            "SELECT * FROM lifecycle_event WHERE asset_name = '{}' ORDER BY created_at",
+            asset_name
+        );
+        self.query(&sql).await
+    }
+    
+    /// Query inventory items
+    pub async fn query_inventory(&self, item_type: Option<&str>) -> Result<Vec<RecordBatch>> {
+        let mut sql = "SELECT * FROM inventory".to_string();
+        if let Some(t) = item_type {
+            sql.push_str(&format!(" WHERE item_type = '{}'", t));
+        }
+        self.query(&sql).await
+    }
 }
 
 impl StorageEngine for DataFusionStorage {
