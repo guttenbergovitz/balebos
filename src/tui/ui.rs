@@ -320,7 +320,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
+            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | L: Lifecycle | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
         }
         Tab::Organization => {
             " q: Quit | R: Refresh | 1-4: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
