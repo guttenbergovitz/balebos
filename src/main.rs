@@ -22,7 +22,7 @@ use crate::app::{
     export_status_html, export_status_markdown, generate_report, get_domain_stats,
     get_inventory_diff, http_check, list_domains, probe_subdomains, scan_domain, Severity,
 };
-use crate::storage::{JsonlStorage, StorageEngine, StorageEngineExt};
+use crate::storage::{ParquetStorage, StorageEngine, StorageEngineExt};
 use cli::{
     parse_command, Command, FindingCommand, FindingSeverityFilter, FindingStatus, OrgCommand,
     ProbeKind, RiskCommand, TagCommand,
@@ -101,33 +101,11 @@ fn print_usage() {
 }
 
 fn main() {
-    // Initialize hybrid storage (JSONL for reads, Parquet for analytics)
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    
-    let storage: Arc<dyn StorageEngine> = rt.block_on(async {
-        let hybrid = crate::storage::hybrid::HybridStorage::new(
-            "data/inventory.jsonl",
-            "data/parquet",
-        )
-        .await
-        .expect("Failed to initialize storage");
-        
-        // Run migration if needed
-        match hybrid.migrate_if_needed().await {
-            Ok(Some(report)) => {
-                eprintln!(
-                    "Migrated {} records to Parquet storage",
-                    report.migrated_records
-                );
-            }
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("Warning: migration failed: {}", e);
-            }
-        }
-        
-        Arc::new(hybrid) as Arc<dyn StorageEngine>
-    });
+    // Initialize Parquet storage
+    let storage: Arc<dyn StorageEngine> = Arc::new(
+        crate::storage::ParquetStorage::new("data/parquet")
+            .expect("Failed to initialize storage"),
+    );
     
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 

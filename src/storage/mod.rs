@@ -1,10 +1,7 @@
-pub mod datafusion;
-pub mod hybrid;
-pub mod jsonl;
-pub mod migration;
+pub mod parquet;
 pub mod reader;
 
-pub use self::jsonl::JsonlStorage;
+pub use self::parquet::ParquetStorage;
 use crate::error::Result;
 use serde::Serialize;
 
