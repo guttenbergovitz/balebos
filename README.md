@@ -132,6 +132,13 @@ balebos finding show <id>              # Show finding details
 balebos finding acknowledge <id>       # Acknowledge a finding
 balebos finding resolve <id>           # Resolve a finding manually
 
+# Asset lifecycle management
+balebos asset lifecycle set <asset> <state> [--reason <text>]
+                                       # Set asset lifecycle state
+balebos asset lifecycle show <asset>           # Show asset lifecycle info
+balebos asset lifecycle history <asset>        # Show lifecycle history
+balebos asset lifecycle list                   # List assets by lifecycle state
+
 # Tag management
 balebos tag add example.com to-review
 balebos tag add example.com priority-high
@@ -184,10 +191,11 @@ This approach ensures:
 3. **Normalization** - Assets are normalized for consistent storage and analysis
 4. **Anomaly detection** - Identification of suspicious patterns and deviations
 5. **Findings** - Persisted issues with severity, category, and lifecycle (open/acknowledged/resolved)
-6. **Auto-resolve** - Findings automatically close when underlying issues are fixed
-7. **Operational monitoring** - Regular reports highlighting changes requiring attention
-8. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
-9. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
+6. **Asset Lifecycle** - Formal states: Active, Under Review, Deprecated, Decommissioned, Abandoned
+7. **Auto-resolve** - Findings automatically close when underlying issues are fixed
+8. **Operational monitoring** - Regular reports highlighting changes requiring attention
+9. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+10. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
 
 ### Organizational Model
 
@@ -298,9 +306,11 @@ balebos ui
 
 The TUI provides:
 - Inventory browsing with hierarchical subdomain view
-- Asset details: DNS records, HTTP info, TLS certificates, redirect chains
+- Asset details: DNS records, HTTP info, TLS certificates, redirect chains, lifecycle state
+- Asset lifecycle management (set state, view history)
 - Organization management (brands, companies, persons)
 - Project management with asset assignments
+- Findings management with severity filtering
 - Live scanning and filtering
 
 #### Exporting Status Reports
