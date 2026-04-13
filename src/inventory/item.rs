@@ -43,6 +43,8 @@ pub enum ItemType {
     Finding,
     #[serde(rename = "finding_event")]
     FindingEvent,
+    #[serde(rename = "lifecycle_event")]
+    LifecycleEvent,
 }
 
 // This struct represents an item in our inventory storage

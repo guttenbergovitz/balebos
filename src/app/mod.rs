@@ -1,3 +1,4 @@
+pub mod asset;
 pub mod batch;
 pub mod check;
 pub mod diff;
@@ -12,6 +13,10 @@ pub mod status;
 pub mod tags;
 pub mod tree;
 
+pub use self::asset::{
+    display_lifecycle_info, display_lifecycle_summary, filter_by_lifecycle, get_lifecycle,
+    get_lifecycle_history, list_assets_with_lifecycle, set_lifecycle,
+};
 pub use self::batch::{batch_process, run_single_recon};
 pub use self::check::{check_inventory, run_checks_and_persist, Severity};
 pub use self::diff::get_inventory_diff;

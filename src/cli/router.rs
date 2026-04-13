@@ -14,6 +14,7 @@ pub enum Command {
     Org(OrgCommand),
     Tag(TagCommand),
     Finding(FindingCommand),
+    Asset(AssetCommand),
 }
 
 pub enum ProbeKind {
@@ -133,6 +134,22 @@ pub enum FindingSeverityFilter {
     Critical,
 }
 
+/// Asset management commands.
+pub enum AssetCommand {
+    LifecycleSet {
+        asset_name: String,
+        state: String,
+        reason: Option<String>,
+    },
+    LifecycleShow {
+        asset_name: String,
+    },
+    LifecycleHistory {
+        asset_name: String,
+    },
+    LifecycleList,
+}
+
 /// Parse command-line arguments into a structured Command.
 ///
 /// Returns `None` if no valid command is recognized
@@ -203,6 +220,7 @@ pub fn parse_command() -> Option<Command> {
         "org" => parse_org_command(&args),
         "tag" => parse_tag_command(&args),
         "finding" => parse_finding_command(&args),
+        "asset" => parse_asset_command(&args),
         _ => None,
     }
 }
@@ -400,6 +418,38 @@ fn parse_finding_command(args: &[String]) -> Option<Command> {
             }
 
             Some(Command::Finding(FindingCommand::Cleanup { days }))
+        }
+        _ => None,
+    }
+}
+fn parse_asset_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "lifecycle" => {
+            let lifecycle_action = args.get(3)?;
+            match lifecycle_action.as_str() {
+                "set" => {
+                    let asset_name = args.get(4)?.clone();
+                    let state = args.get(5)?.clone();
+                    let reason = find_flag_value(args, "--reason");
+                    Some(Command::Asset(AssetCommand::LifecycleSet {
+                        asset_name,
+                        state,
+                        reason,
+                    }))
+                }
+                "show" => {
+                    let asset_name = args.get(4)?.clone();
+                    Some(Command::Asset(AssetCommand::LifecycleShow { asset_name }))
+                }
+                "history" => {
+                    let asset_name = args.get(4)?.clone();
+                    Some(Command::Asset(AssetCommand::LifecycleHistory { asset_name }))
+                }
+                "list" => Some(Command::Asset(AssetCommand::LifecycleList)),
+                _ => None,
+            }
         }
         _ => None,
     }

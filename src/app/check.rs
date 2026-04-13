@@ -421,7 +421,11 @@ fn check_http_status_findings(
 }
 
 // Run all checks and return findings (internal helper)
-fn run_all_checks(items: &[InventoryItem], http_observations: &[HttpObservation]) -> Vec<Finding> {
+fn run_all_checks(
+    items: &[InventoryItem],
+    http_observations: &[HttpObservation],
+    lifecycle_events: &[crate::inventory::LifecycleEvent],
+) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     findings.extend(check_staleness_findings(items, 14));
@@ -430,6 +434,8 @@ fn run_all_checks(items: &[InventoryItem], http_observations: &[HttpObservation]
     findings.extend(check_invalid_data_findings(items));
     findings.extend(check_subdomain_patterns_findings(items));
     findings.extend(check_http_status_findings(items, http_observations));
+    findings.extend(check_abandoned_assets(items, lifecycle_events, http_observations));
+    findings.extend(check_decommissioned_still_present(items, lifecycle_events, http_observations));
 
     findings
 }
@@ -480,7 +486,7 @@ pub fn run_checks_and_persist(
         .collect();
 
     // Run checks
-    let candidate_findings = run_all_checks(&filtered_items, &filtered_http_observations);
+    let candidate_findings = run_all_checks(&filtered_items, &filtered_http_observations, &records.lifecycle_events);
 
     // Determine which check_name+target combos are already open
     let existing_keys = open_finding_keys(&records.findings, &records.finding_events);
@@ -606,6 +612,36 @@ fn auto_resolve_findings(
                     false
                 }
             }
+            "abandoned_asset" => {
+                // Check if asset is no longer abandoned (recent observations)
+                if let Some(obs_list) = domain_http_obs.get(&finding.target) {
+                    let latest_obs = obs_list.iter().max_by_key(|o| o.checked_at);
+                    if let Some(obs) = latest_obs {
+                        let age = now.signed_duration_since(obs.checked_at);
+                        let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+                        age_days < 30 // Has recent observation
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            "decommissioned_still_present" => {
+                // Check if asset is no longer responding (no recent observations)
+                if let Some(obs_list) = domain_http_obs.get(&finding.target) {
+                    let latest_obs = obs_list.iter().max_by_key(|o| o.checked_at);
+                    if let Some(obs) = latest_obs {
+                        let age = now.signed_duration_since(obs.checked_at);
+                        let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+                        age_days >= 7 // No recent observations (7+ days)
+                    } else {
+                        true // No observations at all
+                    }
+                } else {
+                    true // No observations at all
+                }
+            }
             _ => false, // Don't auto-resolve other check types
         };
 
@@ -685,7 +721,7 @@ pub fn check_inventory(
         .collect();
 
     // Run checks via Finding-based internals, then convert to Issue
-    let findings = run_all_checks(&filtered_items, &filtered_http_observations);
+    let findings = run_all_checks(&filtered_items, &filtered_http_observations, &records.lifecycle_events);
     let issues: Vec<Issue> = findings.iter().map(Issue::from).collect();
 
     Ok(issues)
@@ -834,4 +870,134 @@ mod tests {
         let issues = check_subdomain_patterns(&items);
         assert!(issues.is_empty());
     }
+}
+
+// --- Lifecycle checks ---
+
+/// Check for abandoned assets (stale + no observations + no owner)
+fn check_abandoned_assets(
+    items: &[InventoryItem],
+    lifecycle_events: &[crate::inventory::LifecycleEvent],
+    http_observations: &[HttpObservation],
+) -> Vec<Finding> {
+    use crate::inventory::{get_current_lifecycle, AssetLifecycle};
+
+    let mut findings = Vec::new();
+    let now = Utc::now();
+
+    // Group items by domain
+    let mut domain_items: HashMap<&String, Vec<&InventoryItem>> = HashMap::new();
+    for item in items.iter().filter(|i| i.item_type == ItemType::Domain) {
+        domain_items.entry(&item.name).or_default().push(item);
+    }
+
+    // Group HTTP observations by domain
+    let mut domain_http_obs: HashMap<&String, Vec<&HttpObservation>> = HashMap::new();
+    for obs in http_observations {
+        domain_http_obs.entry(&obs.target).or_default().push(obs);
+    }
+
+    for (domain, domain_item_list) in domain_items {
+        // Skip if already marked as abandoned
+        let current_lifecycle = get_current_lifecycle(lifecycle_events, domain);
+        if current_lifecycle == Some(AssetLifecycle::Abandoned) {
+            continue;
+        }
+
+        // Check staleness (90+ days)
+        let latest_item = domain_item_list.iter().max_by_key(|i| i.discovered_at);
+        let is_stale = if let Some(item) = latest_item {
+            let age = now.signed_duration_since(item.discovered_at);
+            let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+            age_days >= 90
+        } else {
+            false
+        };
+
+        if !is_stale {
+            continue;
+        }
+
+        // Check for recent HTTP observations (within 30 days)
+        let has_recent_obs = if let Some(obs_list) = domain_http_obs.get(domain) {
+            let latest_obs = obs_list.iter().max_by_key(|o| o.checked_at);
+            if let Some(obs) = latest_obs {
+                let age = now.signed_duration_since(obs.checked_at);
+                let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+                age_days < 30
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if has_recent_obs {
+            continue;
+        }
+
+        // Asset is stale with no recent observations - likely abandoned
+        let message = format!(
+            "Asset '{}' appears abandoned: not seen in 90+ days, no recent HTTP checks",
+            domain
+        );
+        findings.push(Finding::new(
+            FindingSeverity::High,
+            FindingCategory::Lifecycle,
+            "abandoned_asset",
+            domain,
+            &message,
+        ));
+    }
+
+    findings
+}
+
+/// Check for decommissioned assets that are still being observed
+fn check_decommissioned_still_present(
+    items: &[InventoryItem],
+    lifecycle_events: &[crate::inventory::LifecycleEvent],
+    http_observations: &[HttpObservation],
+) -> Vec<Finding> {
+    use crate::inventory::{get_current_lifecycle, AssetLifecycle};
+
+    let mut findings = Vec::new();
+    let now = Utc::now();
+
+    for item in items.iter().filter(|i| i.item_type == ItemType::Domain) {
+        let current_lifecycle = get_current_lifecycle(lifecycle_events, &item.name);
+
+        // Only check assets marked as decommissioned
+        if current_lifecycle != Some(AssetLifecycle::Decommissioned) {
+            continue;
+        }
+
+        // Check if there are recent HTTP observations
+        let recent_obs: Vec<&HttpObservation> = http_observations
+            .iter()
+            .filter(|o| o.target == item.name)
+            .filter(|o| {
+                let age = now.signed_duration_since(o.checked_at);
+                let age_days = age.num_seconds() as u64 / (24 * 60 * 60);
+                age_days < 7 // Recent = within 7 days
+            })
+            .collect();
+
+        if !recent_obs.is_empty() {
+            let message = format!(
+                "Decommissioned asset '{}' is still responding ({} recent observations)",
+                item.name,
+                recent_obs.len()
+            );
+            findings.push(Finding::new(
+                FindingSeverity::Medium,
+                FindingCategory::Operational,
+                "decommissioned_still_present",
+                &item.name,
+                &message,
+            ));
+        }
+    }
+
+    findings
 }

@@ -1,4 +1,5 @@
 use crate::app::finding::{Finding, FindingEvent};
+use crate::inventory::LifecycleEvent;
 use crate::app::probe::{AsnObservation, DnsObservation, HostingObservation, HttpObservation};
 use crate::error::Result;
 use crate::inventory::{AssetTag, InventoryItem, ItemType};
@@ -38,6 +39,7 @@ pub struct Records {
     pub contractor_assignments: Vec<ExternalContractorAssignment>,
     pub asset_importances: Vec<AssetImportanceRecord>,
     pub domain_registrations: Vec<DomainRegistrationRecord>,
+    pub lifecycle_events: Vec<LifecycleEvent>,
 }
 
 /// Parse typed records from an iterator of JSON string lines.
@@ -138,6 +140,11 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::FindingEvent => {
                 if let Ok(e) = serde_json::from_str::<FindingEvent>(&line) {
                     records.finding_events.push(e);
+                }
+            }
+            ItemType::LifecycleEvent => {
+                if let Ok(e) = serde_json::from_str::<LifecycleEvent>(&line) {
+                    records.lifecycle_events.push(e);
                 }
             }
         }
