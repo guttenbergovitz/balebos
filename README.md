@@ -382,7 +382,7 @@ A `Makefile` is provided for common tasks:
 - `make dev-check` - Quick compilation check
 - `make dev-test` - Run all tests
 - `make dev-fix` - Auto-format and lint fix
-- `make clean` - Clean build artifacts and local DuckDB
+- `make clean` - Clean build artifacts
 
 ### Dependencies
 
