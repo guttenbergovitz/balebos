@@ -255,11 +255,14 @@ impl StorageEngine for DataFusionStorage {
     }
     
     fn save_string(&self, _json: &str) -> Result<()> {
-        unimplemented!("Use write_batch for DataFusionStorage")
+        // Currently a no-op; HybridStorage handles JSONL writes.
+        // DataFusion writes happen via batch migration or direct write_batch.
+        Ok(())
     }
-    
+
     fn save_string_batch(&self, _json_lines: &[String]) -> Result<()> {
-        unimplemented!("Use write_batch for DataFusionStorage")
+        // Currently a no-op; see save_string above.
+        Ok(())
     }
     
     fn read_all_records(&self) -> Result<crate::storage::reader::Records> {

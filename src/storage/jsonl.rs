@@ -48,6 +48,7 @@ impl StorageEngine for JsonlStorage {
         let mut writer = BufWriter::new(file);
 
         writeln!(writer, "{}", json)?;
+        writer.flush()?;
 
         Ok(())
     }

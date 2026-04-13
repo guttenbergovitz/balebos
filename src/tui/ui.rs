@@ -272,16 +272,25 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     use crate::tui::quotes::get_random_quote;
 
     let scan_status_locked = app.scan_status.lock().unwrap_or_else(|p| p.into_inner());
-    let (scan_msg, scan_time) = scan_status_locked.clone();
+    let scan_state = scan_status_locked.clone();
     drop(scan_status_locked);
+
+    let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
 
     // Check if status expired (older than 5 seconds) or empty
     let now = chrono::Utc::now();
-    let should_show_status =
-        !scan_msg.is_empty() && (now.signed_duration_since(scan_time).num_seconds() < 5);
+    let should_show_status = !scan_state.message.is_empty()
+        && (is_scanning || now.signed_duration_since(scan_state.timestamp).num_seconds() < 5);
 
     let status_text = if should_show_status {
-        scan_msg
+        if is_scanning && !scan_state.steps.is_empty() {
+            // Show current step and summary of completed steps
+            let done = scan_state.steps.len();
+            let total = 8; // total recon steps
+            format!("⟳ {} [{}/{} done]", scan_state.message, done, total)
+        } else {
+            scan_state.message
+        }
     } else if let Some((ref msg, msg_time)) = app.status_message {
         if now.signed_duration_since(msg_time).num_seconds() < 5 {
             msg.clone()

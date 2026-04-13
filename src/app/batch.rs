@@ -387,24 +387,105 @@ pub fn batch_process(
     Ok(stats)
 }
 
-/// Run full reconnaissance on a single domain
-pub fn run_single_recon(
+/// Result of a single recon step
+#[derive(Debug, Clone)]
+pub struct ReconStepResult {
+    pub name: &'static str,
+    pub success: bool,
+    pub message: String,
+}
+
+/// Run full reconnaissance on a single domain with progress reporting
+pub fn run_single_recon_with_progress(
     domain: &str,
     storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],
-) -> crate::error::Result<()> {
+    on_step: &dyn Fn(&str),
+    on_result: &dyn Fn(&ReconStepResult),
+) -> crate::error::Result<Vec<ReconStepResult>> {
     if crate::ignore::is_ignored(domain, ignore_patterns) {
-        return Ok(());
+        let result = ReconStepResult {
+            name: "ignore",
+            success: true,
+            message: format!("Domain {} ignored by filter", domain),
+        };
+        on_result(&result);
+        return Ok(vec![result]);
     }
 
+    let mut results = Vec::new();
+
     // 1. Scan/Add domain
-    crate::app::scan::scan_domain(domain, storage)?;
+    on_step("Scanning domain...");
+    match crate::app::scan::scan_domain(domain, storage) {
+        Ok(_) => {
+            let r = ReconStepResult {
+                name: "scan",
+                success: true,
+                message: format!("Domain {} added to inventory", domain),
+            };
+            on_result(&r);
+            results.push(r);
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "scan",
+                success: false,
+                message: format!("Failed to scan {}: {}", domain, e),
+            };
+            on_result(&r);
+            results.push(r);
+            return Ok(results);
+        }
+    }
 
     // 2. Run RDAP probe (apex domain)
-    let _ = probe::run_rdap_probe(storage, domain);
+    on_step("Probing RDAP registration...");
+    match probe::run_rdap_probe(storage, domain) {
+        Ok(_) => {
+            let r = ReconStepResult {
+                name: "rdap",
+                success: true,
+                message: "RDAP probe completed".to_string(),
+            };
+            on_result(&r);
+            results.push(r);
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "rdap",
+                success: false,
+                message: format!("RDAP probe failed: {}", e),
+            };
+            on_result(&r);
+            results.push(r);
+        }
+    }
 
     // 3. Discover subdomains
-    let subdomains = probe::probe_subdomains(domain, storage).unwrap_or_default();
+    on_step("Discovering subdomains...");
+    let subdomains = match probe::probe_subdomains(domain, storage) {
+        Ok(subs) => {
+            let r = ReconStepResult {
+                name: "subdomains",
+                success: true,
+                message: format!("Found {} subdomains", subs.len()),
+            };
+            on_result(&r);
+            results.push(r);
+            subs
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "subdomains",
+                success: false,
+                message: format!("Subdomain discovery failed: {}", e),
+            };
+            on_result(&r);
+            results.push(r);
+            vec![]
+        }
+    };
 
     // 4. Prepare targets for batch probes (domain + subdomains)
     let mut targets = vec![domain.to_string()];
@@ -415,23 +496,97 @@ pub fn run_single_recon(
     }
 
     // 5. Batch DNS Probe
-    let dns_observations = probe::probe_dns_batch(&targets, storage).unwrap_or_default();
+    on_step("Probing DNS records...");
+    let dns_observations = match probe::probe_dns_batch(&targets, storage) {
+        Ok(obs) => {
+            let r = ReconStepResult {
+                name: "dns",
+                success: true,
+                message: format!("DNS resolved for {} targets", obs.len()),
+            };
+            on_result(&r);
+            results.push(r);
+            obs
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "dns",
+                success: false,
+                message: format!("DNS probe failed: {}", e),
+            };
+            on_result(&r);
+            results.push(r);
+            vec![]
+        }
+    };
 
     // 6. Batch HTTP Probe
-    let http_observations = probe::probe_http_batch(&targets, storage).unwrap_or_default();
+    on_step("Probing HTTP status...");
+    let http_observations = match probe::probe_http_batch(&targets, storage) {
+        Ok(obs) => {
+            let success_count = obs.iter().filter(|o| o.status.is_some()).count();
+            let r = ReconStepResult {
+                name: "http",
+                success: true,
+                message: format!("HTTP checked {} targets ({} responded)", obs.len(), success_count),
+            };
+            on_result(&r);
+            results.push(r);
+            obs
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "http",
+                success: false,
+                message: format!("HTTP probe failed: {}", e),
+            };
+            on_result(&r);
+            results.push(r);
+            vec![]
+        }
+    };
 
     // 7. ASN Probe
+    on_step("Looking up ASN information...");
     let ip_to_host = probe::asn::build_ip_host_map(&dns_observations);
     let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
-    if !ip_to_host.is_empty() {
-        if let Ok(asn_obs) = probe::probe_asn_batch(&ip_to_host, storage) {
-            for obs in asn_obs {
-                asn_by_ip.insert(obs.target.clone(), obs);
+    if ip_to_host.is_empty() {
+        let r = ReconStepResult {
+            name: "asn",
+            success: true,
+            message: "No IPs to look up (skipping ASN)".to_string(),
+        };
+        on_result(&r);
+        results.push(r);
+    } else {
+        match probe::probe_asn_batch(&ip_to_host, storage) {
+            Ok(asn_obs) => {
+                let count = asn_obs.len();
+                for obs in asn_obs {
+                    asn_by_ip.insert(obs.target.clone(), obs);
+                }
+                let r = ReconStepResult {
+                    name: "asn",
+                    success: true,
+                    message: format!("ASN lookup completed for {} IPs", count),
+                };
+                on_result(&r);
+                results.push(r);
+            }
+            Err(e) => {
+                let r = ReconStepResult {
+                    name: "asn",
+                    success: false,
+                    message: format!("ASN lookup failed: {}", e),
+                };
+                on_result(&r);
+                results.push(r);
             }
         }
     }
 
     // 8. Hosting Detection
+    on_step("Detecting hosting providers...");
     let mut dns_map: HashMap<String, probe::DnsObservation> = HashMap::new();
     for obs in dns_observations {
         dns_map.entry(obs.target.clone()).or_insert(obs);
@@ -442,8 +597,38 @@ pub fn run_single_recon(
         http_map.entry(obs.target.clone()).or_insert(obs);
     }
 
-    let _ = hosting::detect_hosting_batch(&targets, &dns_map, &http_map, &asn_by_ip, storage);
+    match hosting::detect_hosting_batch(&targets, &dns_map, &http_map, &asn_by_ip, storage) {
+        Ok(obs) => {
+            let detected = obs.iter().filter(|o| o.provider_id.is_some()).count();
+            let r = ReconStepResult {
+                name: "hosting",
+                success: true,
+                message: format!("Hosting detected for {} targets", detected),
+            };
+            on_result(&r);
+            results.push(r);
+        }
+        Err(e) => {
+            let r = ReconStepResult {
+                name: "hosting",
+                success: false,
+                message: format!("Hosting detection failed: {}", e),
+            };
+            on_result(&r);
+            results.push(r);
+        }
+    }
 
+    Ok(results)
+}
+
+/// Run full reconnaissance on a single domain (backward compatible)
+pub fn run_single_recon(
+    domain: &str,
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) -> crate::error::Result<()> {
+    let _ = run_single_recon_with_progress(domain, storage, ignore_patterns, &|_| {}, &|_| {});
     Ok(())
 }
 

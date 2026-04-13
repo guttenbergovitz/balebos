@@ -119,6 +119,24 @@ pub enum InputMode {
 // Re-export workflow step types for convenience
 pub use crate::tui::workflows::{ContractorAssignStep, RoleAssignStep};
 
+/// Detailed scan state for TUI status bar
+#[derive(Clone)]
+pub struct ScanState {
+    pub message: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub steps: Vec<crate::app::batch::ReconStepResult>,
+}
+
+impl ScanState {
+    pub fn new() -> Self {
+        Self {
+            message: String::new(),
+            timestamp: chrono::Utc::now(),
+            steps: Vec::new(),
+        }
+    }
+}
+
 /// Visible items in Inventory table (tree structure)
 pub struct App {
     pub model: TuiModel,
@@ -151,7 +169,7 @@ pub struct App {
 
     // Scanning state
     pub is_scanning: Arc<Mutex<bool>>,
-    pub scan_status: Arc<Mutex<(String, chrono::DateTime<chrono::Utc>)>>,
+    pub scan_status: Arc<Mutex<ScanState>>,
     pub ignore_patterns: Vec<String>,
 
     // Tag selection state
@@ -199,7 +217,7 @@ impl App {
 
             // Scanning state
             is_scanning: Arc::new(Mutex::new(false)),
-            scan_status: Arc::new(Mutex::new((String::new(), chrono::Utc::now()))),
+            scan_status: Arc::new(Mutex::new(ScanState::new())),
             ignore_patterns,
 
             // Tag selection state
@@ -1291,20 +1309,44 @@ impl App {
                 *s = true;
             }
 
-            let res = crate::app::run_single_recon(&target, &storage, &ignore_patterns);
+            let scan_status_for_step = scan_status.clone();
+            let on_step = move |step: &str| {
+                let mut status = scan_status_for_step.lock().unwrap_or_else(|p| p.into_inner());
+                status.message = step.to_string();
+                status.timestamp = chrono::Utc::now();
+            };
+
+            let scan_status_for_result = scan_status.clone();
+            let on_result = move |result: &crate::app::batch::ReconStepResult| {
+                let mut status = scan_status_for_result.lock().unwrap_or_else(|p| p.into_inner());
+                status.steps.push(result.clone());
+                status.timestamp = chrono::Utc::now();
+            };
+
+            let res = crate::app::batch::run_single_recon_with_progress(
+                &target,
+                &storage,
+                &ignore_patterns,
+                &on_step,
+                &on_result,
+            );
 
             {
                 let mut s = is_scanning.lock().unwrap_or_else(|p| p.into_inner());
                 *s = false;
             }
 
+            let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
+            let failures: Vec<_> = status.steps.iter().filter(|s| !s.success).collect();
             if let Err(e) = res {
-                let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
-                *status = (format!("❌ Scan error: {}", e), chrono::Utc::now());
+                status.message = format!("❌ Scan error: {}", e);
+            } else if !failures.is_empty() {
+                let first = &failures[0];
+                status.message = format!("❌ {} failed: {}", first.name, first.message);
             } else {
-                let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
-                *status = ("✓ Scan completed".to_string(), chrono::Utc::now());
+                status.message = "✓ Scan completed".to_string();
             }
+            status.timestamp = chrono::Utc::now();
         });
     }
 
@@ -1384,25 +1426,27 @@ impl App {
         let scan_status = self.scan_status.clone();
 
         std::thread::spawn(move || {
-            let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
-            *status = ("⟳ Running checks...".to_string(), chrono::Utc::now());
-            drop(status);
+            {
+                let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
+                status.message = "⟳ Running checks...".to_string();
+                status.timestamp = chrono::Utc::now();
+                status.steps.clear();
+            }
 
             match run_checks_and_persist(&storage, &ignore_patterns) {
                 Ok(findings) => {
                     let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
                     if findings.is_empty() {
-                        *status = ("✓ No new findings".to_string(), chrono::Utc::now());
+                        status.message = "✓ No new findings".to_string();
                     } else {
-                        *status = (
-                            format!("✓ Found {} new findings", findings.len()),
-                            chrono::Utc::now(),
-                        );
+                        status.message = format!("✓ Found {} new findings", findings.len());
                     }
+                    status.timestamp = chrono::Utc::now();
                 }
                 Err(e) => {
                     let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
-                    *status = (format!("❌ Error: {}", e), chrono::Utc::now());
+                    status.message = format!("❌ Error: {}", e);
+                    status.timestamp = chrono::Utc::now();
                 }
             }
         });
