@@ -154,6 +154,9 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
         KeyCode::Char('x') => {
             app.toggle_external_filter();
         }
+        KeyCode::Char('v') => {
+            app.toggle_risk_sort();
+        }
         KeyCode::Char('s') => {
             app.start_rescan();
         }

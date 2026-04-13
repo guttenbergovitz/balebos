@@ -756,6 +756,11 @@ impl App {
         self.update_visible_items();
     }
 
+    pub fn toggle_risk_sort(&mut self) {
+        self.inventory.toggle_risk_sort();
+        self.update_visible_items();
+    }
+
     pub fn cycle_tag_filter(&mut self) {
         // Open tag filter selector instead of cycling
         self.start_tag_filter_selection();

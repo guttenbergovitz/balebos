@@ -7,6 +7,7 @@ pub mod list;
 pub mod org;
 pub mod probe;
 pub mod report;
+pub mod risk;
 pub mod scan;
 pub mod stats;
 pub mod status;
@@ -16,6 +17,10 @@ pub mod tree;
 pub use self::asset::{
     display_lifecycle_info, display_lifecycle_summary, filter_by_lifecycle, get_lifecycle,
     get_lifecycle_history, list_assets_with_lifecycle, set_lifecycle,
+};
+pub use self::risk::{
+    calculate_all_risks, calculate_asset_risk, risk_color, risk_label, RiskFactor,
+    RiskFactorSource, RiskScore, RiskWeights,
 };
 pub use self::batch::{batch_process, run_single_recon};
 pub use self::check::{check_inventory, run_checks_and_persist, Severity};

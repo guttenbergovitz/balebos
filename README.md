@@ -43,6 +43,9 @@ balebos finding run
 
 # List open findings
 balebos finding list
+
+# Show risk report
+balebos risk report
 ```
 
 ## Documentation
@@ -138,6 +141,11 @@ balebos asset lifecycle set <asset> <state> [--reason <text>]
 balebos asset lifecycle show <asset>           # Show asset lifecycle info
 balebos asset lifecycle history <asset>        # Show lifecycle history
 balebos asset lifecycle list                   # List assets by lifecycle state
+
+# Risk scoring
+balebos risk report                    # Show full risk report for all assets
+balebos risk top [N]                   # Show top N highest risk assets (default: 10)
+balebos risk show <asset>              # Show detailed risk score for an asset
 
 # Tag management
 balebos tag add example.com to-review

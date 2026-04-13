@@ -15,6 +15,7 @@ pub enum Command {
     Tag(TagCommand),
     Finding(FindingCommand),
     Asset(AssetCommand),
+    Risk(RiskCommand),
 }
 
 pub enum ProbeKind {
@@ -150,6 +151,12 @@ pub enum AssetCommand {
     LifecycleList,
 }
 
+pub enum RiskCommand {
+    Report,
+    Top { n: usize },
+    Show { asset_name: String },
+}
+
 /// Parse command-line arguments into a structured Command.
 ///
 /// Returns `None` if no valid command is recognized
@@ -221,6 +228,7 @@ pub fn parse_command() -> Option<Command> {
         "tag" => parse_tag_command(&args),
         "finding" => parse_finding_command(&args),
         "asset" => parse_asset_command(&args),
+        "risk" => parse_risk_command(&args),
         _ => None,
     }
 }
@@ -450,6 +458,23 @@ fn parse_asset_command(args: &[String]) -> Option<Command> {
                 "list" => Some(Command::Asset(AssetCommand::LifecycleList)),
                 _ => None,
             }
+        }
+        _ => None,
+    }
+}
+
+fn parse_risk_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "report" => Some(Command::Risk(RiskCommand::Report)),
+        "top" => {
+            let n = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
+            Some(Command::Risk(RiskCommand::Top { n }))
+        }
+        "show" => {
+            let asset_name = args.get(3)?.clone();
+            Some(Command::Risk(RiskCommand::Show { asset_name }))
         }
         _ => None,
     }

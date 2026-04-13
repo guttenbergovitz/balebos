@@ -11,6 +11,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::app::risk::risk_color;
 use crate::tui::app::App;
 use crate::tui::model::AssetState;
 use crate::tui::state::VisibleItem;
@@ -33,7 +34,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     let selected_style = Style::default()
         .add_modifier(Modifier::REVERSED)
         .fg(Color::Yellow);
-    let header_cells = ["Asset", "Status", "Tech"]
+    let header_cells = ["Asset", "Risk", "Status", "Tech"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan)));
     let header = Row::new(header_cells)
@@ -79,15 +80,24 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                 "    "
             };
 
+            let risk_score = app.model.risk_scores.get(&asset.name).copied().unwrap_or(0);
+            let risk_fg = risk_color(risk_score);
+
             let name_span = if is_subdomain {
-                Span::styled(asset.name.clone(), Style::default().fg(Color::White))
+                Span::styled(asset.name.clone(), Style::default().fg(risk_fg))
             } else {
                 Span::styled(
                     asset.name.clone(),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(risk_fg)
                         .add_modifier(Modifier::BOLD),
                 )
+            };
+
+            let risk_text = if risk_score > 0 {
+                risk_score.to_string()
+            } else {
+                "-".to_string()
             };
 
             let mut status_style = Style::default();
@@ -147,23 +157,28 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                     ),
                     name_span,
                 ])),
+                Cell::from(risk_text).style(Style::default().fg(risk_fg)),
                 Cell::from(status_text).style(status_style),
                 Cell::from(tech),
             ]))
         })
         .collect();
 
-    let title = if let Some(ref tag) = app.inventory.filter_tag {
+    let mut title = if let Some(ref tag) = app.inventory.filter_tag {
         format!(" Inventory (Space to toggle) [Tag: {}] ", tag)
     } else {
         " Inventory (Space to toggle) ".to_string()
     };
+    if app.inventory.sort_by_risk {
+        title = format!("{}[Risk sort] ", title);
+    }
 
     let t = Table::new(
         rows,
         [
-            Constraint::Percentage(45),
-            Constraint::Percentage(25),
+            Constraint::Percentage(40),
+            Constraint::Percentage(8),
+            Constraint::Percentage(22),
             Constraint::Percentage(30),
         ],
     )
@@ -197,6 +212,21 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         ]),
         Line::from(""),
     ];
+
+    // Risk Score
+    let risk_score = app.model.risk_scores.get(&asset.name).copied().unwrap_or(0);
+    if risk_score > 0 {
+        let risk_label_text = crate::app::risk::risk_label(risk_score);
+        let risk_fg = risk_color(risk_score);
+        text.push(Line::from(vec![
+            Span::styled("Risk: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{} ({})", risk_score, risk_label_text),
+                Style::default().fg(risk_fg).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        text.push(Line::from(""));
+    }
 
     // Lifecycle
     let lifecycle = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);

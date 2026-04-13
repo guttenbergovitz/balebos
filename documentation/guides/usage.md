@@ -111,6 +111,7 @@ Balebos includes a comprehensive Terminal User Interface (TUI) for interactive e
 - **Filtering**: 
     - Press `/` or `f` to search for specific domains.
     - Press `x` to toggle the visibility of external redirects.
+    - Press `v` to sort assets by risk score (highest risk first).
 - **Domain Actions**:
     - `a`: Add and scan a new domain in the background.
     - `s`: Trigger a re-scan of the selected asset.
@@ -366,6 +367,37 @@ Findings automatically resolve when the underlying condition is fixed:
 - **timeout** - Resolved when request completes
 
 Auto-resolution creates a `resolved` event in the finding's history.
+
+#### Risk Scoring
+
+Balebos calculates per-asset risk scores based on open findings, lifecycle state, ownership, and staleness.
+
+**Show full risk report:**
+```bash
+balebos risk report
+```
+
+**Show top highest-risk assets:**
+```bash
+# Top 10 (default)
+balebos risk top
+
+# Top 20
+balebos risk top 20
+```
+
+**Show detailed risk for a specific asset:**
+```bash
+balebos risk show example.com
+```
+
+Risk scores consider:
+- **Findings severity** (Critical = 100, High = 50, Medium = 20, Low = 5)
+- **Lifecycle state** (Abandoned ×2.0, Deprecated ×1.5, Under Review ×1.2)
+- **Ownership** (unassigned assets get ×2.0 multiplier)
+- **Staleness** (assets stale >30 days get ×1.5 multiplier)
+
+In the TUI, press `v` in the Inventory tab to sort assets by risk score, and watch the color-coded asset names (green → yellow → orange → red → dark red).
 
 #### Tracking Changes
 
