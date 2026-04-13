@@ -1,5 +1,6 @@
 pub mod datafusion;
 pub mod jsonl;
+pub mod migration;
 pub mod reader;
 
 pub use self::jsonl::JsonlStorage;

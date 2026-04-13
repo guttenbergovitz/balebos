@@ -37,9 +37,19 @@ impl Default for StorageConfig {
 
 /// DataFusion-based storage implementation
 pub struct DataFusionStorage {
+    #[allow(dead_code)]
     ctx: SessionContext,
     config: StorageConfig,
     schemas: HashMap<ItemType, SchemaRef>,
+}
+
+impl std::fmt::Debug for DataFusionStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataFusionStorage")
+            .field("config", &self.config)
+            .field("schemas", &self.schemas.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl DataFusionStorage {
@@ -59,6 +69,11 @@ impl DataFusionStorage {
         storage.register_tables().await?;
         
         Ok(storage)
+    }
+    
+    /// Get schema for item type
+    pub fn get_schema(&self, item_type: ItemType) -> Option<SchemaRef> {
+        self.schemas.get(&item_type).cloned()
     }
     
     /// Register Arrow schemas for all record types
