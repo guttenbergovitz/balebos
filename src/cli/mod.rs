@@ -1,3 +1,4 @@
+pub mod handlers;
 pub mod router;
 
 pub use self::router::{
