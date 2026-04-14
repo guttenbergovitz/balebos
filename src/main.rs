@@ -65,7 +65,7 @@ fn print_usage() {
     eprintln!("  balebos org company list                       - List all companies");
     eprintln!("  balebos org brand add <name>                   - Add a brand");
     eprintln!("  balebos org brand list                         - List all brands");
-    eprintln!("  balebos org project add <name> --brand <id> --company <id>");
+    eprintln!("  balebos org project add <name> --company <id>");
     eprintln!("                                                 - Add a project");
     eprintln!("  balebos org project list                       - List all projects");
     eprintln!("  balebos org assign asset <host> --project <id> - Assign asset to project");
