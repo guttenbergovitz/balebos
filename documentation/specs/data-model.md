@@ -9,16 +9,10 @@ Balebos uses two complementary formats:
 ### Parquet (Primary Storage)
 Records are persisted in Apache Parquet format using Polars:
 - **One file per record type** - `domain.parquet`, `finding.parquet`, etc.
-- **Columnar storage** - Optimised for analytical queries and compression
-- **Unified UTF-8 schema** - All fields stored as strings for flexibility
-- **In-memory buffering** - Records accumulate in memory (default: 100 record threshold) before batch flushing to disk
-- **Schema inference** - Fields are detected automatically from the first JSON object of each type
-
-Benefits:
-- Sub-second queries via Polars
-- Efficient compression
-- Natural multi-type files (one domain.parquet contains all domain records)
-- No server dependency
+- **Single-column "raw_json" schema** - To ensure 100% data fidelity for complex types (e.g., nested arrays/objects in HTTP/DNS observations) that would otherwise break strict columnar schemas.
+- **Analytical queries via in-memory DataFrames** - Records are deserialized into memory by Polars/Serde for processing.
+- **Efficient compression** - Leverages Parquet's native compression for large JSON strings.
+- **Long-term direction** - We aim to move back to a granular columnar schema once schema evolution handling (e.g., `List(Null)` vs `List(String)`) becomes more robust in the underlying engine.
 
 ### JSONL (Interchange & Audit)
 Records can be exported/imported as newline-delimited JSON:

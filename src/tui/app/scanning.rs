@@ -12,6 +12,14 @@ impl App {
         self.input.clear();
         self.input_mode = InputMode::Normal;
 
+        // Reset scan status before starting a new scan
+        {
+            let mut status = self.scan_status.lock().unwrap_or_else(|p| p.into_inner());
+            status.message = "Starting scan...".to_string();
+            status.steps.clear();
+            status.timestamp = chrono::Utc::now();
+        }
+
         let storage = self.storage.clone();
         let is_scanning = self.is_scanning.clone();
         let scan_status = self.scan_status.clone();

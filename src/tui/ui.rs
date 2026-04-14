@@ -286,8 +286,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         if is_scanning && !scan_state.steps.is_empty() {
             // Show current step and summary of completed steps
             let done = scan_state.steps.len();
-            let total = 8; // total recon steps
-            format!("⟳ {} [{}/{} done]", scan_state.message, done, total)
+            format!("⟳ {} [{} completed]", scan_state.message, done)
         } else {
             scan_state.message
         }
