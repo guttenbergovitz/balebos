@@ -13,6 +13,6 @@ pub use rdap::{run_rdap_probe, run_rdap_probe_no_save};
 pub use subfinder::{probe_subdomains, probe_subdomains_batch};
 #[allow(unused_imports)] // Used in tests
 pub use types::{
-    AsnObservation, Confidence, DetectionMethod, DnsObservation, HostingObservation,
-    HttpErrorKind, HttpObservation, RedirectHop,
+    AsnObservation, Confidence, DetectionMethod, DnsObservation, HostingObservation, HttpErrorKind,
+    HttpObservation, RedirectHop,
 };

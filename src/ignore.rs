@@ -44,7 +44,7 @@ pub fn is_ignored(name: &str, patterns: &[String]) -> bool {
         if pattern.contains('*') {
             // Convert glob pattern to regex
             // Replace * with .* (any characters)
-            let regex_pattern = pattern.replace('*', ".*");
+            let regex_pattern = pattern.replace('.', "\\.").replace('*', ".*");
 
             // Try to create and use the regex
             if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {

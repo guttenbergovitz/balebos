@@ -25,9 +25,10 @@ Balebos is organized into focused components, each with a clear responsibility:
 2. **Storage Layer**
    - Implements a **Port/Adapter (Hexagonal)** architecture
    - **Port**: `StorageEngine` trait defines the persistence interface
-   - **Adapter (JSONL)**: Legacy/interchange backend using append-only text files
-   - **Adapter (DuckDB)**: Primary high-performance OLAP backend with SQL support
-   - Handles auto-migration from JSONL to DuckDB on first run
+   - **Adapter (JSONL)**: Interchange and audit trail backend using append-only text files
+   - **Adapter (Parquet)**: Primary storage using Polars-based columnar format with in-memory buffering
+   - Per-record-type Parquet files with automatic schema inference
+   - In-memory buffer with configurable batch flushing (default: 100 records)
    - Provides thread-safe access via `Arc<dyn StorageEngine>`
 
 3. **Application Layer**
@@ -42,10 +43,12 @@ Balebos is organized into focused components, each with a clear responsibility:
 
 5. **TUI Layer** (`src/tui/`)
    - Interactive terminal dashboard built with `ratatui` and `crossterm`
-   - **`model.rs`** — Loads and aggregates inventory data into `AssetState` groups (root domains with subdomains), computes global statistics, and detects external redirects by comparing root domains (handles www, subfolders, sibling subdomains, and two-part TLDs like `.co.uk`)
-   - **`app.rs`** — Application state machine managing navigation, input modes (Normal, Editing, Filtering), and background scan orchestration via `Arc<Mutex<>>` shared state
-   - **`ui.rs`** — Rendering layer: header with live stats and scan progress, collapsible asset table, detail inspector (DNS, HTTP, TLS, redirect chains), filter bar, input modal, and keyboard help footer
-   - Background scanning runs in a separate thread with progress updates piped back to the UI via shared `scan_status` — no stdout pollution in alternate screen mode
+   - **`app/`** — Modular state management with separate modules for each view (inventory, findings, organisation, scanning)
+   - **`state/mod.rs`** — Core application state machine managing navigation, input modes (Normal, Editing, Filtering), and background orchestration
+   - **`state/findings.rs`** — Findings view with lifecycle management, filtering, and severity prioritisation
+   - **`model.rs`** — Loads and aggregates inventory data into `AssetState` groups (root domains with subdomains), computes global statistics, and detects external redirects
+   - **`ui.rs`** — Rendering layer: header with live stats, multi-tab navigation (Inventory, Organisation, Projects, Findings), detail inspector, filter bar, and keyboard help
+   - Background scanning runs in a separate thread with progress updates piped back via shared `scan_status` — no stdout pollution in alternate screen mode
 
 ### Data Flow
 
@@ -94,15 +97,16 @@ preserving the original data for reference and auditing.
 
 ### Hybrid Persistence
 
-Balebos combines the simplicity of append-only text logs with the power of an analytical database:
+Balebos combines the simplicity of append-only text logs with the performance of columnar storage:
 
-- **JSONL (Interchange)**: Used for data import/export and manual auditing.
-- **DuckDB (Operational)**: Used for the live TUI and reporting.
+- **JSONL (Interchange)**: Used for data import/export, manual auditing, and pipeline integration with external tools.
+- **Parquet (Operational)**: Polars-based columnar storage used for the live TUI, reporting, and analytical queries.
 
-Even in DuckDB, the system maintains an **event-sourced** approach where possible, appending observations rather than overwriting historical state. This ensures:
-- Full audit trail preserved
-- Resilience to partial failures
-- High-performance analytical queries (DuckDB excels at processing large event tables)
+The system maintains an **event-sourced** approach throughout, appending observations rather than overwriting state:
+- Full audit trail preserved in Parquet format
+- Resilience to partial failures and interruptions
+- High-performance queries on large event tables via Polars columnar processing
+- In-memory buffering with automatic batch flushing ensures fast writes without overwhelming I/O
 
 ### Observations
 
@@ -139,7 +143,48 @@ Balebos enforces simple operational invariants:
 - low-frequency observations reduce confidence
 - absence of data is treated as a signal
 
-Violations of these invariants are reported as issues.
+Violations of these invariants are reported as findings.
+
+### Findings
+
+Findings are the primary mechanism for tracking operational issues in Balebos. Unlike ephemeral issues that were previously printed and discarded, findings are:
+
+- **Persisted** - Stored as append-only records in the inventory
+- **Queryable** - Can be listed, filtered, and analyzed over time
+- **Auditable** - Complete lifecycle history (created, acknowledged, resolved)
+- **Deduplicated** - Same check + target combination won't create duplicates
+- **Auto-resolving** - Close automatically when conditions are fixed
+
+#### Finding Lifecycle
+
+```
+Created → Open → Acknowledged → Resolved
+   ↓
+Auto-resolved (when condition fixed)
+```
+
+1. **Created** - A check detects an issue and creates a finding
+2. **Open** - Default state, requires attention
+3. **Acknowledged** - Seen but not yet fixed (suppresses alerts)
+4. **Resolved** - Fixed either manually or automatically
+
+#### Severity Levels
+
+- **Critical** - Immediate action required (expired certs, outages)
+- **High** - Address soon (certs expiring, stale production assets)
+- **Medium** - Worth investigating (low confidence, unknown sources)
+- **Low** - Minor issues (missing checks)
+- **Info** - Informational observations
+
+#### Categories
+
+Findings are categorized to support different operational workflows:
+- **Security** - Certificate issues, TLS problems
+- **Compliance** - Policy violations
+- **Financial** - Cost-related concerns
+- **Lifecycle** - Stale assets, deprecation
+- **Operational** - HTTP errors, DNS issues
+- **Governance** - Ownership, tagging
 
 ### Anomaly Detection
 
@@ -149,6 +194,8 @@ Rather than just collecting data, Balebos actively analyzes it for anomalies:
 - Items from unknown or untrusted sources
 - Items with suspicious patterns
 - Unexpected changes in the inventory
+
+Detected anomalies are persisted as findings with appropriate severity and category.
 
 ### Synthesis for Decision Making
 
@@ -171,26 +218,36 @@ Balebos acts as a high-performance orchestrator for specialized OSINT tools. To 
 
 ### Storage Format
 
-Data is stored as newline-delimited JSON (JSONL) with support for multiple record types:
+Data is stored in Parquet format with per-record-type files. The system maintains a unified Utf8 schema across all fields for flexibility and extensibility.
 
-```json
-{"item_type":"domain","id":"uuid","name":"example.com","discovered_at":"timestamp"}
-{"item_type":"subdomain","id":"sub:api.example.com","name":"api.example.com","source":"subfinder"}
-{"item_type":"dns_record","target":"acme-corp.com","a":["203.0.113.10"],"aaaa":["2001:db8::1"],"cname":[]}
-{"item_type":"http_check","target":"acme-corp.com","status":200,"final_url":"https://www.acme-corp.com/","redirect_chain":[{"url":"https://acme-corp.com","status":301,"redirect_to":"https://www.acme-corp.com/"}],"tech":["Nginx","HTTP/3"],"webserver":"nginx","title":"Acme Corp"}
+**File Structure:**
+```
+data/
+├── domain.parquet          # Root domains
+├── subdomain.parquet       # Discovered subdomains
+├── dns_record.parquet      # DNS resolution observations
+├── http_check.parquet      # HTTP probe results
+├── finding.parquet         # Persisted issues
+├── finding_event.parquet   # Finding lifecycle events
+├── org_brand.parquet       # Organisation brands
+├── org_company.parquet     # Companies and contractors
+├── org_project.parquet     # Projects and cost centres
+└── ... (additional record types as needed)
 ```
 
-**Record Types:**
-- `domain` - Root domains
-- `subdomain` - Discovered subdomains
-- `http_check` - HTTP probe results and network observations (including tech stack, server fingerprints, and redirect chains via `httpx`)
+**Data Flow:**
+1. Records arrive as JSON objects (e.g., from CLI, external tools, API)
+2. In-memory buffer accumulates records (default: 100 record threshold)
+3. Buffer automatically flushes to Parquet when threshold reached
+4. Polars schema is inferred from the first JSON object of each type
+5. Fields are stored as UTF-8 text for schema flexibility
 
-This format offers:
-- Human-readability for debugging
-- Easy processing with standard tools (grep, jq, etc.)
-- Schema flexibility for extension
-- Simple append operations
-- Support for heterogeneous data (multiple record types in single file)
+**Benefits of This Approach:**
+- **Human-readable interchange** - JSONL format used for imports/exports and CLI integration
+- **High-performance queries** - Parquet columnar format enables fast analytical queries via Polars
+- **Schema flexibility** - Unified Utf8 schema allows new fields without migration
+- **Batch efficiency** - In-memory buffering reduces I/O overhead
+- **Audit trail** - Append-only records preserve complete history
 
 ### Error Handling
 
@@ -226,6 +283,51 @@ Balebos uses exit codes to signal system state:
 - 41 → external tool error
 
 This allows integration with automation and alerting systems for specific response types.
+
+## Findings System
+
+### Motivation
+
+The original `check` command printed issues to stdout and exited. This had several limitations:
+- No historical record of what was detected
+- No way to track if issues were getting better or worse
+- No acknowledgment or resolution workflow
+- Report module had to parse strings to count issues
+
+The findings system replaces ephemeral issues with persisted records.
+
+### Implementation
+
+**Finding Structure:**
+```rust
+pub struct Finding {
+    pub id: String,                    // UUID
+    pub severity: FindingSeverity,     // Info, Low, Medium, High, Critical
+    pub category: FindingCategory,     // Security, Compliance, etc.
+    pub check_name: String,            // Which check produced this
+    pub target: String,                // Affected asset
+    pub message: String,               // Human-readable description
+    pub created_at: DateTime<Utc>,
+}
+```
+
+**Lifecycle Events:**
+```rust
+pub struct FindingEvent {
+    pub finding_id: String,
+    pub event_type: FindingEventType,  // Acknowledged, Resolved
+    pub created_at: DateTime<Utc>,
+}
+```
+
+### Auto-Resolution
+
+Findings automatically resolve when the underlying condition is fixed:
+- Staleness finding → Resolved when asset seen recently
+- HTTP error finding → Resolved when HTTP returns success
+- Low confidence finding → Resolved when multiple observations exist
+
+This ensures the findings list reflects current reality without manual cleanup.
 
 ## v0.2.0 Features
 
@@ -285,13 +387,18 @@ Balebos can be extended in several ways:
 
 ## Design Decisions and Trade-offs
 
-### Why DuckDB and JSONL?
+### Why Parquet and JSONL?
 
-The project evolved from a pure JSONL storage to a DuckDB-backed system:
+The project evolved from pure JSONL storage to a Parquet-backed system with Polars:
 
-- **JSONL** remains for its simplicity, human-readability, and ease of backup. It is the perfect format for piping data between CLI tools.
-- **DuckDB** was introduced to solve performance bottlenecks in the TUI and reporting. It provides sub-second query times on large datasets without the overhead of a full-blown database server (PostgreSQL/MySQL).
-- The **Hexagonal Architecture** allows users to choose the backend that fits their needs (e.g., pure JSONL for tiny embedded systems, DuckDB for large-scale recon).
+- **JSONL** remains for its simplicity, human-readability, and ease of backup. It's the perfect format for piping data between CLI tools, importing/exporting, and cross-system integration.
+- **Parquet** was introduced to solve performance bottlenecks in the TUI and reporting. Combined with Polars, it provides:
+  - Sub-second query times on large datasets
+  - Columnar compression for efficient storage
+  - No server dependency (unlike PostgreSQL/MySQL)
+  - In-memory processing for local analysis
+  - Schema inference for field flexibility
+- The **Hexagonal Architecture** with the `StorageEngine` trait allows flexibility: code is decoupled from storage choice, making it straightforward to add new backends if needed.
 
 ### Why append-only?
 

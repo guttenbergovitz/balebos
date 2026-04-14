@@ -2,12 +2,12 @@ use super::types::DnsObservation;
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
 use crate::storage::{StorageEngine, StorageEngineExt};
-use std::sync::Arc;
 use chrono::Utc;
 use serde::Deserialize;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
@@ -50,7 +50,10 @@ fn check_dnsx_installation() -> Result<()> {
 }
 
 /// Run a batch DNS probe using a single dnsx process for efficiency.
-pub fn probe_dns_batch(targets: &[String], storage: &Arc<dyn StorageEngine>) -> Result<Vec<DnsObservation>> {
+pub fn probe_dns_batch(
+    targets: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }

@@ -21,10 +21,11 @@ Balebos is designed so that system state does not depend on constant human atten
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in a high-performance OLAP engine (DuckDB) with auto-migration from JSONL
+- stores state in columnar format (Apache Parquet) with DataFusion query engine
 - tracks changes over time
 - exposes system state via API / queries
 - highlights drift and unknowns
+- persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
 
 ## Quick Start
 
@@ -36,6 +37,15 @@ docker compose run --rm balebos ui
 
 # Scan a domain
 docker compose run --rm balebos scan example.com
+
+# Run checks and persist findings
+balebos finding run
+
+# List open findings
+balebos finding list
+
+# Show risk report
+balebos risk report
 ```
 
 ## Documentation
@@ -45,6 +55,7 @@ docker compose run --rm balebos scan example.com
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
   - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
   - [Tag Management](documentation/guides/tag-management.md) - Asset tagging and organization
+  - [Findings Management](documentation/guides/findings.md) - Persisted issues and lifecycle tracking
 - **Technical Specs**
   - [Architecture Overview](documentation/architecture.md) - Design principles and layers
   - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
@@ -64,7 +75,7 @@ Balebos exists to make that visible and controlled.
 
 - no magic
 - deterministic pipelines
-- simple storage over complex infrastructure (JSONL for interchange, DuckDB for speed)
+- simple storage over complex infrastructure (JSONL for interchange, Parquet for analytics)
 - visibility over abstraction
 - cost-aware by default
 
@@ -74,91 +85,48 @@ Beta stage with high-performance storage and container support.
 
 ## Usage
 
-Balebos provides several commands for managing and monitoring your infrastructure:
+Balebos is built for hands-on infrastructure management. Here are the key workflows:
 
+**Quick start:**
 ```bash
-# Scan a domain and add to inventory
-balebos scan example.com
-
-# Discover subdomains using subfinder
-balebos probe subdomains example.com
-
-# Resolve DNS records using dnsx
-balebos probe dns example.com
-
-# Check HTTP status of a domain
-balebos probe http example.com
-
-# List domains in inventory
-balebos list
-balebos list --unique
-
-# Display domain hierarchy with nested subdomains
-balebos tree
-
-# Show domain live status with HTTP codes
-balebos status
-
-# Show domain statistics
-balebos stats
-balebos stats --by-domain
-
-# Check for inventory issues and anomalies
-balebos check
-
-# Show changes (last 7 days)
-balebos diff
-
-# Generate consolidated status report
-balebos report
-
-# Launch interactive TUI dashboard
-balebos ui
-
-# Tag management
-balebos tag add example.com to-review
-balebos tag add example.com priority-high
-balebos tag list
-balebos tag list example.com
-balebos tag list-tags
-balebos tag by-tag priority-high
-balebos tag remove example.com to-review
-
-# Organization management
-balebos org brand add "Acme Corp"
-balebos org brand list
-
-balebos org company add "Acme DE" DE --brand 123456
-balebos org company add "External Agency" PL  # no brand = external
-balebos org company list
-
-balebos org person add "Jan" "Kowalski" "jan@example.com"
-balebos org person list
-
-balebos org project add "Website" --company 789012
-balebos org project list
-
-balebos org assign asset api.example.com --project 345678
-balebos org assign person 111222 --project 345678 --role owner
-balebos org assign company 333444 --project 345678 --role technician
+balebos scan example.com                    # Add domain to inventory
+balebos probe subdomains example.com        # Discover subdomains
+balebos probe http example.com              # Check HTTP status
+balebos ui                                  # Launch interactive dashboard
 ```
+
+**Risk and findings:**
+```bash
+balebos finding run                         # Run checks and persist findings
+balebos risk report                         # Show prioritised risk assessment
+balebos finding list --severity high        # List critical issues
+```
+
+**Infrastructure visibility:**
+```bash
+balebos list                                # Show all assets
+balebos tree                                # Hierarchical view
+balebos status                              # Health report by status code
+```
+
+**Ownership and context:**
+```bash
+balebos org brand add "Acme Corp"           # Create brand
+balebos org project add "Website" --company <id>  # Create project
+balebos org assign asset api.example.com --project <id>  # Link asset to team
+balebos asset lifecycle set api.example.com active  # Mark lifecycle state
+```
+
+For comprehensive command reference, advanced filters, batch processing, and export options, see the [Usage Guide](documentation/guides/usage.md).
 
 ### Data Storage
 
 Balebos uses a tiered storage approach:
-- **DuckDB (`.duckdb`)** - Primary high-performance storage for TUI and analysis.
-- **JSONL (`.jsonl`)** - Backward compatibility and data interchange.
+- **Apache Parquet** - Columnar storage for fast analytical queries
+- **DataFusion** - Query engine with SQL support
+- **JSONL (`.jsonl`)** - Backup, interchange, and audit trail
 
-By default, the system looks for `data/inventory.jsonl`. You can enable DuckDB backend by setting an environment variable:
-```bash
-export BALEBOS_STORAGE=duckdb
-```
-
-This approach ensures:
-- Built-in auto-migration from existing JSONL files
-- Sub-second queries even with millions of records
-- Easy backup and version control via text files
-- Native SQL support for ad-hoc analysis
+Storage is automatically partitioned by record type and date for optimal performance. JSONL files remain available for backup and external processing.
 
 ### Core Concepts
 
@@ -166,9 +134,12 @@ This approach ensures:
 2. **Validation** - Structural checks ensure only valid domain names enter the system
 3. **Normalization** - Assets are normalized for consistent storage and analysis
 4. **Anomaly detection** - Identification of suspicious patterns and deviations
-5. **Operational monitoring** - Regular reports highlighting changes requiring attention
-6. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
-7. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
+5. **Findings** - Persisted issues with severity, category, and lifecycle (open/acknowledged/resolved)
+6. **Asset Lifecycle** - Formal states: Active, Under Review, Deprecated, Decommissioned, Abandoned
+7. **Auto-resolve** - Findings automatically close when underlying issues are fixed
+8. **Operational monitoring** - Regular reports highlighting changes requiring attention
+9. **Non-destructive filtering** - Ignore patterns filter display without modifying stored data
+10. **Organizational context** - Assets linked to projects, companies, and brands for ownership tracking
 
 ### Organizational Model
 
@@ -279,9 +250,11 @@ balebos ui
 
 The TUI provides:
 - Inventory browsing with hierarchical subdomain view
-- Asset details: DNS records, HTTP info, TLS certificates, redirect chains
+- Asset details: DNS records, HTTP info, TLS certificates, redirect chains, lifecycle state
+- Asset lifecycle management (set state, view history)
 - Organization management (brands, companies, persons)
 - Project management with asset assignments
+- Findings management with severity filtering
 - Live scanning and filtering
 
 #### Exporting Status Reports
@@ -340,7 +313,7 @@ Balebos integrates with external tools to leverage proven solutions:
 git clone https://github.com/yourusername/balebos.git
 cd balebos
 
-# Build the binary (requires DuckDB library in LIBRARY_PATH)
+# Build the binary
 make build
 
 # Run Balebos
@@ -353,12 +326,12 @@ A `Makefile` is provided for common tasks:
 - `make dev-check` - Quick compilation check
 - `make dev-test` - Run all tests
 - `make dev-fix` - Auto-format and lint fix
-- `make clean` - Clean build artifacts and local DuckDB
+- `make clean` - Clean build artifacts
 
 ### Dependencies
 
 - Rust 1.88+
-- [DuckDB](https://duckdb.org/) (for high-performance storage)
+- Apache Parquet (for columnar storage)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
   - [dnsx](https://github.com/projectdiscovery/dnsx)

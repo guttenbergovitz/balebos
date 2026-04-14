@@ -1,11 +1,11 @@
 use crate::error::{ProbeError, Result};
 use crate::inventory::{InventoryItem, ItemType};
 use crate::storage::{StorageEngine, StorageEngineExt};
-use std::sync::Arc;
 use chrono::Utc;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use uuid::Uuid;
 
 fn run_subfinder(domain: &str) -> Result<String> {
@@ -69,7 +69,10 @@ pub fn probe_subdomains(domain: &str, storage: &Arc<dyn StorageEngine>) -> Resul
     Ok(subdomains)
 }
 
-fn run_subfinder_batch(domains: &[String], storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
+fn run_subfinder_batch(
+    domains: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<String>> {
     let mut all_subdomains = Vec::new();
     let chunk_size = 10; // Frequent updates for better feedback
 
@@ -166,7 +169,10 @@ fn run_subfinder_batch(domains: &[String], storage: &Arc<dyn StorageEngine>) -> 
     Ok(all_subdomains)
 }
 
-pub fn probe_subdomains_batch(domains: &[String], storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
+pub fn probe_subdomains_batch(
+    domains: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<String>> {
     if domains.is_empty() {
         return Ok(Vec::new());
     }

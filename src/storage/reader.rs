@@ -1,3 +1,5 @@
+use crate::app::finding::{Finding, FindingEvent};
+use crate::inventory::LifecycleEvent;
 use crate::app::probe::{AsnObservation, DnsObservation, HostingObservation, HttpObservation};
 use crate::error::Result;
 use crate::inventory::{AssetTag, InventoryItem, ItemType};
@@ -12,8 +14,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 #[derive(Deserialize)]
-struct RecordHeader {
-    item_type: ItemType,
+pub struct RecordHeader {
+    pub item_type: ItemType,
 }
 
 /// All typed records extracted from a heterogeneous JSONL log.
@@ -25,6 +27,8 @@ pub struct Records {
     pub asn_observations: Vec<AsnObservation>,
     pub hosting_observations: Vec<HostingObservation>,
     pub asset_tags: Vec<AssetTag>,
+    pub findings: Vec<Finding>,
+    pub finding_events: Vec<FindingEvent>,
     // Organizational records
     pub persons: Vec<PersonRecord>,
     pub companies: Vec<CompanyRecord>,
@@ -35,6 +39,7 @@ pub struct Records {
     pub contractor_assignments: Vec<ExternalContractorAssignment>,
     pub asset_importances: Vec<AssetImportanceRecord>,
     pub domain_registrations: Vec<DomainRegistrationRecord>,
+    pub lifecycle_events: Vec<LifecycleEvent>,
 }
 
 /// Parse typed records from an iterator of JSON string lines.
@@ -127,6 +132,21 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
                     records.asset_tags.push(tag);
                 }
             }
+            ItemType::Finding => {
+                if let Ok(f) = serde_json::from_str::<Finding>(&line) {
+                    records.findings.push(f);
+                }
+            }
+            ItemType::FindingEvent => {
+                if let Ok(e) = serde_json::from_str::<FindingEvent>(&line) {
+                    records.finding_events.push(e);
+                }
+            }
+            ItemType::LifecycleEvent => {
+                if let Ok(e) = serde_json::from_str::<LifecycleEvent>(&line) {
+                    records.lifecycle_events.push(e);
+                }
+            }
         }
     }
 
@@ -134,6 +154,7 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
 }
 
 /// Read a heterogeneous JSONL log and separate into typed records.
+#[allow(dead_code)]
 pub fn read_records(file_path: &str) -> Result<Records> {
     let path = Path::new(file_path);
 
@@ -143,6 +164,8 @@ pub fn read_records(file_path: &str) -> Result<Records> {
 
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
-    
+
     parse_records(reader.lines().map_while(|r| r.ok()))
 }
+
+

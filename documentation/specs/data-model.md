@@ -2,11 +2,37 @@
 
 This document defines the storage format and data structures used by Balebos. These structures apply to both the newline-delimited JSON (JSONL) files and the `data` column in the DuckDB backend.
 
+## Storage Formats
+
+Balebos uses two complementary formats:
+
+### Parquet (Primary Storage)
+Records are persisted in Apache Parquet format using Polars:
+- **One file per record type** - `domain.parquet`, `finding.parquet`, etc.
+- **Columnar storage** - Optimised for analytical queries and compression
+- **Unified UTF-8 schema** - All fields stored as strings for flexibility
+- **In-memory buffering** - Records accumulate in memory (default: 100 record threshold) before batch flushing to disk
+- **Schema inference** - Fields are detected automatically from the first JSON object of each type
+
+Benefits:
+- Sub-second queries via Polars
+- Efficient compression
+- Natural multi-type files (one domain.parquet contains all domain records)
+- No server dependency
+
+### JSONL (Interchange & Audit)
+Records can be exported/imported as newline-delimited JSON:
+- **Human-readable** - Easy to inspect with standard tools (`jq`, `grep`, etc.)
+- **Pipeline-friendly** - Integrates with external tools and scripts
+- **Audit trail** - Export for compliance and external archival
+- **Portable** - Load into other systems
+
 ## Core Principles
 
-1.  **Heterogeneous Log**: Multiple record types (domains, observations, results) coexist in the same storage (file or table).
-2.  **Append-Only**: Records are never updated or deleted. New observations are simply appended. In DuckDB, each record is an event in the `events` table.
-3.  **Record Header**: Every record must contain an `item_type` field to allow for correct parsing.
+1.  **Heterogeneous Log**: Multiple record types (domains, observations, results) coexist in the same storage (Parquet files).
+2.  **Append-Only**: Records are never updated or deleted. New observations are simply appended. Full history is preserved.
+3.  **Record Header**: Every record must contain an `item_type` field to allow for correct parsing and routing to appropriate files.
+4.  **Query-Time Computation**: Current state is computed from the append-only log, not stored mutably. For example, finding status is determined by its most recent event.
 
 ---
 
@@ -260,7 +286,79 @@ Assigns an external company (no brand) to a Project with a specific contractor r
 
 ---
 
-## 6. Domain Registration Record
+## 6. Finding Record
+
+Persisted issue detected by inventory checks. Findings track operational problems with severity, category, and lifecycle state.
+
+- **`item_type`**: `"finding"`
+- **`id`**: UUID v4
+- **`severity`**: One of `"Critical"`, `"High"`, `"Medium"`, `"Low"`, `"Info"`
+- **`category`**: One of `"Security"`, `"Compliance"`, `"Financial"`, `"Lifecycle"`, `"Operational"`, `"Governance"`
+- **`check_name`**: Name of the check that produced this finding (e.g., `"staleness"`, `"tls_expiry"`)
+- **`target`**: Affected asset (domain, subdomain, etc.)
+- **`message`**: Human-readable description of the issue
+- **`created_at`**: RFC3339 Timestamp
+
+**Example:**
+```json
+{
+  "item_type": "finding",
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "severity": "High",
+  "category": "Lifecycle",
+  "check_name": "staleness",
+  "target": "api.example.com",
+  "message": "Domain not seen in 21 days (threshold: 14 days)",
+  "created_at": "2026-04-12T10:30:00Z"
+}
+```
+
+**Deduplication:**
+Findings are deduplicated by `check_name` + `target` combination. If an open finding already exists for the same check and target, a new finding is not created.
+
+---
+
+## 7. Finding Event Record
+
+Lifecycle events for findings. Events track state transitions (acknowledge, resolve) as append-only records.
+
+- **`item_type`**: `"finding_event"`
+- **`id`**: Unique string (usually `event:{finding_id}:{timestamp}`)
+- **`finding_id`**: UUID of the related finding
+- **`event_type`**: One of `"Acknowledged"`, `"Resolved"`
+- **`created_at`**: RFC3339 Timestamp
+
+**Example (acknowledge):**
+```json
+{
+  "item_type": "finding_event",
+  "id": "event:f47ac10b-58cc-4372-a567-0e02b2c3d479:1712922600",
+  "finding_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "event_type": "Acknowledged",
+  "created_at": "2026-04-12T11:00:00Z"
+}
+```
+
+**Example (resolve):**
+```json
+{
+  "item_type": "finding_event",
+  "id": "event:f47ac10b-58cc-4372-a567-0e02b2c3d479:1712926200",
+  "finding_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "event_type": "Resolved",
+  "created_at": "2026-04-12T12:00:00Z"
+}
+```
+
+**Finding Status Determination:**
+A finding's current status is determined by querying its events:
+- **Resolved** - Has a `Resolved` event (most recent wins)
+- **Acknowledged** - Has an `Acknowledged` event but no `Resolved` event
+- **Open** - No events (or only informational events)
+
+---
+
+## 8. Domain Registration Record
 
 Captures RDAP/WHOIS registration data for a domain, including registrar, expiration dates, and contact information.
 

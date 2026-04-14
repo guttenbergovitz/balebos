@@ -3,13 +3,11 @@
 # Variables
 APP_NAME = balebos
 DOCKER_IMAGE = balebos
-STORAGE_TYPE = duckdb
-LOCAL_DB_PATH = data/inventory.duckdb
-# Path to Homebrew lib for macOS local development
-# This may need adjustment depending on user system
-BREW_LIB_PATH = /opt/homebrew/lib
+DOCKER_IMAGE_DEV = balebos-dev
 
-.PHONY: all build run-ui list scan clean help docker-build docker-ui docker-scan docker-clean dev-fix dev-test dev-check dev-shell
+.PHONY: all build run-ui list scan clean help \
+	docker-build docker-dev docker-ui docker-scan docker-list docker-shell docker-clean \
+	dev-check dev-test dev-fix dev-doc
 
 all: help
 
@@ -17,91 +15,107 @@ all: help
 
 # Build the project locally
 build:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" cargo build --release
+	cargo build --release
 
 # Run TUI locally
 run-ui:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" BALEBOS_STORAGE=$(STORAGE_TYPE) cargo run -- ui
+	cargo run -- ui
 
 # List domains locally
 list:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" BALEBOS_STORAGE=$(STORAGE_TYPE) cargo run -- list
+	cargo run -- list
 
 # Scan a domain locally (usage: make scan domain=example.com)
 scan:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" BALEBOS_STORAGE=$(STORAGE_TYPE) cargo run -- scan $(domain)
+	cargo run -- scan $(domain)
 
-# Clean local build artifacts and database
+# Clean local build artifacts
 clean:
 	cargo clean
-	rm -f $(LOCAL_DB_PATH)
 
 ## --- Code Quality & Iteration (DEV) ---
 
 # Quick check if code compiles
 dev-check:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" cargo check
+	cargo check
 
 # Run all tests
 dev-test:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" cargo test
+	cargo test
 
 # Automatically fix linting and formatting issues
 dev-fix:
 	cargo fmt
-	LIBRARY_PATH="$(BREW_LIB_PATH)" cargo clippy --fix --allow-dirty --allow-staged
+	cargo clippy --fix --allow-dirty --allow-staged
 
 # Open local documentation in browser
 dev-doc:
-	LIBRARY_PATH="$(BREW_LIB_PATH)" cargo doc --open
+	cargo doc --open
 
 ## --- Docker Commands ---
 
-# Build the Docker container
+# Build production Docker image
 docker-build:
-	docker compose build
+	docker build -t $(DOCKER_IMAGE) .
 
-# Run TUI in Docker (interactive)
+# Run dev container with hot reload (mounts source code)
+# Usage: make docker-dev [cmd="scan example.com"]
+docker-dev:
+	docker build -f Dockerfile.dev -t $(DOCKER_IMAGE_DEV) . \
+	&& docker run --rm -it \
+		-v "$(PWD)/src:/app/src" \
+		-v "$(PWD)/Cargo.toml:/app/Cargo.toml" \
+		-v "$(PWD)/Cargo.lock:/app/Cargo.lock" \
+		-v "$(PWD)/data:/app/data" \
+		-v "cargo-registry:/usr/local/cargo/registry" \
+		$(DOCKER_IMAGE_DEV) \
+		cargo watch -x "run -- $(or $(cmd),ui)"
+
+# Run TUI in production container (interactive)
 docker-ui:
-	docker compose run --rm balebos ui
+	docker run --rm -it -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) ui
 
-# Scan a domain in Docker (usage: make docker-scan domain=example.com)
+# Scan a domain in production container
+# Usage: make docker-scan domain=example.com
 docker-scan:
-	docker compose run --rm balebos scan $(domain)
+	docker run --rm -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) scan $(domain)
 
-# List domains in Docker
+# List domains in production container
 docker-list:
-	docker compose run --rm balebos list
+	docker run --rm -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) list
 
-# Enter shell inside the container for debugging
+# Enter shell inside the production container for debugging
 docker-shell:
-	docker compose run --rm --entrypoint bash balebos
+	docker run --rm -it -v "$(PWD)/data:/app/data" --entrypoint bash $(DOCKER_IMAGE)
 
-# Remove all Docker volumes and images related to balebos
+# Remove Docker images related to balebos
 docker-clean:
-	docker compose down -v
-	docker rmi $(DOCKER_IMAGE)
+	docker rmi $(DOCKER_IMAGE) $(DOCKER_IMAGE_DEV) || true
 
 ## --- Help ---
 
 help:
 	@echo "Balebos Management CLI"
 	@echo ""
-	@echo "Local Commands:"
-	@echo "  make build          - Build release binary"
-	@echo "  make run-ui         - Run interactive TUI"
-	@echo "  make list           - List assets in DuckDB"
-	@echo "  make scan domain=X  - Scan a single domain"
-	@echo "  make clean          - Remove build files and local DuckDB"
+	@echo "Docker Commands:"
+	@echo "  make docker-build          - Build production Docker image"
+	@echo "  make docker-dev            - Run dev container with hot reload (TUI)"
+	@echo "  make docker-dev cmd='scan example.com' - Dev mode with custom command"
+	@echo "  make docker-ui             - Run interactive TUI in production container"
+	@echo "  make docker-scan domain=X  - Scan a domain via Docker"
+	@echo "  make docker-list           - List assets via Docker"
+	@echo "  make docker-shell          - Enter production container shell"
+	@echo "  make docker-clean          - Remove Docker images"
+	@echo ""
+	@echo "Local Commands (requires Rust + scanners in PATH):"
+	@echo "  make build                 - Build release binary"
+	@echo "  make run-ui                - Run interactive TUI"
+	@echo "  make list                  - List assets"
+	@echo "  make scan domain=X         - Scan a single domain"
+	@echo "  make clean                 - Remove build files"
 	@echo ""
 	@echo "Dev & Quality:"
-	@echo "  make dev-check      - Quick compilation check"
-	@echo "  make dev-test       - Run unit and integration tests"
-	@echo "  make dev-fix        - Run rustfmt and clippy fix"
-	@echo "  make dev-doc        - Generate and open documentation"
-	@echo ""
-	@echo "Docker Commands:"
-	@echo "  make docker-build   - Build Docker image"
-	@echo "  make docker-ui      - Run TUI in a container (recommmended)"
-	@echo "  make docker-shell   - Enter container shell for debugging"
-	@echo "  make docker-clean   - Remove container and volumes"
+	@echo "  make dev-check             - Quick compilation check"
+	@echo "  make dev-test              - Run unit and integration tests"
+	@echo "  make dev-fix               - Run rustfmt and clippy fix"
+	@echo "  make dev-doc               - Generate and open documentation"

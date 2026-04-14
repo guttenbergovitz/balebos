@@ -4,8 +4,8 @@ use crate::org::{
     ProjectId, ProjectRecord, RoleAssignmentRecord,
 };
 use crate::storage::StorageEngine;
-use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// Hosting information for display in TUI
 #[derive(Debug, Clone)]
@@ -189,6 +189,8 @@ pub struct TuiModel {
     pub groups: Vec<DomainGroup>,
     pub stats: GlobalStats,
     pub asset_tags: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    pub lifecycle_events: Vec<crate::inventory::LifecycleEvent>,
+    pub risk_scores: HashMap<String, u32>,
 }
 
 pub struct GlobalStats {
@@ -490,12 +492,12 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
 
     // 1. Collect all assets
-    for item in records.items {
+    for item in &records.items {
         let project = build_project_context(&item.name);
         let registration = get_registration(&item.name);
         let hosting = hosting_map.get(&item.name).cloned();
         assets_map.entry(item.name.clone()).or_insert(AssetState {
-            name: item.name,
+            name: item.name.clone(),
             latest_dns: None,
             latest_http: None,
             registration,
@@ -504,7 +506,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         });
     }
 
-    for dns in records.dns_observations {
+    for dns in &records.dns_observations {
         let entry = assets_map.entry(dns.target.clone()).or_insert_with(|| {
             let project = build_project_context(&dns.target);
             let registration = get_registration(&dns.target);
@@ -519,13 +521,13 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
             }
         });
         match &entry.latest_dns {
-            Some(existing) if dns.checked_at > existing.checked_at => entry.latest_dns = Some(dns),
-            None => entry.latest_dns = Some(dns),
+            Some(existing) if dns.checked_at > existing.checked_at => entry.latest_dns = Some(dns.clone()),
+            None => entry.latest_dns = Some(dns.clone()),
             _ => {}
         }
     }
 
-    for http in records.http_observations {
+    for http in &records.http_observations {
         let entry = assets_map.entry(http.target.clone()).or_insert_with(|| {
             let project = build_project_context(&http.target);
             let registration = get_registration(&http.target);
@@ -541,12 +543,50 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         });
         match &entry.latest_http {
             Some(existing) if http.checked_at > existing.checked_at => {
-                entry.latest_http = Some(http)
+                entry.latest_http = Some(http.clone())
             }
-            None => entry.latest_http = Some(http),
+            None => entry.latest_http = Some(http.clone()),
             _ => {}
         }
     }
+
+    // Calculate risk scores for all assets before consuming assets_map
+    let asset_names: Vec<String> = assets_map.keys().cloned().collect();
+    let assigned_assets: std::collections::HashSet<String> = records
+        .asset_assignments
+        .iter()
+        .map(|a| a.host.clone())
+        .collect();
+    let mut asset_to_owner: HashMap<String, bool> = HashMap::new();
+    for name in &asset_names {
+        asset_to_owner.insert(name.clone(), assigned_assets.contains(name));
+    }
+    let mut asset_to_staleness: HashMap<String, u64> = HashMap::new();
+    let now = chrono::Utc::now();
+    for name in &asset_names {
+        let latest_check = records
+            .http_observations
+            .iter()
+            .filter(|o| o.target == *name)
+            .map(|o| o.checked_at)
+            .max();
+        if let Some(latest) = latest_check {
+            let days = now.signed_duration_since(latest).num_days().max(0) as u64;
+            asset_to_staleness.insert(name.clone(), days);
+        }
+    }
+    let risk_scores: HashMap<String, u32> = crate::app::risk::calculate_all_risks(
+        &records.findings,
+        &records.finding_events,
+        &records.lifecycle_events,
+        &asset_names,
+        &asset_to_owner,
+        &asset_to_staleness,
+        None,
+    )
+    .into_iter()
+    .map(|s| (s.asset_name, s.total_score))
+    .collect();
 
     // 2. Group subdomains under root domains
     let mut groups: BTreeMap<String, DomainGroup> = BTreeMap::new();
@@ -604,6 +644,8 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         groups: final_groups,
         stats,
         asset_tags,
+        lifecycle_events: records.lifecycle_events,
+        risk_scores,
     })
 }
 

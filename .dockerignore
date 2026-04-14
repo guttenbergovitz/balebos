@@ -6,6 +6,7 @@ target/
 
 # Data
 data/
+!data/providers.json
 *.duckdb
 *.jsonl
 

@@ -1,12 +1,5 @@
 //! Domain model types for organizational entities.
-//!
-//! These types define the business domain model. Currently we use the
-//! storage Record types directly, but these will be used when we build
-//! more business logic layers.
 
-#![allow(dead_code)]
-
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub use isocountry::CountryCode;
@@ -23,10 +16,6 @@ macro_rules! typed_id {
         impl $name {
             pub fn new(value: u128) -> Self {
                 Self(value)
-            }
-
-            pub fn inner(&self) -> u128 {
-                self.0
             }
         }
 
@@ -50,86 +39,6 @@ typed_id!(PersonId);
 typed_id!(CompanyId);
 typed_id!(BrandId);
 typed_id!(ProjectId);
-
-// ---------------------------------------------------------------------------
-// Person
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Person {
-    pub id: PersonId,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
-    pub phone: Option<String>,
-}
-
-impl Person {
-    pub fn display_name(&self) -> String {
-        format!("{} {}", self.first_name, self.last_name)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Company
-// ---------------------------------------------------------------------------
-
-/// A legal entity (company).
-///
-/// - Internal companies belong to a Brand (`brand: Some(...)`)
-/// - External contractors have no brand (`brand: None`)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Company {
-    pub id: CompanyId,
-    pub name: String,
-    pub country: CountryCode,
-    /// The brand this company belongs to. None for external contractors.
-    pub brand: Option<BrandId>,
-}
-
-impl Company {
-    /// Returns true if this is an external contractor (no brand).
-    pub fn is_external(&self) -> bool {
-        self.brand.is_none()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Brand
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Brand {
-    pub id: BrandId,
-    pub name: String,
-}
-
-// ---------------------------------------------------------------------------
-// Project — smallest unit of responsibility (cost center / MPK)
-// ---------------------------------------------------------------------------
-
-/// A project belongs to a Company (which belongs to a Brand).
-///
-/// Projects are cost centers / budget positions within a company.
-/// External contractors can be assigned to projects via RoleAssignment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Project {
-    pub id: ProjectId,
-    pub name: String,
-    pub company: CompanyId,
-    /// Importance rating from 1 (low) to 5 (critical). None if not rated.
-    pub importance: Option<u8>,
-}
-
-// ---------------------------------------------------------------------------
-// Asset — a host bound to exactly one project
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Asset {
-    pub host: String,
-    pub project: ProjectId,
-}
 
 // ---------------------------------------------------------------------------
 // Domain Registration — RDAP/Whois information
@@ -169,19 +78,6 @@ pub enum ContractorRole {
     Security,
 }
 
-impl ContractorRole {
-    /// Returns all contractor role variants.
-    pub fn all() -> &'static [ContractorRole] {
-        &[
-            ContractorRole::Development,
-            ContractorRole::DevOps,
-            ContractorRole::Design,
-            ContractorRole::Consultancy,
-            ContractorRole::Security,
-        ]
-    }
-}
-
 impl std::fmt::Display for ContractorRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -195,7 +91,7 @@ impl std::fmt::Display for ContractorRole {
 }
 
 // ---------------------------------------------------------------------------
-// Role & Assignment
+// Role
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,32 +109,6 @@ impl std::fmt::Display for Role {
             Role::Technician => write!(f, "Technician"),
         }
     }
-}
-
-/// Assigns responsibility for a project to a person and/or company.
-///
-/// At least one of `person` or `company` should be `Some`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Assignment {
-    pub project: ProjectId,
-    pub role: Role,
-    pub person: Option<PersonId>,
-    pub company: Option<CompanyId>,
-}
-
-// ---------------------------------------------------------------------------
-// Observation (reference shape — actual impl lives in probe::http)
-// ---------------------------------------------------------------------------
-
-/// Lightweight observation record linking a host to a point-in-time check.
-/// Full HTTP/DNS observation details are in `app::probe::HttpObservation`
-/// and `app::probe::DnsObservation`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Observation {
-    pub host: String,
-    pub status: u16,
-    pub title: Option<String>,
-    pub observed_at: DateTime<Utc>,
 }
 
 // ---------------------------------------------------------------------------
@@ -259,28 +129,10 @@ mod tests {
     }
 
     #[test]
-    fn test_typed_id_inner() {
-        let id = PersonId::new(42);
-        assert_eq!(id.inner(), 42);
-    }
-
-    #[test]
     fn test_typed_id_from_str() {
         let id: PersonId = "123".parse().unwrap();
-        assert_eq!(id.inner(), 123);
+        assert_eq!(id.to_string(), "123");
         assert!("not_a_number".parse::<PersonId>().is_err());
-    }
-
-    #[test]
-    fn test_person_display_name() {
-        let p = Person {
-            id: PersonId::new(1),
-            first_name: "Jan".to_string(),
-            last_name: "Kowalski".to_string(),
-            email: "jan@example.com".to_string(),
-            phone: None,
-        };
-        assert_eq!(p.display_name(), "Jan Kowalski");
     }
 
     #[test]
@@ -302,102 +154,10 @@ mod tests {
     }
 
     #[test]
-    fn test_company_with_brand() {
-        let company = Company {
-            id: CompanyId::new(1),
-            name: "Bunga Deutschland".to_string(),
-            country: CountryCode::DEU,
-            brand: Some(BrandId::new(100)),
-        };
-        assert_eq!(company.country.name(), "Germany");
-        assert!(!company.is_external());
-    }
-
-    #[test]
-    fn test_external_company() {
-        let company = Company {
-            id: CompanyId::new(2),
-            name: "External Agency".to_string(),
-            country: CountryCode::POL,
-            brand: None,
-        };
-        assert!(company.is_external());
-    }
-
-    #[test]
-    fn test_asset_belongs_to_project() {
-        let project_id = ProjectId::new(42);
-        let asset = Asset {
-            host: "api.example.com".to_string(),
-            project: project_id,
-        };
-        assert_eq!(asset.project, project_id);
-    }
-
-    #[test]
-    fn test_assignment_person_only() {
-        let a = Assignment {
-            project: ProjectId::new(1),
-            role: Role::Owner,
-            person: Some(PersonId::new(10)),
-            company: None,
-        };
-        assert_eq!(a.role, Role::Owner);
-        assert!(a.person.is_some());
-        assert!(a.company.is_none());
-    }
-
-    #[test]
-    fn test_assignment_company_only() {
-        let a = Assignment {
-            project: ProjectId::new(1),
-            role: Role::Technician,
-            person: None,
-            company: Some(CompanyId::new(20)),
-        };
-        assert_eq!(a.role, Role::Technician);
-        assert!(a.company.is_some());
-    }
-
-    #[test]
-    fn test_project_belongs_to_company() {
-        let project = Project {
-            id: ProjectId::new(1),
-            name: "Website Relaunch".to_string(),
-            company: CompanyId::new(200),
-            importance: None,
-        };
-        assert_eq!(project.company, CompanyId::new(200));
-        assert_eq!(project.importance, None);
-    }
-
-    #[test]
-    fn test_project_with_importance() {
-        let project = Project {
-            id: ProjectId::new(2),
-            name: "Critical API".to_string(),
-            company: CompanyId::new(100),
-            importance: Some(5),
-        };
-        assert_eq!(project.importance, Some(5));
-    }
-
-    #[test]
     fn test_role_display() {
         assert_eq!(Role::Owner.to_string(), "Owner");
         assert_eq!(Role::Manager.to_string(), "Manager");
         assert_eq!(Role::Technician.to_string(), "Technician");
-    }
-
-    #[test]
-    fn test_contractor_role_all() {
-        let all = ContractorRole::all();
-        assert_eq!(all.len(), 5);
-        assert_eq!(all[0], ContractorRole::Development);
-        assert_eq!(all[1], ContractorRole::DevOps);
-        assert_eq!(all[2], ContractorRole::Design);
-        assert_eq!(all[3], ContractorRole::Consultancy);
-        assert_eq!(all[4], ContractorRole::Security);
     }
 
     #[test]

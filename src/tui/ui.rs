@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
+use crate::tui::tabs::{draw_findings, draw_inventory, draw_organization, draw_projects};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -21,7 +21,7 @@ use crate::tui::tabs::{draw_inventory, draw_organization, draw_projects};
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Clear old status messages
     app.clear_old_status();
-    
+
     let show_filter = app.input_mode == InputMode::Filtering
         || !app.filter.is_empty()
         || app.inventory.hide_external_redirects
@@ -32,11 +32,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(3), // Header/Stats
         Constraint::Length(3), // Tab bar
     ];
-    
+
     if show_filter {
         constraints.push(Constraint::Length(3)); // Filter Bar
     }
-    
+
     constraints.push(Constraint::Min(10)); // Main View (flexible)
     constraints.push(Constraint::Length(3)); // Status Bar (always visible - increased for better visibility)
     constraints.push(Constraint::Length(3)); // Footer/Help
@@ -51,12 +51,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     idx += 1;
     draw_tab_bar(f, app, chunks[idx]);
     idx += 1;
-    
+
     if show_filter {
         draw_filter_bar(f, app, chunks[idx]);
         idx += 1;
     }
-    
+
     draw_main_content(f, app, chunks[idx]);
     idx += 1;
     draw_status_bar(f, app, chunks[idx]); // Always show status bar
@@ -97,6 +97,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::AssetDetails {
         draw_asset_details_modal(f, app);
     }
+    if app.input_mode == InputMode::LifecycleEditing {
+        draw_lifecycle_edit_modal(f, app);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw(" | "),
         Span::styled(
-            " Balebos v1.3.0 ",
+            format!(" Balebos v{} ", env!("CARGO_PKG_VERSION")),
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::Cyan),
@@ -191,6 +194,7 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         Tab::Inventory => 0,
         Tab::Organization => 1,
         Tab::Projects => 2,
+        Tab::Findings => 3,
     };
 
     let tabs = Tabs::new(titles)
@@ -256,6 +260,7 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
         Tab::Inventory => draw_inventory(f, app, area),
         Tab::Organization => draw_organization(f, app, area),
         Tab::Projects => draw_projects(f, app, area),
+        Tab::Findings => draw_findings(f, app, area),
     }
 }
 
@@ -265,17 +270,27 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     use crate::tui::quotes::get_random_quote;
-    
+
     let scan_status_locked = app.scan_status.lock().unwrap_or_else(|p| p.into_inner());
-    let (scan_msg, scan_time) = scan_status_locked.clone();
+    let scan_state = scan_status_locked.clone();
     drop(scan_status_locked);
-    
+
+    let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
+
     // Check if status expired (older than 5 seconds) or empty
     let now = chrono::Utc::now();
-    let should_show_status = !scan_msg.is_empty() && (now.signed_duration_since(scan_time).num_seconds() < 5);
-    
+    let should_show_status = !scan_state.message.is_empty()
+        && (is_scanning || now.signed_duration_since(scan_state.timestamp).num_seconds() < 5);
+
     let status_text = if should_show_status {
-        scan_msg
+        if is_scanning && !scan_state.steps.is_empty() {
+            // Show current step and summary of completed steps
+            let done = scan_state.steps.len();
+            let total = 8; // total recon steps
+            format!("⟳ {} [{}/{} done]", scan_state.message, done, total)
+        } else {
+            scan_state.message
+        }
     } else if let Some((ref msg, msg_time)) = app.status_message {
         if now.signed_duration_since(msg_time).num_seconds() < 5 {
             msg.clone()
@@ -288,7 +303,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let status_style = if status_text.starts_with('✓') {
         Style::default().fg(Color::Green)
-    } else if status_text.contains("error") || status_text.contains("failed") || status_text.starts_with('❌') {
+    } else if status_text.contains("error")
+        || status_text.contains("failed")
+        || status_text.starts_with('❌')
+    {
         Style::default().fg(Color::Red)
     } else if status_text.starts_with('⟳') {
         Style::default().fg(Color::Cyan)
@@ -311,13 +329,16 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
+            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | L: Lifecycle | v: Risk | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
         }
         Tab::Organization => {
-            " q: Quit | R: Refresh | 1-3: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
+            " q: Quit | R: Refresh | 1-4: Tabs | ←/→: Pane | a: Add | e: Edit | j/k: Nav "
         }
         Tab::Projects => {
-            " q: Quit | R: Refresh | 1-3: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
+            " q: Quit | R: Refresh | 1-4: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
+        }
+        Tab::Findings => {
+            " q: Quit | R: Refresh | 1-4: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
         }
     };
 
@@ -381,12 +402,20 @@ fn draw_tag_filter_select_modal(f: &mut Frame, app: &App) {
         let mut lines = vec![];
         if let Some(ref current_tag) = app.inventory.filter_tag {
             lines.push(Line::from(vec![
-                Span::styled("Current filter: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(current_tag.as_str(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Current filter: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    current_tag.as_str(),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]));
             lines.push(Line::from(""));
         }
-        
+
         // Show list of tags
         for (i, tag) in app.available_tags.iter().enumerate() {
             let style = if i == app.tag_select_index {
@@ -412,7 +441,10 @@ fn draw_tag_select_modal(f: &mut Frame, app: &App) {
         .unwrap_or("(none)");
 
     let block = Block::default()
-        .title(format!(" Select Tag for '{}' (↑/↓: navigate, Enter: select, n: new, Esc: cancel) ", asset_name))
+        .title(format!(
+            " Select Tag for '{}' (↑/↓: navigate, Enter: select, n: new, Esc: cancel) ",
+            asset_name
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .style(Style::default().bg(Color::Black));
@@ -465,7 +497,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .selected_asset()
         .map(|a| a.name.as_str())
         .unwrap_or("(none)");
-    
+
     // Get all unique tags
     let all_tags: Vec<String> = app
         .model
@@ -476,7 +508,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    
+
     // Get current tags for this asset
     let current_tags = app
         .model
@@ -489,7 +521,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
                 .join("\n")
         })
         .unwrap_or_else(|| "  (none)".to_string());
-    
+
     let available_tags = if all_tags.is_empty() {
         "  (no existing tags)".to_string()
     } else {
@@ -499,7 +531,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    
+
     let text = format!(
         "Add tag to '{}':\n\nCurrent tags:\n{}\n\nAvailable tags:\n{}\n\nNew tag: {}_",
         asset_name, current_tags, available_tags, app.input
@@ -510,7 +542,7 @@ fn draw_tag_add_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .style(Style::default().bg(Color::Black));
-    
+
     let paragraph = Paragraph::new(text)
         .style(Style::default().fg(Color::Yellow))
         .block(block);
@@ -527,7 +559,10 @@ fn draw_tag_remove_select_modal(f: &mut Frame, app: &App) {
         .unwrap_or("(none)");
 
     let block = Block::default()
-        .title(format!(" Remove Tag from '{}' (↑/↓: navigate, Enter: remove, Esc: cancel) ", asset_name))
+        .title(format!(
+            " Remove Tag from '{}' (↑/↓: navigate, Enter: remove, Esc: cancel) ",
+            asset_name
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red))
         .style(Style::default().bg(Color::Black));
@@ -580,7 +615,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
         .selected_asset()
         .map(|a| a.name.as_str())
         .unwrap_or("(none)");
-    
+
     // Show current tags
     let current_tags = app
         .selected_asset()
@@ -592,7 +627,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
                 .join("\n")
         })
         .unwrap_or_else(|| "  (no tags)".to_string());
-    
+
     let text = format!(
         "Remove tag from '{}':\n\nCurrent tags:\n{}\n\nTag to remove: {}_",
         asset_name, current_tags, app.input
@@ -603,7 +638,7 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red))
         .style(Style::default().bg(Color::Black));
-    
+
     let paragraph = Paragraph::new(text)
         .style(Style::default().fg(Color::Yellow))
         .block(block);
@@ -611,7 +646,6 @@ fn draw_tag_remove_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
     f.render_widget(paragraph, area);
 }
-
 
 fn draw_assign_modal(f: &mut Frame, app: &App) {
     let area = fixed_size_centered_rect(60, 20, f.area());
@@ -1182,3 +1216,74 @@ fn draw_asset_details_modal(f: &mut Frame, app: &App) {
 }
 
 use crate::tui::app::{ContractorAssignStep, RoleAssignStep};
+
+fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(50, 40, f.area());
+    let block = Block::default()
+        .title(" Set Asset Lifecycle State (Esc to cancel) ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("1. ", Style::default().fg(Color::Green)),
+            Span::raw(" "),
+            Span::styled("Active", Style::default().fg(Color::Green)),
+            Span::raw(" - Normal operations"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("2. ", Style::default().fg(Color::Yellow)),
+            Span::raw(" "),
+            Span::styled("Under Review", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Being evaluated"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("3. ", Style::default().fg(Color::Magenta)),
+            Span::raw(" "),
+            Span::styled("Deprecated", Style::default().fg(Color::Magenta)),
+            Span::raw(" - Scheduled for removal"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("4. ", Style::default().fg(Color::Gray)),
+            Span::raw(" "),
+            Span::styled("Decommissioned", Style::default().fg(Color::Gray)),
+            Span::raw(" - Removed but tracked"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("5. ", Style::default().fg(Color::Red)),
+            Span::raw(" "),
+            Span::styled("Abandoned", Style::default().fg(Color::Red)),
+            Span::raw(" - No owner, stale"),
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "Current: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            if let Some(asset) = app.selected_asset() {
+                let state = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+                match state {
+                    Some(s) => Span::styled(
+                        format!("{} {}", s.icon(), s),
+                        Style::default().fg(s.color()),
+                    ),
+                    None => Span::styled("Not set", Style::default().fg(Color::DarkGray)),
+                }
+            } else {
+                Span::raw("No asset selected")
+            },
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text).block(block);
+    f.render_widget(paragraph, area);
+}

@@ -26,6 +26,7 @@ pub struct InventoryState {
     pub hide_external_redirects: bool,
     pub marked_assets: HashSet<String>,
     pub filter_tag: Option<String>,
+    pub sort_by_risk: bool,
 }
 
 impl InventoryState {
@@ -38,6 +39,7 @@ impl InventoryState {
             hide_external_redirects: false,
             marked_assets: HashSet::new(),
             filter_tag: None,
+            sort_by_risk: false,
         }
     }
 
@@ -95,6 +97,11 @@ impl InventoryState {
         self.hide_external_redirects = !self.hide_external_redirects;
     }
 
+    /// Toggle sorting by risk score.
+    pub fn toggle_risk_sort(&mut self) {
+        self.sort_by_risk = !self.sort_by_risk;
+    }
+
     /// Get the currently selected row index.
     /// Get the currently selected asset from the model.
     ///
@@ -147,7 +154,16 @@ impl InventoryState {
         let mut visible = Vec::new();
         let filter_lower = filter.to_lowercase();
 
-        for group in &model.groups {
+        let mut groups: Vec<_> = model.groups.iter().collect();
+        if self.sort_by_risk {
+            groups.sort_by(|a, b| {
+                let score_a = model.risk_scores.get(&a.root.name).copied().unwrap_or(0);
+                let score_b = model.risk_scores.get(&b.root.name).copied().unwrap_or(0);
+                score_b.cmp(&score_a)
+            });
+        }
+
+        for group in groups {
             let root_name = &group.root.name;
 
             // Check tag filter first

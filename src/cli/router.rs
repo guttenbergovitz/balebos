@@ -13,6 +13,9 @@ pub enum Command {
     Ui,
     Org(OrgCommand),
     Tag(TagCommand),
+    Finding(FindingCommand),
+    Asset(AssetCommand),
+    Risk(RiskCommand),
 }
 
 pub enum ProbeKind {
@@ -96,6 +99,64 @@ pub enum TagCommand {
     },
 }
 
+/// Finding management commands.
+pub enum FindingCommand {
+    Run,
+    List {
+        status: Option<FindingStatus>,
+        severity: Option<FindingSeverityFilter>,
+    },
+    Show {
+        id: String,
+    },
+    Acknowledge {
+        id: String,
+    },
+    Resolve {
+        id: String,
+    },
+    Stats,
+    Cleanup {
+        days: Option<u32>,
+    },
+}
+
+pub enum FindingStatus {
+    Open,
+    Acknowledged,
+    Resolved,
+}
+
+pub enum FindingSeverityFilter {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+/// Asset management commands.
+pub enum AssetCommand {
+    LifecycleSet {
+        asset_name: String,
+        state: String,
+        reason: Option<String>,
+    },
+    LifecycleShow {
+        asset_name: String,
+    },
+    LifecycleHistory {
+        asset_name: String,
+    },
+    LifecycleList,
+}
+
+pub enum RiskCommand {
+    Report,
+    Top { n: usize },
+    Show { asset_name: String },
+}
+
 /// Parse command-line arguments into a structured Command.
 ///
 /// Returns `None` if no valid command is recognized
@@ -165,6 +226,9 @@ pub fn parse_command() -> Option<Command> {
         }
         "org" => parse_org_command(&args),
         "tag" => parse_tag_command(&args),
+        "finding" => parse_finding_command(&args),
+        "asset" => parse_asset_command(&args),
+        "risk" => parse_risk_command(&args),
         _ => None,
     }
 }
@@ -283,6 +347,134 @@ fn parse_tag_command(args: &[String]) -> Option<Command> {
         "by-tag" => {
             let tag = args.get(3)?.clone();
             Some(Command::Tag(TagCommand::ListByTag { tag }))
+        }
+        _ => None,
+    }
+}
+
+fn parse_finding_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "run" => Some(Command::Finding(FindingCommand::Run)),
+        "list" => {
+            let mut status = None;
+            let mut severity = None;
+
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--status" | "-s" => {
+                        i += 1;
+                        if i < args.len() {
+                            status = match args[i].as_str() {
+                                "open" => Some(FindingStatus::Open),
+                                "acknowledged" => Some(FindingStatus::Acknowledged),
+                                "resolved" => Some(FindingStatus::Resolved),
+                                _ => return None,
+                            };
+                        }
+                    }
+                    "--severity" | "-l" => {
+                        i += 1;
+                        if i < args.len() {
+                            severity = match args[i].as_str() {
+                                "info" => Some(FindingSeverityFilter::Info),
+                                "low" => Some(FindingSeverityFilter::Low),
+                                "medium" => Some(FindingSeverityFilter::Medium),
+                                "high" => Some(FindingSeverityFilter::High),
+                                "critical" => Some(FindingSeverityFilter::Critical),
+                                _ => return None,
+                            };
+                        }
+                    }
+                    _ => return None,
+                }
+                i += 1;
+            }
+
+            Some(Command::Finding(FindingCommand::List { status, severity }))
+        }
+        "show" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Show { id }))
+        }
+        "acknowledge" | "ack" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Acknowledge { id }))
+        }
+        "resolve" => {
+            let id = args.get(3)?.clone();
+            Some(Command::Finding(FindingCommand::Resolve { id }))
+        }
+        "stats" => Some(Command::Finding(FindingCommand::Stats)),
+        "cleanup" => {
+            let mut days = None;
+
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--days" | "-d" => {
+                        i += 1;
+                        if i < args.len() {
+                            days = args[i].parse::<u32>().ok();
+                        }
+                    }
+                    _ => return None,
+                }
+                i += 1;
+            }
+
+            Some(Command::Finding(FindingCommand::Cleanup { days }))
+        }
+        _ => None,
+    }
+}
+fn parse_asset_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "lifecycle" => {
+            let lifecycle_action = args.get(3)?;
+            match lifecycle_action.as_str() {
+                "set" => {
+                    let asset_name = args.get(4)?.clone();
+                    let state = args.get(5)?.clone();
+                    let reason = find_flag_value(args, "--reason");
+                    Some(Command::Asset(AssetCommand::LifecycleSet {
+                        asset_name,
+                        state,
+                        reason,
+                    }))
+                }
+                "show" => {
+                    let asset_name = args.get(4)?.clone();
+                    Some(Command::Asset(AssetCommand::LifecycleShow { asset_name }))
+                }
+                "history" => {
+                    let asset_name = args.get(4)?.clone();
+                    Some(Command::Asset(AssetCommand::LifecycleHistory { asset_name }))
+                }
+                "list" => Some(Command::Asset(AssetCommand::LifecycleList)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_risk_command(args: &[String]) -> Option<Command> {
+    let action = args.get(2)?;
+
+    match action.as_str() {
+        "report" => Some(Command::Risk(RiskCommand::Report)),
+        "top" => {
+            let n = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10);
+            Some(Command::Risk(RiskCommand::Top { n }))
+        }
+        "show" => {
+            let asset_name = args.get(3)?.clone();
+            Some(Command::Risk(RiskCommand::Show { asset_name }))
         }
         _ => None,
     }

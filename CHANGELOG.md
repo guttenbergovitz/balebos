@@ -5,6 +5,81 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-14
+
+### Changed
+
+- **Storage Migration to Polars/Parquet** - Replaced DuckDB with Polars-based Parquet backend
+  - Per-record-type Parquet files for optimal performance (`domain.parquet`, `finding.parquet`, etc.)
+  - Polars-based columnar processing for fast analytical queries
+  - In-memory buffering with configurable batch size (default: 100 records)
+  - Automatic schema inference from JSON objects
+  - Thread-safe write operations via `Arc<Mutex<>>`
+  - No server dependency—entirely file-based storage
+  - JSONL remains available as interchange format
+
+### Removed
+
+- DuckDB dependency and adapter implementation
+- DataFusion query engine
+
+### Documentation
+
+- Complete documentation reorganisation and update
+- New guides: Findings Management, Asset Lifecycle, Risk Scoring, Organisation Model
+- Updated Architecture documentation for Parquet storage
+- New `documentation/README.md` navigation index
+- All broken links fixed and references updated
+
+## [1.4.0] - 2026-04-12
+
+### Added
+
+- **Persisted Findings System** - Replaced ephemeral issues with persisted finding records
+  - Findings are stored as append-only records with UUID, severity, category, and target
+  - Five severity levels: Critical, High, Medium, Low, Info
+  - Six categories: Security, Compliance, Financial, Lifecycle, Operational, Governance
+  - Lifecycle tracking via FindingEvent records (acknowledge, resolve)
+  - Deduplication prevents duplicate findings for same check + target
+
+- **Finding CLI Commands**
+  - `balebos finding run` - Run checks and persist new findings with auto-resolve
+  - `balebos finding list` - List findings with status/severity filters
+  - `balebos finding list --status open|acknowledged|resolved` - Filter by status
+  - `balebos finding list --severity critical|high|medium|low|info` - Filter by severity
+  - `balebos finding show <id>` - Display finding details
+  - `balebos finding acknowledge <id>` - Acknowledge a finding
+  - `balebos finding resolve <id>` - Manually resolve a finding
+
+- **Auto-Resolve for Findings** - Findings automatically close when conditions are fixed
+  - Stale findings resolve when domain is seen again
+  - HTTP error findings resolve when checks succeed
+  - Low confidence findings resolve with multiple observations
+  - TLS/connection findings resolve when connections succeed
+
+- **Findings Tab in TUI** - New dedicated tab for issue management
+  - Visual status indicators: ○ Open, ✓ Acknowledged, ● Resolved
+  - Severity-based color coding
+  - Filter by severity and status
+  - Acknowledge/resolve actions from TUI
+  - Background scan execution
+
+- **Storage Cleanup** - `cleanup_old_records()` removes aged findings
+  - Configurable retention period (default: 30 days for resolved findings)
+  - Automatic backup before cleanup
+  - Safe atomic file replacement
+
+### Changed
+
+- **Check Command** - Now persists findings automatically
+  - Returns appropriate exit codes based on finding severity
+  - Creates new findings with deduplication
+  - Triggers auto-resolve for fixed issues
+
+- **Report Command** - Enhanced to include findings summary
+  - Counts findings by severity
+  - Shows open vs resolved statistics
+
 ## [1.3.0] - 2026-03-23
 
 ### Added

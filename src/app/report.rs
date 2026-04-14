@@ -31,11 +31,19 @@ pub struct Report {
     pub http_errors: usize,
     pub missing_http_checks: usize,
 
+    // Findings statistics
+    pub open_findings: usize,
+    pub acknowledged_findings: usize,
+    pub resolved_findings: usize,
+
     // Attention level
     pub needs_attention: bool,
 }
 
-pub fn generate_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) -> Result<Report> {
+pub fn generate_report(
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+) -> Result<Report> {
     // Get stats
     let stats = get_domain_stats(storage)?;
 
@@ -95,14 +103,40 @@ pub fn generate_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[Stri
         })
         .count();
 
-    // Determine if attention is needed
+    // Get findings statistics
+    let records = storage.read_all_records()?;
+    let open_findings = records
+        .findings
+        .iter()
+        .filter(|f| {
+            !records.finding_events.iter().any(|e| {
+                e.finding_id == f.id
+                    && e.event_type == crate::app::finding::FindingEventType::Resolved
+            })
+        })
+        .count();
+
+    let acknowledged_findings = records
+        .finding_events
+        .iter()
+        .filter(|e| e.event_type == crate::app::finding::FindingEventType::Acknowledged)
+        .count();
+
+    let resolved_findings = records
+        .finding_events
+        .iter()
+        .filter(|e| e.event_type == crate::app::finding::FindingEventType::Resolved)
+        .count();
+
+    // Determine if attention is needed (include open findings)
     let needs_attention = critical_issues > 0
         || warning_issues >= 2
         || !diff.new_domains.is_empty()
         || !diff.missing_domains.is_empty()
         || !diff.new_subdomains.is_empty()
         || suspicious_subdomains > 0
-        || http_errors > 0;
+        || http_errors > 0
+        || open_findings > 0;
 
     Ok(Report {
         total_domains: stats.total_entries,
@@ -124,6 +158,10 @@ pub fn generate_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[Stri
         suspicious_subdomains,
         http_errors,
         missing_http_checks,
+
+        open_findings,
+        acknowledged_findings,
+        resolved_findings,
 
         needs_attention,
     })

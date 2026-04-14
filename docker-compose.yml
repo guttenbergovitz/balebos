@@ -5,10 +5,11 @@ services:
     build: .
     container_name: balebos
     # stdin_open and tty are required to interact with the ratatui TUI!
-    stdin_open: true 
-    tty: true        
+    stdin_open: true
+    tty: true
     volumes:
-      # Bind local data folder to persist DuckDB and JSONL state
+      # Persist JSONL inventory and Parquet analytics locally
       - ./data:/app/data
     environment:
-      - BALEBOS_STORAGE=duckdb
+      # Keeps probe tools from printing to stdout inside TUI
+      - BALEBOS_STORAGE=hybrid

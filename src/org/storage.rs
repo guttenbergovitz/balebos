@@ -134,7 +134,7 @@ impl ProjectRecord {
 
     /// Builder method to set the importance rating.
     pub fn with_importance(mut self, importance: Option<u8>) -> Self {
-        self.importance = importance;
+        self.importance = importance.map(|v| v.clamp(1, 5));
         self
     }
 }
@@ -150,6 +150,8 @@ pub struct AssetAssignmentRecord {
     pub host: String,
     pub project: ProjectId,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub unassigned: bool,
 }
 
 impl AssetAssignmentRecord {
@@ -159,6 +161,17 @@ impl AssetAssignmentRecord {
             host,
             project,
             created_at: Utc::now(),
+            unassigned: false,
+        }
+    }
+
+    pub fn unassigned(host: String) -> Self {
+        Self {
+            item_type: ItemType::OrgAssetAssignment,
+            host,
+            project: ProjectId::new(0),
+            created_at: Utc::now(),
+            unassigned: true,
         }
     }
 }
@@ -177,7 +190,9 @@ pub struct AssetImportanceRecord {
 }
 
 impl AssetImportanceRecord {
+    #[allow(dead_code)]
     pub fn new(host: String, importance: u8) -> Self {
+        let importance = importance.clamp(1, 5);
         Self {
             item_type: ItemType::OrgAssetImportance,
             host,

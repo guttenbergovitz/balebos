@@ -9,7 +9,8 @@
 
 use super::providers::{Provider, ProviderKnowledgeBase};
 use crate::app::probe::{
-    AsnObservation, Confidence, DetectionMethod, DnsObservation, HostingObservation, HttpObservation,
+    AsnObservation, Confidence, DetectionMethod, DnsObservation, HostingObservation,
+    HttpObservation,
 };
 use crate::inventory::ItemType;
 use crate::storage::{StorageEngine, StorageEngineExt};
@@ -375,7 +376,10 @@ impl HostingDetector {
                 },
                 confidence: Confidence::Low, // Headers are weak signals
                 detection_method: DetectionMethod::Header,
-                evidence: vec![format!("Server header '{}' matches {}", webserver, provider.name)],
+                evidence: vec![format!(
+                    "Server header '{}' matches {}",
+                    webserver, provider.name
+                )],
             });
         }
 
@@ -641,7 +645,10 @@ mod tests {
         let detector = HostingDetector::new();
         let dns = make_dns("example.com", vec![], vec!["1.2.3.4"]);
         let mut asn_map = HashMap::new();
-        asn_map.insert("1.2.3.4".to_string(), make_asn("1.2.3.4", 13335, "CLOUDFLARENET"));
+        asn_map.insert(
+            "1.2.3.4".to_string(),
+            make_asn("1.2.3.4", 13335, "CLOUDFLARENET"),
+        );
 
         let input = DetectionInput {
             target: "example.com",

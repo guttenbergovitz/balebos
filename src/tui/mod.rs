@@ -1,13 +1,12 @@
 pub mod app;
 pub mod model;
+pub mod quotes;
 pub mod state;
 pub mod tabs;
 pub mod ui;
 pub mod workflows;
-pub mod quotes;
 
 use crate::storage::StorageEngine;
-use std::sync::Arc;
 use crate::tui::app::{App, InputMode, OrgAddType, Tab};
 use crate::tui::state::OrgPane;
 use crossterm::{
@@ -17,6 +16,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
@@ -64,9 +64,13 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::Filtering => handle_filtering_mode(app, key.code),
                     InputMode::TagAdding => handle_tag_adding_mode(app, key.code),
                     InputMode::TagSelecting => handle_tag_selecting_mode(app, key.code)?,
-                    InputMode::TagFilterSelecting => handle_tag_filter_selecting_mode(app, key.code),
+                    InputMode::TagFilterSelecting => {
+                        handle_tag_filter_selecting_mode(app, key.code)
+                    }
                     InputMode::TagRemoving => handle_tag_removing_mode(app, key.code),
-                    InputMode::TagRemovingSelecting => handle_tag_removing_selecting_mode(app, key.code)?,
+                    InputMode::TagRemovingSelecting => {
+                        handle_tag_removing_selecting_mode(app, key.code)?
+                    }
                     InputMode::OrgAdding(_) | InputMode::OrgEditing(_, _) => {
                         handle_org_adding_mode(app, key.code)
                     }
@@ -76,6 +80,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                         handle_contractor_assigning_mode(app, key.code)
                     }
                     InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
+                    InputMode::LifecycleEditing => handle_lifecycle_editing_mode(app, key.code)?,
                 }
             }
         }
@@ -108,6 +113,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         KeyCode::Char('1') => app.set_tab(Tab::Inventory),
         KeyCode::Char('2') => app.set_tab(Tab::Organization),
         KeyCode::Char('3') => app.set_tab(Tab::Projects),
+        KeyCode::Char('4') => app.set_tab(Tab::Findings),
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
@@ -116,6 +122,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
             Tab::Inventory => handle_inventory_keys(app, code),
             Tab::Organization => handle_organization_keys(app, code),
             Tab::Projects => handle_projects_keys(app, code),
+            Tab::Findings => handle_findings_keys(app, code),
         },
     }
     Ok(())
@@ -147,6 +154,9 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
         KeyCode::Char('x') => {
             app.toggle_external_filter();
         }
+        KeyCode::Char('v') => {
+            app.toggle_risk_sort();
+        }
         KeyCode::Char('s') => {
             app.start_rescan();
         }
@@ -165,6 +175,12 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
             if app.selected_asset().is_some() {
                 app.asset_details_scroll = 0;
                 app.input_mode = InputMode::AssetDetails;
+            }
+        }
+        KeyCode::Char('L') => {
+            // Set lifecycle for selected asset
+            if app.selected_asset().is_some() {
+                app.input_mode = InputMode::LifecycleEditing;
             }
         }
         KeyCode::Down | KeyCode::Char('j') => app.next(),
@@ -270,6 +286,33 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('c') => {
             app.start_contractor_assign();
+        }
+        _ => {}
+    }
+}
+
+fn handle_findings_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.findings_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.findings_previous();
+        }
+        KeyCode::Char('a') => {
+            app.acknowledge_finding();
+        }
+        KeyCode::Char('r') => {
+            app.resolve_finding();
+        }
+        KeyCode::Char('s') => {
+            app.run_findings_scan();
+        }
+        KeyCode::Char('f') => {
+            app.toggle_findings_filter();
+        }
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            app.toggle_finding_expand();
         }
         _ => {}
     }
@@ -596,4 +639,62 @@ fn handle_asset_details_mode(app: &mut App, code: KeyCode) {
         }
         _ => {}
     }
+}
+
+fn handle_lifecycle_editing_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    use crate::inventory::AssetLifecycle;
+
+    fn apply_lifecycle(app: &mut App, state: AssetLifecycle) -> crate::error::Result<()> {
+        let targets: Vec<String> = if app.inventory.marked_assets.is_empty() {
+            app.selected_asset()
+                .map(|a| vec![a.name.clone()])
+                .unwrap_or_default()
+        } else {
+            app.inventory.marked_assets.iter().cloned().collect()
+        };
+
+        for name in targets {
+            let _ = crate::app::set_lifecycle(
+                &app.storage,
+                &name,
+                state,
+                Some("Set from TUI"),
+                "tui",
+            );
+        }
+        if !app.inventory.marked_assets.is_empty() {
+            app.inventory.clear_marks();
+        }
+        app.refresh()?;
+        Ok(())
+    }
+
+    match code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.input.clear();
+        }
+        KeyCode::Char('1') => {
+            apply_lifecycle(app, AssetLifecycle::Active)?;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('2') => {
+            apply_lifecycle(app, AssetLifecycle::UnderReview)?;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('3') => {
+            apply_lifecycle(app, AssetLifecycle::Deprecated)?;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('4') => {
+            apply_lifecycle(app, AssetLifecycle::Decommissioned)?;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('5') => {
+            apply_lifecycle(app, AssetLifecycle::Abandoned)?;
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
 }

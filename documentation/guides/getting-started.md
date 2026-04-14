@@ -4,9 +4,9 @@ This guide will help you get up and running with Balebos quickly.
 
 ## Installation
 
-### Option A: Using Docker (Easiest)
+### Option A: Using Docker (Recommended)
 
-Balebos is containerized to handle all dependencies (DuckDB, ProjectDiscovery tools) automatically.
+Balebos is containerized with all scanners bundled, so you don't need to manage external tools on your host.
 
 ```bash
 # Start the TUI
@@ -16,16 +16,24 @@ docker compose run --rm balebos ui
 docker compose run --rm balebos scan example.com
 ```
 
+Or use Make:
+
+```bash
+make docker-build
+make docker-ui
+make docker-scan domain=example.com
+```
+
 ### Option B: Building from Source
 
-Requires Rust 1.88+ and DuckDB installed on your system.
+Requires Rust 1.88+ and the ProjectDiscovery scanners installed on your system.
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/balebos.git
 cd balebos
 
-# Build the binary (automatically handles DuckDB linking if using Homebrew)
+# Build the binary
 make build
 
 # Run the TUI
@@ -34,10 +42,12 @@ make run-ui
 
 ### Local Prerequisites
 
-If building from source, you need:
-- **DuckDB**: `brew install duckdb` (macOS)
-- **ProjectDiscovery tools**: [subfinder](https://github.com/projectdiscovery/subfinder), [httpx](https://github.com/projectdiscovery/httpx), [dnsx](https://github.com/projectdiscovery/dnsx)
-- **whois**: `apt install whois` or `brew install whois`
+If building from source, you need these tools in your `PATH`:
+- **[subfinder](https://github.com/projectdiscovery/subfinder)** - subdomain discovery
+- **[httpx](https://github.com/projectdiscovery/httpx)** - HTTP probing
+- **[dnsx](https://github.com/projectdiscovery/dnsx)** - DNS resolution
+- **[asnmap](https://github.com/projectdiscovery/asnmap)** - ASN lookups
+- **whois** - domain registration queries (`apt install whois` or `brew install whois`)
 
 ## Quick Start
 
@@ -136,6 +146,44 @@ Analyzes your inventory for:
 - Low confidence items
 - HTTP errors
 - Missing checks
+
+### Findings Management
+
+Balebos persists findings to track issues over time:
+
+```bash
+# Run checks and persist findings
+balebos finding run
+
+# List all findings
+balebos finding list
+
+# List only open (unresolved) issues
+balebos finding list --status open
+
+# List high severity findings
+balebos finding list --severity high
+
+# Show finding details
+balebos finding show <finding-id>
+
+# Acknowledge a finding (seen but not fixed)
+balebos finding acknowledge <finding-id>
+
+# Resolve a finding manually
+balebos finding resolve <finding-id>
+```
+
+**Finding Status:**
+- **Open** (○) - Issue detected, requires attention
+- **Acknowledged** (✓) - Seen but not yet fixed
+- **Resolved** (●) - Fixed or auto-resolved
+
+**Auto-Resolution:**
+Findings automatically resolve when the underlying issue is fixed:
+- Stale domain → Resolved when seen again
+- HTTP error → Resolved when HTTP check succeeds
+- Low confidence → Resolved when multiple observations exist
 
 ### Track Changes
 
@@ -255,9 +303,10 @@ balebos check > /reports/issues.txt
 
 ## Next Steps
 
-- Read the [Usage Guide](guides/usage.md) for detailed command reference
-- Check the [Architecture Documentation](architecture.md) for design details
-- Review the [CHANGELOG](../CHANGELOG.md) to see what's new in v0.2.0
+- Read the [Usage Guide](usage.md) for detailed command reference
+- Check the [Architecture Documentation](../architecture.md) for design details
+- Review the [Findings Management Guide](findings.md) for issue tracking
+- Review the [CHANGELOG](../../CHANGELOG.md) to see what's new
 
 ## Troubleshooting
 
@@ -284,13 +333,21 @@ This is normal for:
 
 Use `balebos status` to see details about each error.
 
-### High memory usage with large inventories
+### Tool not found errors when running locally
 
-Balebos now supports DuckDB, which solves most performance issues. Ensure you are using the DuckDB backend:
+If you see errors like `Tool not found: httpx`, ensure all ProjectDiscovery tools are installed and available in your `PATH`.
+
+The easiest fix is to use Docker, which bundles all required scanners:
 ```bash
-export BALEBOS_STORAGE=duckdb
+make docker-scan domain=example.com
 ```
-For very large inventories (>1M records), DuckDB's analytical engine will significantly outperform sequential JSONL processing.
+
+### Findings not auto-resolving
+
+If a finding doesn't auto-resolve after fixing the issue:
+1. Run `balebos finding run` to trigger the auto-resolve check
+2. If still not resolved, manually resolve with `balebos finding resolve <id>`
+3. Check that the fix is actually working (e.g., HTTP check returns 200)
 
 ## Getting Help
 

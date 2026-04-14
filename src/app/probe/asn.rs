@@ -106,10 +106,7 @@ fn lookup_asn_name_cymru(asn: u32) -> Option<String> {
 
 /// Fallback ASN lookup using whois command.
 fn lookup_asn_whois(ip: &str) -> Option<AsnLookupResult> {
-    let output = Command::new("whois")
-        .arg(ip)
-        .output()
-        .ok()?;
+    let output = Command::new("whois").arg(ip).output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -217,7 +214,6 @@ pub fn probe_asn_batch(
         let chunk_size = 50;
 
         for chunk in ips.chunks(chunk_size) {
-
             // Use a temporary file for IPs
             let temp_dir = std::env::temp_dir();
             let temp_file = temp_dir.join(format!("balebos_asn_{}.txt", Uuid::new_v4()));
@@ -323,11 +319,7 @@ pub fn probe_asn_batch(
 
 /// Run ASN probe for a single IP address.
 #[allow(dead_code)]
-pub fn probe_asn(
-    ip: &str,
-    host: &str,
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<AsnObservation> {
+pub fn probe_asn(ip: &str, host: &str, storage: &Arc<dyn StorageEngine>) -> Result<AsnObservation> {
     let mut ip_to_host = HashMap::new();
     ip_to_host.insert(ip.to_string(), host.to_string());
 
@@ -355,15 +347,21 @@ pub fn probe_asn(
 
 /// Build IP to host mapping from DNS observations.
 /// This extracts all unique IPs from A and AAAA records and maps them back to hosts.
-pub fn build_ip_host_map(dns_observations: &[super::types::DnsObservation]) -> HashMap<String, String> {
+pub fn build_ip_host_map(
+    dns_observations: &[super::types::DnsObservation],
+) -> HashMap<String, String> {
     let mut ip_to_host = HashMap::new();
 
     for obs in dns_observations {
         for ip in &obs.a {
-            ip_to_host.entry(ip.clone()).or_insert_with(|| obs.target.clone());
+            ip_to_host
+                .entry(ip.clone())
+                .or_insert_with(|| obs.target.clone());
         }
         for ip in &obs.aaaa {
-            ip_to_host.entry(ip.clone()).or_insert_with(|| obs.target.clone());
+            ip_to_host
+                .entry(ip.clone())
+                .or_insert_with(|| obs.target.clone());
         }
     }
 
