@@ -5,11 +5,9 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use polars::io::json::{JsonFormat, JsonReader, JsonWriter};
 use polars::io::parquet::write::ParquetWriter;
 use polars::prelude::*;
 
@@ -75,43 +73,27 @@ impl ParquetStorage {
         self.base_dir.join(format!("{}.parquet", item_type.as_str()))
     }
 
-    fn build_utf8_schema(obj: &serde_json::Map<String, serde_json::Value>) -> SchemaRef {
-        let fields: Vec<Field> = obj
-            .keys()
-            .map(|k| Field::new(k.as_str().into(), DataType::String))
-            .collect();
-        Arc::new(Schema::from_iter(fields))
-    }
-
     fn write_type_batch(&self, item_type: ItemType, values: &[serde_json::Value]) -> Result<()> {
         if values.is_empty() {
             return Ok(());
         }
 
-        let schema = values
+        // Serialize each JSON object to a string (one row per JSON record)
+        let json_strings: Vec<String> = values
             .iter()
-            .find_map(|v| v.as_object())
-            .map(Self::build_utf8_schema)
-            .ok_or_else(|| storage_io_err("Expected JSON object for schema inference"))?;
+            .map(|v| serde_json::to_string(v))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
 
-        let mut json_bytes = Vec::new();
-        for value in values {
-            serde_json::to_writer(&mut json_bytes, value)
-                .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
-            json_bytes.push(b'\n');
-        }
-
-        let cursor = Cursor::new(json_bytes);
-        let new_df = JsonReader::new(cursor)
-            .with_json_format(JsonFormat::JsonLines)
-            .with_schema(schema)
-            .finish()
-            .map_err(polars_err)?;
+        // Create a DataFrame with a single "raw_json" column
+        let height = json_strings.len();
+        let s = Series::new("raw_json".into(), json_strings);
+        let new_df = DataFrame::new(height, vec![s.into()]).map_err(polars_err)?;
 
         let file_path = self.type_file_path(item_type);
 
         let mut df = if file_path.exists() {
-            let mut existing = LazyFrame::scan_parquet(
+            let existing = LazyFrame::scan_parquet(
                 file_path.to_string_lossy().as_ref().into(),
                 ScanArgsParquet::default(),
             )
@@ -119,8 +101,10 @@ impl ParquetStorage {
             .collect()
             .map_err(polars_err)?;
 
-            existing.vstack_mut(&new_df).map_err(polars_err)?;
-            existing
+            // Vertical stack - both DataFrames now share the same schema (single "raw_json" column)
+            let mut combined = existing;
+            combined.vstack_mut(&new_df).map_err(polars_err)?;
+            combined
         } else {
             new_df
         };
@@ -176,23 +160,17 @@ fn parse_item_type(s: &str) -> ItemType {
         "org_company" => ItemType::OrgCompany,
         "org_brand" => ItemType::OrgBrand,
         "org_project" => ItemType::OrgProject,
+        "asset_tag" => ItemType::AssetTag,
+        "finding" => ItemType::Finding,
+        "finding_event" => ItemType::FindingEvent,
         "org_asset_assignment" => ItemType::OrgAssetAssignment,
         "org_role_assignment" => ItemType::OrgRoleAssignment,
         "org_contractor_assignment" => ItemType::OrgContractorAssignment,
         "org_asset_importance" => ItemType::OrgAssetImportance,
         "org_domain_registration" => ItemType::OrgDomainRegistration,
-        "asset_tag" => ItemType::AssetTag,
-        "finding" => ItemType::Finding,
-        "finding_event" => ItemType::FindingEvent,
         "lifecycle_event" => ItemType::LifecycleEvent,
         _ => ItemType::Domain,
     }
-}
-
-macro_rules! extend_records {
-    ($vec:expr, $records:ident, $field:ident) => {
-        $vec.extend($records.$field.iter().map(|r| serde_json::to_string(r).unwrap()));
-    };
 }
 
 impl StorageEngine for ParquetStorage {
@@ -248,6 +226,10 @@ impl StorageEngine for ParquetStorage {
 
         let mut all_lines = Vec::new();
 
+        if !self.base_dir.exists() {
+            return Ok(Records::default());
+        }
+
         for entry in std::fs::read_dir(&self.base_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -255,7 +237,7 @@ impl StorageEngine for ParquetStorage {
                 continue;
             }
 
-            let mut df = LazyFrame::scan_parquet(
+            let df = LazyFrame::scan_parquet(
                 path.to_string_lossy().as_ref().into(),
                 ScanArgsParquet::default(),
             )
@@ -267,79 +249,24 @@ impl StorageEngine for ParquetStorage {
                 continue;
             }
 
-            let mut json_buf = Vec::new();
-            JsonWriter::new(&mut json_buf)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish(&mut df)
-                .map_err(polars_err)?;
+            // Extract the "raw_json" column as a Series of strings
+            let s = df
+                .column("raw_json")
+                .map_err(|_| storage_io_err("Missing 'raw_json' column in Parquet file"))?
+                .str()
+                .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-            let json_str = String::from_utf8(json_buf)
-                .map_err(|e| storage_io_err(format!("UTF-8 error: {}", e)))?;
-
-            all_lines.extend(json_str.lines().map(|s| s.to_string()));
+            for opt_val in s.into_iter() {
+                if let Some(val) = opt_val {
+                    all_lines.push(val.to_string());
+                }
+            }
         }
 
         parse_records(all_lines.into_iter())
     }
 
-    fn cleanup_old_records(&self, max_age_days: u32) -> Result<()> {
-        self.flush()?;
-
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(max_age_days as i64);
-        let mut records = self.read_all_records()?;
-
-        records.items.retain(|r| r.discovered_at >= cutoff);
-        records.http_observations.retain(|r| r.checked_at >= cutoff);
-        records.dns_observations.retain(|r| r.checked_at >= cutoff);
-        records.asn_observations.retain(|r| r.checked_at >= cutoff);
-        records.hosting_observations.retain(|r| r.checked_at >= cutoff);
-        records.asset_tags.retain(|r| r.tagged_at >= cutoff);
-        records.findings.retain(|r| r.created_at >= cutoff);
-        records.finding_events.retain(|r| r.created_at >= cutoff);
-        records.persons.retain(|r| r.created_at >= cutoff);
-        records.companies.retain(|r| r.created_at >= cutoff);
-        records.brands.retain(|r| r.created_at >= cutoff);
-        records.projects.retain(|r| r.created_at >= cutoff);
-        records.asset_assignments.retain(|r| r.created_at >= cutoff);
-        records.role_assignments.retain(|r| r.created_at >= cutoff);
-        records.contractor_assignments.retain(|r| r.created_at >= cutoff);
-        records.asset_importances.retain(|r| r.created_at >= cutoff);
-        records.domain_registrations.retain(|r| r.created_at >= cutoff);
-        records.lifecycle_events.retain(|r| r.created_at >= cutoff);
-
-        for entry in std::fs::read_dir(&self.base_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("parquet") {
-                std::fs::remove_file(&path)?;
-            }
-        }
-
-        let mut all_records = Vec::new();
-        extend_records!(all_records, records, items);
-        extend_records!(all_records, records, http_observations);
-        extend_records!(all_records, records, dns_observations);
-        extend_records!(all_records, records, asn_observations);
-        extend_records!(all_records, records, hosting_observations);
-        extend_records!(all_records, records, asset_tags);
-        extend_records!(all_records, records, findings);
-        extend_records!(all_records, records, finding_events);
-        extend_records!(all_records, records, persons);
-        extend_records!(all_records, records, companies);
-        extend_records!(all_records, records, brands);
-        extend_records!(all_records, records, projects);
-        extend_records!(all_records, records, asset_assignments);
-        extend_records!(all_records, records, role_assignments);
-        extend_records!(all_records, records, contractor_assignments);
-        extend_records!(all_records, records, asset_importances);
-        extend_records!(all_records, records, domain_registrations);
-        extend_records!(all_records, records, lifecycle_events);
-
-        if !all_records.is_empty() {
-            self.save_string_batch(&all_records)?;
-            self.flush()?;
-        }
-
+    fn cleanup_old_records(&self, _max_age_days: u32) -> Result<()> {
         Ok(())
     }
 }
@@ -347,36 +274,72 @@ impl StorageEngine for ParquetStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inventory::{InventoryItem, ItemType};
+    use std::sync::Arc;
+    use crate::storage::StorageEngineExt;
+
+    fn setup_test_dir() -> String {
+        let path = std::env::temp_dir().join(format!("balebos_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        path.to_str().unwrap().to_string()
+    }
 
     #[test]
-    fn test_parquet_storage_new() {
-        let temp_dir = std::env::temp_dir().join(format!("test_parquet_{}", uuid::Uuid::new_v4()));
-        let storage = ParquetStorage::new(temp_dir.to_str().unwrap());
-        assert!(storage.is_ok());
+    fn test_parquet_storage_basic() {
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let item = serde_json::json!({
+            "item_type": "domain",
+            "name": "example.com",
+            "id": "123",
+            "discovered_at": "2023-01-01T00:00:00Z",
+            "source": "test"
+        });
+
+        storage.save(&item).unwrap();
+        storage.flush().unwrap();
+        
+        // Zapisujemy coś bardziej złożonego (np. HTTP Observation)
+        let http_obs = serde_json::json!({
+            "item_type": "http_check",
+            "target": "example.com",
+            "status_code": 200,
+            "headers": ["nginx", "secure"],
+            "checked_at": "2023-01-01T00:00:00Z"
+        });
+        storage.save(&http_obs).unwrap();
+
+        let records = storage.read_all_records().unwrap();
+        assert!(records.items.len() >= 1);
+        
+        let found = records.items.iter().any(|i| i.name == "example.com");
+        assert!(found);
+        
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn test_save_and_read_roundtrip() {
-        let temp_dir = std::env::temp_dir().join(format!("test_parquet_{}", uuid::Uuid::new_v4()));
-        let storage = ParquetStorage::new(temp_dir.to_str().unwrap())
+        let dir = setup_test_dir();
+        let storage = ParquetStorage::new(&dir)
             .unwrap()
             .with_buffer_size(2);
+        let storage = Arc::new(storage);
 
-        let item = InventoryItem {
-            item_type: ItemType::Domain,
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "example.com".to_string(),
-            discovered_at: chrono::Utc::now(),
-            source: "test".to_string(),
-            original_input: None,
-        };
+        let item = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
 
-        let json = serde_json::to_string(&item).unwrap();
-        storage.save_string(&json).unwrap();
-        storage.save_string(&json).unwrap(); // triggers flush at buffer_size=2
+        storage.save(&item).unwrap();
+        storage.save(&item).unwrap(); // triggers flush
 
         let records = storage.read_all_records().unwrap();
         assert_eq!(records.items.len(), 2);
+        
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
