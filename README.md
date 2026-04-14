@@ -21,13 +21,15 @@ Balebos is designed so that system state does not depend on constant human atten
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in columnar format (Apache Parquet) with DataFusion query engine
+- stores state in columnar format (Apache Parquet) with Polars query engine
 - tracks changes over time
 - exposes system state via API / queries
 - highlights drift and unknowns
 - persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
 
 ## Quick Start
+
+### Using Docker (Recommended)
 
 The fastest way to run Balebos with all its dependencies is using Docker:
 
@@ -37,6 +39,27 @@ docker compose run --rm balebos ui
 
 # Scan a domain
 docker compose run --rm balebos scan example.com
+
+# Run checks and persist findings
+docker compose run --rm balebos finding run
+
+# List open findings
+docker compose run --rm balebos finding list
+
+# Show risk report
+docker compose run --rm balebos risk report
+```
+
+### Using Local Binary
+
+If you've built Balebos from source with all dependencies installed:
+
+```bash
+# Start the interactive TUI
+balebos ui
+
+# Scan a domain
+balebos scan example.com
 
 # Run checks and persist findings
 balebos finding run
@@ -112,6 +135,7 @@ balebos status                              # Health report by status code
 **Ownership and context:**
 ```bash
 balebos org brand add "Acme Corp"           # Create brand
+balebos org company add "Acme Corp DE" DE --brand <id>  # Create company under brand
 balebos org project add "Website" --company <id>  # Create project
 balebos org assign asset api.example.com --project <id>  # Link asset to team
 balebos asset lifecycle set api.example.com active  # Mark lifecycle state
@@ -121,12 +145,21 @@ For comprehensive command reference, advanced filters, batch processing, and exp
 
 ### Data Storage
 
-Balebos uses a tiered storage approach:
-- **Apache Parquet** - Columnar storage for fast analytical queries
-- **DataFusion** - Query engine with SQL support
-- **JSONL (`.jsonl`)** - Backup, interchange, and audit trail
+Balebos uses a high-performance storage approach:
+- **Apache Parquet** - Columnar storage partitioned by record type (domains, findings, DNS records, etc.)
+- **Polars** - In-memory DataFrame engine for efficient data processing and queries
+- **Memory Buffering** - Records are buffered (default: 100 items) before being written to Parquet for optimal I/O
 
-Storage is automatically partitioned by record type and date for optimal performance. JSONL files remain available for backup and external processing.
+Records are automatically partitioned by item type (domain, subdomain, http_check, dns_record, finding, etc.) with each type stored in its own Parquet file. This structure enables fast data retrieval and efficient batch operations while maintaining the entire history of all observations.
+
+### Storage Considerations
+
+- **In-Memory Loading** - All queries load data into memory. For datasets >1M records, consider filtering by time range or asset subset
+- **All Fields are Text** - Parquet schema uses UTF-8 strings for all fields (efficient for infrastructure metadata)
+- **Append-Only** - New observations are merged (vstack) with existing records, preserving complete history
+- **No Live Indexes** - Lookups scan the entire Parquet file; acceptable for typical infrastructure inventories (10K-100K assets)
+
+For very large-scale deployments (100K+ assets with daily updates), consider integrating a time-series database like ClickHouse or PostgreSQL for real-time queries while keeping Balebos for historical analysis and reporting.
 
 ### Core Concepts
 
@@ -306,11 +339,30 @@ Balebos integrates with external tools to leverage proven solutions:
 
 ## Installation
 
+### Using Docker (Recommended for Development)
+
+All dependencies are bundled in the container:
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Run the TUI
+make docker-ui
+
+# Scan a domain
+make docker-scan domain=example.com
+
+# Or use docker-compose directly
+docker compose run --rm balebos ui
+docker compose run --rm balebos scan example.com
+```
+
 ### Building from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/balebos.git
+git clone https://github.com/guttenbergovitz/balebos.git
 cd balebos
 
 # Build the binary
@@ -330,7 +382,7 @@ A `Makefile` is provided for common tasks:
 
 ### Dependencies
 
-- Rust 1.88+
+- Rust 1.94.1+ (for Polars 0.53 compatibility)
 - Apache Parquet (for columnar storage)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
