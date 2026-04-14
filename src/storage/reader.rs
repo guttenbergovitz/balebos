@@ -154,6 +154,7 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
 }
 
 /// Read a heterogeneous JSONL log and separate into typed records.
+#[allow(dead_code)]
 pub fn read_records(file_path: &str) -> Result<Records> {
     let path = Path::new(file_path);
 
@@ -167,12 +168,4 @@ pub fn read_records(file_path: &str) -> Result<Records> {
     parse_records(reader.lines().map_while(|r| r.ok()))
 }
 
-/// Parse only findings from storage
-pub fn parse_findings_from_items(items: Vec<crate::inventory::InventoryItem>) -> Vec<Finding> {
-    Vec::new() // Not implemented - use parse_records instead
-}
 
-/// Get findings from Records
-pub fn get_findings(records: &Records) -> Vec<Finding> {
-    records.findings.clone()
-}

@@ -1,13 +1,11 @@
 //! Business logic for organizational entity management.
 
-#![allow(dead_code)]
-
 use crate::error::Result;
 
 use crate::org::{
-    AssetAssignmentRecord, AssetImportanceRecord, BrandId, BrandRecord, CompanyId, CompanyRecord,
-    ContractorRole, CountryCode, ExternalContractorAssignment, PersonId, PersonRecord, ProjectId,
-    ProjectRecord, Role, RoleAssignmentRecord,
+    AssetAssignmentRecord, BrandId, BrandRecord, CompanyId, CompanyRecord, ContractorRole,
+    CountryCode, ExternalContractorAssignment, PersonId, PersonRecord, ProjectId, ProjectRecord,
+    Role, RoleAssignmentRecord,
 };
 use crate::storage::{StorageEngine, StorageEngineExt};
 
@@ -155,17 +153,6 @@ pub fn add_project_with_importance(
     Ok(record)
 }
 
-pub fn update_project(
-    storage: &Arc<dyn StorageEngine>,
-    id: ProjectId,
-    name: &str,
-    company_id: CompanyId,
-) -> Result<ProjectRecord> {
-    let record = ProjectRecord::new(id, name.to_string(), company_id);
-    storage.save(&record)?;
-    Ok(record)
-}
-
 pub fn set_project_importance(
     storage: &Arc<dyn StorageEngine>,
     id: ProjectId,
@@ -199,33 +186,20 @@ pub fn assign_asset(
 
 pub fn unassign_asset(storage: &Arc<dyn StorageEngine>, host: &str) -> Result<bool> {
     let records = storage.read_all_records()?;
-    // Check if the asset is assigned
-    let is_assigned = records.asset_assignments.iter().any(|a| a.host == host);
-    if !is_assigned {
-        return Ok(false);
+    let latest = records
+        .asset_assignments
+        .iter()
+        .filter(|a| a.host == host)
+        .max_by_key(|a| a.created_at);
+
+    match latest {
+        Some(a) if !a.unassigned => {
+            let tombstone = AssetAssignmentRecord::unassigned(host.to_string());
+            storage.save(&tombstone)?;
+            Ok(true)
+        }
+        _ => Ok(false),
     }
-    // For now, we don't actually remove from JSONL (append-only log).
-    // In a real implementation, we would add a "tombstone" record or rewrite the file.
-    // For now, we just return true to indicate the asset was found.
-    // TODO: Implement proper unassignment with tombstone records
-    Ok(true)
-}
-
-pub fn set_asset_importance(
-    storage: &Arc<dyn StorageEngine>,
-    host: &str,
-    importance: u8,
-) -> Result<AssetImportanceRecord> {
-    let record = AssetImportanceRecord::new(host.to_string(), importance);
-    storage.save(&record)?;
-    Ok(record)
-}
-
-pub fn list_asset_assignments(
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<Vec<AssetAssignmentRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.asset_assignments)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,13 +228,6 @@ pub fn assign_company_to_project(
     Ok(record)
 }
 
-pub fn list_role_assignments(
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<Vec<RoleAssignmentRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.role_assignments)
-}
-
 // ---------------------------------------------------------------------------
 // External contractor operations
 // ---------------------------------------------------------------------------
@@ -274,69 +241,6 @@ pub fn assign_contractor_to_project(
     let record = ExternalContractorAssignment::new(project_id, company_id, role);
     storage.save(&record)?;
     Ok(record)
-}
-
-// ---------------------------------------------------------------------------
-// Lookup helpers
-// ---------------------------------------------------------------------------
-
-pub fn find_person_by_id(
-    storage: &Arc<dyn StorageEngine>,
-    id: PersonId,
-) -> Result<Option<PersonRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.persons.into_iter().find(|p| p.id == id))
-}
-
-pub fn find_company_by_id(
-    storage: &Arc<dyn StorageEngine>,
-    id: CompanyId,
-) -> Result<Option<CompanyRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.companies.into_iter().find(|c| c.id == id))
-}
-
-pub fn find_brand_by_id(
-    storage: &Arc<dyn StorageEngine>,
-    id: BrandId,
-) -> Result<Option<BrandRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.brands.into_iter().find(|b| b.id == id))
-}
-
-pub fn find_project_by_id(
-    storage: &Arc<dyn StorageEngine>,
-    id: ProjectId,
-) -> Result<Option<ProjectRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records.projects.into_iter().find(|p| p.id == id))
-}
-
-/// Find the project assignment for a given host.
-pub fn find_asset_assignment(
-    storage: &Arc<dyn StorageEngine>,
-    host: &str,
-) -> Result<Option<AssetAssignmentRecord>> {
-    let records = storage.read_all_records()?;
-    // Return the most recent assignment for this host
-    Ok(records
-        .asset_assignments
-        .into_iter()
-        .filter(|a| a.host == host)
-        .max_by_key(|a| a.created_at))
-}
-
-/// Find all role assignments for a given project.
-pub fn find_role_assignments_for_project(
-    storage: &Arc<dyn StorageEngine>,
-    project_id: ProjectId,
-) -> Result<Vec<RoleAssignmentRecord>> {
-    let records = storage.read_all_records()?;
-    Ok(records
-        .role_assignments
-        .into_iter()
-        .filter(|a| a.project == project_id)
-        .collect())
 }
 
 #[cfg(test)]

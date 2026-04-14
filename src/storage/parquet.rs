@@ -45,6 +45,12 @@ impl std::fmt::Debug for ParquetStorage {
     }
 }
 
+impl Drop for ParquetStorage {
+    fn drop(&mut self) {
+        let _ = self.flush();
+    }
+}
+
 impl ParquetStorage {
     /// Create new ParquetStorage
     pub fn new(base_dir: &str) -> Result<Self> {

@@ -117,6 +117,7 @@ impl LifecycleEvent {
     }
 
     /// Create an initial lifecycle assignment (no from_state)
+    #[allow(dead_code)]
     pub fn initial(asset_name: String, state: AssetLifecycle, changed_by: String) -> Self {
         Self::new(asset_name, None, state, None, changed_by)
     }

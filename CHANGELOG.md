@@ -5,6 +5,32 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-14
+
+### Changed
+
+- **Storage Migration to Polars/Parquet** - Replaced DuckDB with Polars-based Parquet backend
+  - Per-record-type Parquet files for optimal performance (`domain.parquet`, `finding.parquet`, etc.)
+  - Polars-based columnar processing for fast analytical queries
+  - In-memory buffering with configurable batch size (default: 100 records)
+  - Automatic schema inference from JSON objects
+  - Thread-safe write operations via `Arc<Mutex<>>`
+  - No server dependency—entirely file-based storage
+  - JSONL remains available as interchange format
+
+### Removed
+
+- DuckDB dependency and adapter implementation
+- DataFusion query engine
+
+### Documentation
+
+- Complete documentation reorganisation and update
+- New guides: Findings Management, Asset Lifecycle, Risk Scoring, Organisation Model
+- Updated Architecture documentation for Parquet storage
+- New `documentation/README.md` navigation index
+- All broken links fixed and references updated
+
 ## [1.4.0] - 2026-04-12
 
 ### Added

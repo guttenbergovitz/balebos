@@ -22,6 +22,7 @@ pub struct RiskScore {
 
 /// Individual risk factor contributing to score
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RiskFactor {
     pub description: String,
     pub contribution: i32,
@@ -30,6 +31,7 @@ pub struct RiskFactor {
 
 /// Source of a risk factor
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum RiskFactorSource {
     Finding { finding_id: String },
     Lifecycle { state: AssetLifecycle },

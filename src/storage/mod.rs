@@ -12,7 +12,7 @@ pub trait StorageEngine: Send + Sync {
     fn read_all_records(&self) -> Result<crate::storage::reader::Records>;
 
     /// Cleanup old records based on retention policy
-    fn cleanup_old_records(&self, max_age_days: u32) -> Result<()> {
+    fn cleanup_old_records(&self, _max_age_days: u32) -> Result<()> {
         // Default implementation does nothing
         Ok(())
     }

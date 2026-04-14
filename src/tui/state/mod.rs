@@ -9,7 +9,7 @@ pub mod inventory;
 pub mod organization;
 pub mod projects;
 
-pub use findings::{FindingFilter, FindingsState};
+pub use findings::FindingsState;
 pub use forms::FormState;
 pub use inventory::{InventoryState, VisibleItem};
 pub use organization::{OrgPane, OrgState};

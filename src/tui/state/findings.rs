@@ -131,6 +131,7 @@ impl FindingsState {
     }
 
     /// Clear current filter
+    #[allow(dead_code)]
     pub fn clear_filter(&mut self) {
         self.filter = None;
         self.apply_filter();
@@ -209,7 +210,8 @@ impl FindingsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity};
+    use crate::app::{Finding, FindingEvent, FindingEventType, FindingSeverity};
+    use crate::app::finding::FindingCategory;
 
     fn create_test_finding(id: &str, severity: FindingSeverity) -> Finding {
         Finding::new(

@@ -87,26 +87,6 @@ pub fn list_assets_with_lifecycle(
     Ok(result)
 }
 
-/// Filter assets by lifecycle state
-pub fn filter_by_lifecycle(
-    storage: &Arc<dyn StorageEngine>,
-    state: AssetLifecycle,
-) -> Result<Vec<String>> {
-    let records = storage.read_all_records()?;
-
-    let assets: Vec<String> = records
-        .items
-        .iter()
-        .map(|item| item.name.clone())
-        .filter(|name| {
-            let current = crate::inventory::get_current_lifecycle(&records.lifecycle_events, name);
-            current == Some(state)
-        })
-        .collect();
-
-    Ok(assets)
-}
-
 /// Display lifecycle information for an asset (CLI output)
 pub fn display_lifecycle_info(
     storage: &Arc<dyn StorageEngine>,

@@ -303,10 +303,10 @@ balebos check > /reports/issues.txt
 
 ## Next Steps
 
-- Read the [Usage Guide](guides/usage.md) for detailed command reference
-- Check the [Architecture Documentation](architecture.md) for design details
+- Read the [Usage Guide](usage.md) for detailed command reference
+- Check the [Architecture Documentation](../architecture.md) for design details
 - Review the [Findings Management Guide](findings.md) for issue tracking
-- Review the [CHANGELOG](../CHANGELOG.md) to see what's new
+- Review the [CHANGELOG](../../CHANGELOG.md) to see what's new
 
 ## Troubleshooting
 

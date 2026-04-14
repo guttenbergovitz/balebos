@@ -102,7 +102,7 @@ impl InventoryItem {
     pub fn from_domain(domain: &Domain, source: &str, original_input: Option<String>) -> Self {
         Self {
             item_type: ItemType::Domain,
-            id: format!("{:?}", domain.id),
+            id: domain.id.to_string(),
             name: domain.name.clone(),
             discovered_at: domain.discovered_at,
             source: source.to_string(),

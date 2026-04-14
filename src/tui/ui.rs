@@ -136,7 +136,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw(" | "),
         Span::styled(
-            " Balebos v1.3.0 ",
+            format!(" Balebos v{} ", env!("CARGO_PKG_VERSION")),
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::Cyan),
@@ -1218,8 +1218,6 @@ fn draw_asset_details_modal(f: &mut Frame, app: &App) {
 use crate::tui::app::{ContractorAssignStep, RoleAssignStep};
 
 fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
-    use crate::inventory::AssetLifecycle;
-    
     let area = centered_rect(50, 40, f.area());
     let block = Block::default()
         .title(" Set Asset Lifecycle State (Esc to cancel) ")

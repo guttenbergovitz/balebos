@@ -85,95 +85,39 @@ Beta stage with high-performance storage and container support.
 
 ## Usage
 
-Balebos provides several commands for managing and monitoring your infrastructure:
+Balebos is built for hands-on infrastructure management. Here are the key workflows:
 
+**Quick start:**
 ```bash
-# Scan a domain and add to inventory
-balebos scan example.com
-
-# Discover subdomains using subfinder
-balebos probe subdomains example.com
-
-# Resolve DNS records using dnsx
-balebos probe dns example.com
-
-# Check HTTP status of a domain
-balebos probe http example.com
-
-# List domains in inventory
-balebos list
-balebos list --unique
-
-# Display domain hierarchy with nested subdomains
-balebos tree
-
-# Show domain live status with HTTP codes
-balebos status
-
-# Show domain statistics
-balebos stats
-balebos stats --by-domain
-
-# Check for inventory issues and anomalies
-balebos check
-
-# Show changes (last 7 days)
-balebos diff
-
-# Generate consolidated status report
-balebos report
-
-# Launch interactive TUI dashboard
-balebos ui
-
-# Finding management
-balebos finding run                    # Run checks and persist new findings
-balebos finding list                   # List all findings
-balebos finding list --status open     # List only open findings
-balebos finding list --severity high   # List high severity findings
-balebos finding show <id>              # Show finding details
-balebos finding acknowledge <id>       # Acknowledge a finding
-balebos finding resolve <id>           # Resolve a finding manually
-
-# Asset lifecycle management
-balebos asset lifecycle set <asset> <state> [--reason <text>]
-                                       # Set asset lifecycle state
-balebos asset lifecycle show <asset>           # Show asset lifecycle info
-balebos asset lifecycle history <asset>        # Show lifecycle history
-balebos asset lifecycle list                   # List assets by lifecycle state
-
-# Risk scoring
-balebos risk report                    # Show full risk report for all assets
-balebos risk top [N]                   # Show top N highest risk assets (default: 10)
-balebos risk show <asset>              # Show detailed risk score for an asset
-
-# Tag management
-balebos tag add example.com to-review
-balebos tag add example.com priority-high
-balebos tag list
-balebos tag list example.com
-balebos tag list-tags
-balebos tag by-tag priority-high
-balebos tag remove example.com to-review
-
-# Organization management
-balebos org brand add "Acme Corp"
-balebos org brand list
-
-balebos org company add "Acme DE" DE --brand 123456
-balebos org company add "External Agency" PL  # no brand = external
-balebos org company list
-
-balebos org person add "Jan" "Kowalski" "jan@example.com"
-balebos org person list
-
-balebos org project add "Website" --company 789012
-balebos org project list
-
-balebos org assign asset api.example.com --project 345678
-balebos org assign person 111222 --project 345678 --role owner
-balebos org assign company 333444 --project 345678 --role technician
+balebos scan example.com                    # Add domain to inventory
+balebos probe subdomains example.com        # Discover subdomains
+balebos probe http example.com              # Check HTTP status
+balebos ui                                  # Launch interactive dashboard
 ```
+
+**Risk and findings:**
+```bash
+balebos finding run                         # Run checks and persist findings
+balebos risk report                         # Show prioritised risk assessment
+balebos finding list --severity high        # List critical issues
+```
+
+**Infrastructure visibility:**
+```bash
+balebos list                                # Show all assets
+balebos tree                                # Hierarchical view
+balebos status                              # Health report by status code
+```
+
+**Ownership and context:**
+```bash
+balebos org brand add "Acme Corp"           # Create brand
+balebos org project add "Website" --company <id>  # Create project
+balebos org assign asset api.example.com --project <id>  # Link asset to team
+balebos asset lifecycle set api.example.com active  # Mark lifecycle state
+```
+
+For comprehensive command reference, advanced filters, batch processing, and export options, see the [Usage Guide](documentation/guides/usage.md).
 
 ### Data Storage
 

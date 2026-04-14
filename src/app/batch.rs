@@ -622,16 +622,6 @@ pub fn run_single_recon_with_progress(
     Ok(results)
 }
 
-/// Run full reconnaissance on a single domain (backward compatible)
-pub fn run_single_recon(
-    domain: &str,
-    storage: &Arc<dyn StorageEngine>,
-    ignore_patterns: &[String],
-) -> crate::error::Result<()> {
-    let _ = run_single_recon_with_progress(domain, storage, ignore_patterns, &|_| {}, &|_| {});
-    Ok(())
-}
-
 /// Get all unique domains and subdomains currently in inventory
 fn get_all_assets(storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
     use std::collections::HashSet;
