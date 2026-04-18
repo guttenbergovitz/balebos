@@ -33,6 +33,7 @@ balebos.ignore
 # LLM
 AGENTS.md
 CLAUDE.md
+.claude/
 GEMINI.md
 
 # Taskfile
