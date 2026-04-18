@@ -107,6 +107,30 @@ From the dashboard you can:
 - Press `/` to filter, `x` to hide external redirects
 - Press `q` to quit
 
+### 6. Web Dashboard (for Stakeholders)
+
+Export a static web dashboard for sharing with business stakeholders:
+
+```bash
+# Build the dashboard
+./build-web.sh
+
+# Preview locally
+cd web && zola serve
+```
+
+The dashboard will be available at `http://127.0.0.1:1111`.
+
+Features:
+- Foldable domain groups (subdomains hidden by default)
+- Click any asset for detailed side panel (DNS, HTTP, TLS, technologies)
+- Search, filter by lifecycle and risk, sortable columns
+- Solarized Dark theme with JetBrains Mono
+
+Deploy `web/public/` to any static hosting (nginx, S3, GitHub Pages, Netlify).
+
+See the [Web Dashboard Guide](web-dashboard.md) for full details.
+
 ## Batch Processing
 
 For a faster initial reconnaissance, use the batch command:

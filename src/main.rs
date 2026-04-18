@@ -118,6 +118,7 @@ fn main() {
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
         Command::Ui => handlers::ui::cmd_ui(storage),
+        Command::Web { output_dir } => handlers::web::cmd_web_export(&output_dir, &storage),
         Command::Org(org_cmd) => handlers::org::cmd_org(org_cmd, &storage),
         Command::Tag(tag_cmd) => handlers::tag::cmd_tag(tag_cmd, &storage),
         Command::Finding(finding_cmd) => handlers::finding::cmd_finding(finding_cmd, &storage, &ignore_patterns),

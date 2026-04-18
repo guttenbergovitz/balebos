@@ -26,6 +26,7 @@ Balebos is designed so that system state does not depend on constant human atten
 - exposes system state via API / queries
 - highlights drift and unknowns
 - persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
+- exports interactive web dashboard for business stakeholders
 
 ## Quick Start
 
@@ -272,6 +273,48 @@ This report helps identify:
 - Services with configuration issues (4xx errors)
 - Backend failures requiring attention (5xx errors)
 - Network connectivity problems
+
+### Web Dashboard
+
+Balebos can export an interactive static web dashboard for sharing infrastructure status with stakeholders who don't use the terminal.
+
+```bash
+# Export data and build the site
+./build-web.sh
+
+# Or manually:
+cargo run --release -- web export --output-dir web/static/data
+cd web && zola build
+```
+
+The dashboard is built with [Zola](https://www.getzola.org/) (static site generator) and [Alpine.js](https://alpinejs.dev/) (lightweight reactivity). It features:
+
+- **Solarized Dark** theme with **JetBrains Mono** for technical data
+- **Foldable TLD groups** — root domains always visible, subdomains collapsed by default
+- **Side panel detail view** — click any asset to see DNS, HTTP, TLS, hosting, and technologies
+- **Technology pills** — all detected tech shown as inline tags (no truncation)
+- **Client-side pagination** — 15 domains per page
+- **Search and filter** — by name, lifecycle state, and risk level
+- **Sortable columns** — click headers to sort
+- **Three tabs**: Inventory, Findings, Risk Distribution
+
+**Deploying:**
+The `web/public/` directory contains a fully static site. Serve it with any web server:
+
+```bash
+# Preview locally
+cd web && zola serve
+
+# Deploy to nginx
+cp -r web/public/* /var/www/html/
+
+# Deploy to GitHub Pages
+# (push web/public to gh-pages branch)
+```
+
+**Requirements:**
+- [Zola](https://www.getzola.org/documentation/getting-started/installation/) must be installed
+- The `web/static/data/` directory is gitignored — it is recreated on each export
 
 ### Interactive TUI Dashboard
 

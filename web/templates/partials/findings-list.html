@@ -1,0 +1,47 @@
+<div x-data="findingsList" class="findings-container">
+    <div class="filters">
+        <select x-model="filterStatus" class="filter-select">
+            <option value="">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="acknowledged">Acknowledged</option>
+            <option value="resolved">Resolved</option>
+        </select>
+
+        <select x-model="filterSeverity" class="filter-select">
+            <option value="">All Severities</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+            <option value="Info">Info</option>
+        </select>
+    </div>
+
+    <div class="findings-list">
+        <template x-for="finding in filteredFindings" :key="finding.id">
+            <div class="finding-card" :class="'severity-' + finding.severity.toLowerCase()">
+                <div class="finding-header">
+                    <span class="finding-status" :class="'status-' + finding.status">
+                        <template x-if="finding.status === 'open'">○</template>
+                        <template x-if="finding.status === 'acknowledged'">◐</template>
+                        <template x-if="finding.status === 'resolved'">●</template>
+                    </span>
+                    <span class="finding-severity" x-text="finding.severity"></span>
+                    <span class="finding-check" x-text="finding.check_name"></span>
+                    <span class="finding-date" x-text="formatDate(finding.created_at)"></span>
+                </div>
+
+                <div class="finding-body">
+                    <p class="finding-target">
+                        <strong>Target:</strong>
+                        <span class="domain-name mono" x-text="finding.target"></span>
+                    </p>
+                    <p class="finding-message" x-text="finding.message"></p>
+                    <p class="finding-category">
+                        <span class="badge" x-text="finding.category"></span>
+                    </p>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>

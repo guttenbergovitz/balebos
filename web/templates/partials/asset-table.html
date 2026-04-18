@@ -1,0 +1,250 @@
+<div
+    x-data="assetTable"
+    :class="{ 'panel-open': selectedAsset !== null }"
+    class="asset-table-container"
+>
+    <!-- Filters -->
+    <div class="filters">
+        <input
+            type="text"
+            x-model="search"
+            @input="page = 1"
+            placeholder="Search assets..."
+            class="search-input"
+        />
+
+        <select x-model="filterLifecycle" @change="page = 1" class="filter-select">
+            <option value="">All Lifecycle</option>
+            <option value="Active">Active</option>
+            <option value="Under Review">Under Review</option>
+            <option value="Deprecated">Deprecated</option>
+            <option value="Decommissioned">Decommissioned</option>
+            <option value="Abandoned">Abandoned</option>
+        </select>
+
+        <select x-model="filterRisk" @change="page = 1" class="filter-select">
+            <option value="">All Risk</option>
+            <option value="critical">Critical (100+)</option>
+            <option value="high">High (50-99)</option>
+            <option value="medium">Medium (25-49)</option>
+            <option value="low">Low (1-24)</option>
+            <option value="none">None (0)</option>
+        </select>
+    </div>
+
+    <!-- Asset Table -->
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th @click="sortBy('name')" style="width: 32%">
+                    Asset
+                    <span x-show="sortField === 'name'" x-text="sortDirection === 'asc' ? '↑' : '↓'"></span>
+                </th>
+                <th @click="sortBy('risk_score')" style="width: 7%">
+                    Risk
+                    <span x-show="sortField === 'risk_score'" x-text="sortDirection === 'asc' ? '↑' : '↓'"></span>
+                </th>
+                <th style="width: 11%">Lifecycle</th>
+                <th style="width: 9%">Status</th>
+                <th style="width: 30%">Technologies</th>
+                <th style="width: 11%">Project</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="group in paginatedGroups" :key="group.tld">
+                <div style="display: contents">
+                    <!-- Root domain row -->
+                    <tr
+                        @click="selectAsset(group.root)"
+                        :class="{ 'selected': selectedAsset?.name === group.root.name, 'group-root': true }"
+                        class="asset-row"
+                    >
+                        <td>
+                            <span class="domain-name" :style="'color: ' + getRiskColor(group.root.risk_score)">
+                                <span
+                                    @click.stop="toggleGroup(group.tld)"
+                                    class="group-chevron"
+                                    :class="{ 'open': isGroupOpen(group.tld) }"
+                                    x-show="group.subs.length > 0"
+                                >▶</span>
+                                <span x-text="group.root.name"></span>
+                                <span class="group-count" x-show="group.subs.length > 0" x-text="group.subs.length + ' sub' + (group.subs.length > 1 ? 's' : '')"></span>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="risk-badge" :style="'background: ' + getRiskColor(group.root.risk_score)" x-text="group.root.risk_score"></span>
+                        </td>
+                        <td>
+                            <span class="lifecycle-badge" :class="'lifecycle-' + (group.root.lifecycle || 'Unknown').toLowerCase().replace(/ /g, '-')" x-text="group.root.lifecycle || 'Unknown'"></span>
+                        </td>
+                        <td x-text="group.root.http_status_text || '—'"></td>
+                        <td>
+                            <div class="tech-pills">
+                                <template x-for="tech in group.root.tech" :key="tech">
+                                    <span class="tech-pill" x-text="tech"></span>
+                                </template>
+                            </div>
+                        </td>
+                        <td x-text="group.root.project?.name || '—'"></td>
+                    </tr>
+
+                    <!-- Subdomain rows (foldable) -->
+                    <template x-if="isGroupOpen(group.tld)">
+                        <template x-for="sub in group.subs" :key="sub.name">
+                            <tr
+                                @click="selectAsset(sub)"
+                                :class="{ 'selected': selectedAsset?.name === sub.name, 'subdomain': true }"
+                                class="asset-row"
+                            >
+                                <td>
+                                    <span class="domain-name" :style="'color: ' + getRiskColor(sub.risk_score)">
+                                        <span class="subdomain-indicator">└─</span>
+                                        <span x-text="sub.name"></span>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="risk-badge" :style="'background: ' + getRiskColor(sub.risk_score)" x-text="sub.risk_score"></span>
+                                </td>
+                                <td>
+                                    <span class="lifecycle-badge" :class="'lifecycle-' + (sub.lifecycle || 'Unknown').toLowerCase().replace(/ /g, '-')" x-text="sub.lifecycle || 'Unknown'"></span>
+                                </td>
+                                <td x-text="sub.http_status_text || '—'"></td>
+                                <td>
+                                    <div class="tech-pills">
+                                        <template x-for="tech in sub.tech" :key="tech">
+                                            <span class="tech-pill" x-text="tech"></span>
+                                        </template>
+                                    </div>
+                                </td>
+                                <td x-text="sub.project?.name || '—'"></td>
+                            </tr>
+                        </template>
+                    </template>
+                </div>
+            </template>
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination" x-show="totalPages > 1">
+        <span class="pagination-info">
+            <span x-text="showingFrom"></span>–<span x-text="showingTo"></span> of <span x-text="totalItems"></span> domains
+        </span>
+        <div class="pagination-controls">
+            <button class="page-btn" @click="prevPage" :disabled="page === 1">←</button>
+            <template x-for="p in totalPages" :key="p">
+                <button
+                    class="page-btn"
+                    :class="{ active: page === p }"
+                    @click="goToPage(p)"
+                    x-text="p"
+                ></button>
+            </template>
+            <button class="page-btn" @click="nextPage" :disabled="page === totalPages">→</button>
+        </div>
+    </div>
+
+    <!-- Side Panel -->
+    <div
+        class="panel-overlay"
+        :class="{ 'open': selectedAsset !== null }"
+        @click="selectedAsset = null"
+    ></div>
+
+    <div
+        class="side-panel"
+        :class="{ 'open': selectedAsset !== null }"
+        x-show="selectedAsset !== null"
+        x-cloak
+    >
+        <div class="panel-header">
+            <h2 class="mono" x-text="selectedAsset?.name"></h2>
+            <button class="panel-close" @click="selectedAsset = null">✕</button>
+        </div>
+
+        <div class="panel-body">
+            <!-- Overview -->
+            <div class="panel-section">
+                <h3>Overview</h3>
+                <p>
+                    <strong>Risk Score:</strong>
+                    <span
+                        class="risk-badge"
+                        :style="'background: ' + getRiskColor(selectedAsset?.risk_score)"
+                        x-text="selectedAsset?.risk_score"
+                    ></span>
+                </p>
+                <p><strong>Lifecycle:</strong> <span x-text="selectedAsset?.lifecycle || 'Unknown'"></span></p>
+                <p><strong>Status:</strong> <span x-text="selectedAsset?.http_status_text || '—'"></span></p>
+                <p><strong>Tags:</strong> <span x-text="selectedAsset?.tags.join(', ') || 'None'"></span></p>
+                <p><strong>Last checked:</strong> <span x-text="selectedAsset?.last_checked ? new Date(selectedAsset.last_checked).toLocaleString() : '—'"></span></p>
+            </div>
+
+            <!-- Technologies -->
+            <div class="panel-section" x-show="selectedAsset?.tech?.length">
+                <h3>Technologies</h3>
+                <div class="tech-pills">
+                    <template x-for="tech in selectedAsset?.tech" :key="tech">
+                        <span class="tech-pill" x-text="tech"></span>
+                    </template>
+                </div>
+            </div>
+
+            <!-- DNS -->
+            <div class="panel-section" x-show="selectedAsset?.dns">
+                <h3>DNS Records</h3>
+                <template x-if="selectedAsset?.dns?.a?.length">
+                    <p><strong>A:</strong> <span class="mono" x-text="selectedAsset.dns.a.join(', ')"></span></p>
+                </template>
+                <template x-if="selectedAsset?.dns?.aaaa?.length">
+                    <p><strong>AAAA:</strong> <span class="mono" x-text="selectedAsset.dns.aaaa.join(', ')"></span></p>
+                </template>
+                <template x-if="selectedAsset?.dns?.cname?.length">
+                    <p><strong>CNAME:</strong> <span class="mono" x-text="selectedAsset.dns.cname.join(', ')"></span></p>
+                </template>
+                <template x-if="selectedAsset?.dns?.mx?.length">
+                    <p><strong>MX:</strong> <span class="mono" x-text="selectedAsset.dns.mx.join(', ')"></span></p>
+                </template>
+            </div>
+
+            <!-- HTTP -->
+            <div class="panel-section" x-show="selectedAsset?.http">
+                <h3>HTTP</h3>
+                <p><strong>Title:</strong> <span x-text="selectedAsset?.http?.title || '—'"></span></p>
+                <p><strong>Server:</strong> <span class="mono" x-text="selectedAsset?.http?.server || '—'"></span></p>
+                <p><strong>Response Time:</strong> <span x-text="selectedAsset?.http?.response_time_ms"></span>ms</p>
+                <p><strong>Final URL:</strong> <span class="mono" x-text="selectedAsset?.http?.final_url || '—'"></span></p>
+                <template x-if="selectedAsset?.http?.redirect_chain?.length">
+                    <p><strong>Redirects:</strong> <span x-text="selectedAsset.http.redirect_chain.length"></span></p>
+                </template>
+            </div>
+
+            <!-- TLS -->
+            <div class="panel-section" x-show="selectedAsset?.tls">
+                <h3>TLS Certificate</h3>
+                <p><strong>Issuer:</strong> <span x-text="selectedAsset?.tls?.issuer || '—'"></span></p>
+                <p>
+                    <strong>Expires:</strong>
+                    <span :class="getTlsExpiryClass(selectedAsset?.tls?.days_until_expiry)" x-text="(selectedAsset?.tls?.days_until_expiry ?? '—') + ' days'"></span>
+                </p>
+            </div>
+
+            <!-- Hosting -->
+            <div class="panel-section" x-show="selectedAsset?.hosting">
+                <h3>Hosting</h3>
+                <p><strong>Provider:</strong> <span x-text="selectedAsset?.hosting?.provider || '—'"></span></p>
+                <p><strong>Category:</strong> <span x-text="selectedAsset?.hosting?.category || '—'"></span></p>
+                <p><strong>Confidence:</strong> <span x-text="selectedAsset?.hosting?.confidence || '—'"></span></p>
+                <template x-if="selectedAsset?.hosting?.cdn_detected">
+                    <p><strong>CDN:</strong> <span x-text="selectedAsset.hosting.cdn_name"></span></p>
+                </template>
+            </div>
+
+            <!-- Organization -->
+            <div class="panel-section" x-show="selectedAsset?.project">
+                <h3>Organization</h3>
+                <p><strong>Project:</strong> <span x-text="selectedAsset?.project?.name || '—'"></span></p>
+            </div>
+        </div>
+    </div>
+</div>

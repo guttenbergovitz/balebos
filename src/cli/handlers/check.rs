@@ -6,6 +6,7 @@ use crate::app::{check_inventory, generate_report, Severity};
 use crate::exit_codes::*;
 use crate::storage::StorageEngine;
 
+#[allow(dead_code)]
 pub(crate) fn cmd_check(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     // Get current issues from check_inventory (real-time checks)
     match check_inventory(storage, ignore_patterns) {
@@ -112,6 +113,7 @@ pub(crate) fn cmd_check(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[Str
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn cmd_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     match generate_report(storage, ignore_patterns) {
         Ok(report) => {
@@ -197,6 +199,7 @@ pub(crate) fn cmd_report(storage: &Arc<dyn StorageEngine>, ignore_patterns: &[St
 }
 
 /// Print a line like `+ 3 new domains` or `+ no new domains`.
+#[allow(dead_code)]
 fn print_count_line(prefix: &str, label: &str, count: usize) {
     if count > 0 {
         let suffix = if count == 1 { "" } else { "s" };
@@ -207,6 +210,7 @@ fn print_count_line(prefix: &str, label: &str, count: usize) {
 }
 
 /// Print issue line only if count > 0.
+#[allow(dead_code)]
 fn print_issue_line(label: &str, count: usize, extra: &str) {
     if count > 0 {
         let suffix = if count == 1 { "" } else { "s" };

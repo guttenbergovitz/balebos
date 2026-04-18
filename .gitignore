@@ -18,6 +18,14 @@ Cargo.lock
 # Generated documentation
 /doc/
 
+# Zola build output
+/web/public/
+
+# Generated web data (recreated by build script)
+/web/data/
+/web/static/data/
+
+
 # Application data
 /data/
 balebos.ignore
@@ -25,6 +33,7 @@ balebos.ignore
 # LLM
 AGENTS.md
 CLAUDE.md
+.claude/
 GEMINI.md
 
 # Taskfile

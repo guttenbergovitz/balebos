@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ config.title }}</title>
+
+    <!-- JetBrains Mono -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/webfonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@master/fonts/webfonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+
+    <!-- Solarized Dark CSS -->
+    <link rel="stylesheet" href="/css/main.css">
+
+    <!-- Component definitions (must load before Alpine) -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('assetTable', () => ({
+                assets: [],
+                search: '',
+                filterLifecycle: '',
+                filterRisk: '',
+                sortField: 'name',
+                sortDirection: 'asc',
+                selectedAsset: null,
+                expandedGroups: {},
+                page: 1,
+                perPage: 15,
+
+                async init() {
+                    this.assets = await fetch('/data/assets.json').then(r => r.json());
+                },
+
+                get filteredAssets() {
+                    let results = [...this.assets];
+
+                    if (this.search) {
+                        const q = this.search.toLowerCase();
+                        results = results.filter(a =>
+                            a.name.toLowerCase().includes(q) ||
+                            a.tags.some(t => t.toLowerCase().includes(q))
+                        );
+                    }
+
+                    if (this.filterLifecycle) {
+                        results = results.filter(a => a.lifecycle === this.filterLifecycle);
+                    }
+
+                    if (this.filterRisk) {
+                        results = results.filter(a => {
+                            switch (this.filterRisk) {
+                                case 'critical': return a.risk_score >= 100;
+                                case 'high': return a.risk_score >= 50 && a.risk_score < 100;
+                                case 'medium': return a.risk_score >= 25 && a.risk_score < 50;
+                                case 'low': return a.risk_score >= 1 && a.risk_score < 25;
+                                case 'none': return a.risk_score === 0;
+                                default: return true;
+                            }
+                        });
+                    }
+
+                    results.sort((a, b) => {
+                        const aVal = a[this.sortField];
+                        const bVal = b[this.sortField];
+                        if (typeof aVal === 'string') {
+                            return this.sortDirection === 'asc'
+                                ? aVal.localeCompare(bVal)
+                                : bVal.localeCompare(aVal);
+                        }
+                        return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    });
+
+                    return results;
+                },
+
+                get groups() {
+                    const map = new Map();
+                    for (const asset of this.filteredAssets) {
+                        const parts = asset.name.split('.');
+                        const tld = parts.length >= 2 ? parts.slice(-2).join('.') : asset.name;
+                        if (!map.has(tld)) {
+                            map.set(tld, { tld, root: null, subs: [] });
+                        }
+                        const g = map.get(tld);
+                        if (asset.is_subdomain) {
+                            g.subs.push(asset);
+                        } else {
+                            g.root = asset;
+                        }
+                    }
+                    // If no root found, use first sub as root placeholder
+                    for (const g of map.values()) {
+                        if (!g.root && g.subs.length > 0) {
+                            g.root = g.subs.shift();
+                            g.root.is_subdomain = false;
+                        }
+                    }
+                    return Array.from(map.values());
+                },
+
+                get paginatedGroups() {
+                    const start = (this.page - 1) * this.perPage;
+                    const end = start + this.perPage;
+                    return this.groups.slice(start, end);
+                },
+
+                get totalPages() {
+                    return Math.max(1, Math.ceil(this.groups.length / this.perPage));
+                },
+
+                get totalItems() {
+                    return this.groups.length;
+                },
+
+                get showingFrom() {
+                    return this.groups.length === 0 ? 0 : (this.page - 1) * this.perPage + 1;
+                },
+
+                get showingTo() {
+                    return Math.min(this.page * this.perPage, this.groups.length);
+                },
+
+                goToPage(n) {
+                    if (n >= 1 && n <= this.totalPages) {
+                        this.page = n;
+                        this.expandedAsset = null;
+                    }
+                },
+
+                nextPage() { this.goToPage(this.page + 1); },
+                prevPage() { this.goToPage(this.page - 1); },
+
+                isGroupOpen(tld) {
+                    return !!this.expandedGroups[tld];
+                },
+
+                toggleGroup(tld) {
+                    this.expandedGroups[tld] = !this.expandedGroups[tld];
+                },
+
+                selectAsset(asset) {
+                    if (this.selectedAsset?.name === asset.name) {
+                        this.selectedAsset = null;
+                    } else {
+                        this.selectedAsset = asset;
+                    }
+                },
+
+                sortBy(field) {
+                    if (this.sortField === field) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortField = field;
+                        this.sortDirection = 'asc';
+                    }
+                    this.page = 1;
+                },
+
+                getRiskColor(score) {
+                    if (score === 0) return '#859900';
+                    if (score < 25) return '#2aa198';
+                    if (score < 50) return '#b58900';
+                    if (score < 100) return '#cb4b16';
+                    return '#dc322f';
+                },
+
+                getTlsExpiryClass(days) {
+                    if (days === null || days === undefined) return '';
+                    if (days < 7) return 'expiry-critical';
+                    if (days < 30) return 'expiry-warning';
+                    return 'expiry-ok';
+                },
+
+                groupMaxRisk(subs) {
+                    if (!subs.length) return 0;
+                    return Math.max(...subs.map(s => s.risk_score));
+                },
+
+                groupSubCount(subs) {
+                    return subs.length;
+                }
+            }));
+
+            Alpine.data('findingsList', () => ({
+                findings: [],
+                loaded: false,
+                filterStatus: '',
+                filterSeverity: '',
+
+                async init() {
+                    this.findings = await fetch('/data/findings.json').then(r => r.json());
+                    this.loaded = true;
+                },
+
+                get filteredFindings() {
+                    let results = this.findings;
+                    if (this.filterStatus) {
+                        results = results.filter(f => f.status === this.filterStatus);
+                    }
+                    if (this.filterSeverity) {
+                        results = results.filter(f => f.severity === this.filterSeverity);
+                    }
+                    return results;
+                },
+
+                formatDate(dateStr) {
+                    const date = new Date(dateStr);
+                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                }
+            }));
+
+            Alpine.data('riskData', () => ({
+                stats: { critical: 0, high: 0, medium: 0, low: 0 },
+                async init() {
+                    const assets = await fetch('/data/assets.json').then(r => r.json());
+                    this.stats = {
+                        critical: assets.filter(a => a.risk_score >= 100).length,
+                        high: assets.filter(a => a.risk_score >= 50 && a.risk_score < 100).length,
+                        medium: assets.filter(a => a.risk_score >= 25 && a.risk_score < 50).length,
+                        low: assets.filter(a => a.risk_score >= 1 && a.risk_score < 25).length,
+                    };
+                }
+            }));
+        });
+    </script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="logo">{{ config.title }}</h1>
+
+            <div class="stats" x-data="{ metadata: {} }" x-init="fetch('/data/metadata.json').then(r => r.json()).then(d => metadata = d)">
+                <span class="stat">
+                    <strong x-text="metadata.total_assets || '0'"></strong> assets
+                </span>
+                <span class="stat">
+                    <strong x-text="metadata.open_findings || '0'"></strong> open
+                </span>
+                <span class="stat critical" x-show="(metadata.critical_findings || 0) > 0">
+                    <strong x-text="metadata.critical_findings || '0'"></strong> critical
+                </span>
+                <span class="stat-updated">
+                    <span x-text="metadata.generated_at ? new Date(metadata.generated_at).toLocaleString() : '—'"></span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock content %}
+    </main>
+
+    <footer class="footer">
+        <p>Balebos · Digital Realm Status</p>
+    </footer>
+</body>
+</html>
