@@ -11,6 +11,7 @@ pub enum Command {
     Report,
     Probe { kind: ProbeKind, target: String },
     Ui,
+    Web { output_dir: String },
     Org(OrgCommand),
     Tag(TagCommand),
     Finding(FindingCommand),
@@ -223,6 +224,18 @@ pub fn parse_command() -> Option<Command> {
                 _ => return None,
             };
             Some(Command::Probe { kind, target })
+        }
+        "web" => {
+            let action = args.get(2)?;
+            match action.as_str() {
+                "export" => {
+                    let output_dir = find_flag_value(args.as_slice(), "--output-dir")
+                        .or_else(|| find_flag_value(args.as_slice(), "-o"))
+                        .unwrap_or_else(|| "web/data".to_string());
+                    Some(Command::Web { output_dir })
+                }
+                _ => None,
+            }
         }
         "org" => parse_org_command(&args),
         "tag" => parse_tag_command(&args),

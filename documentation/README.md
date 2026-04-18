@@ -22,6 +22,7 @@ Comprehensive guides for specific features and workflows:
 ### Specialised Topics
 - **[Reconnaissance Pipeline](guides/recon-pipeline.md)** - How assets are discovered and probed
 - **[Tag Management](guides/tag-management.md)** - Organising and filtering assets with tags
+- **[Web Dashboard](guides/web-dashboard.md)** - Exporting static site for stakeholders
 
 ## Technical Documentation
 
@@ -61,6 +62,12 @@ balebos finding list         # List findings
 balebos risk report          # Prioritise by risk
 ```
 
+**Export web dashboard:**
+```bash
+./build-web.sh               # Export data and build static site
+# Output: web/public/
+```
+
 **Manage organisational context:**
 ```bash
 balebos org brand add "My Company"
@@ -85,6 +92,7 @@ balebos asset lifecycle list
 - **asset management**: `balebos asset lifecycle set/show/history/list`
 - **organisation**: `balebos org brand/company/person/project add/list`
 - **tags**: `balebos tag add/list/remove`
+- **web**: `balebos web export`, `./build-web.sh`
 - **TUI**: `balebos ui`
 
 See [Usage Reference](guides/usage.md) for complete documentation of all commands.
@@ -191,5 +199,5 @@ Common issues? Check the relevant guide:
 
 ---
 
-**Last updated:** 2026-04-14
+**Last updated:** 2026-04-18
 **Status:** Actively maintained

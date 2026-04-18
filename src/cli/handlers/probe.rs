@@ -7,6 +7,7 @@ use crate::cli::ProbeKind;
 use crate::exit_codes::*;
 use crate::storage::StorageEngine;
 
+#[allow(dead_code)]
 pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
     match kind {
         ProbeKind::Subdomains => match probe_subdomains(target, storage) {

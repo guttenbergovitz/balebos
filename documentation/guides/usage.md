@@ -222,6 +222,20 @@ This command provides comprehensive health report of all assets, showing HTTP pr
 
 Each category shows count, percentage, response times, and error details.
 
+#### Web Dashboard Export
+
+Export infrastructure data for the static web dashboard (see [Web Dashboard Guide](web-dashboard.md)):
+
+```bash
+# Export JSON data files for the web dashboard
+cargo run --release -- web export --output-dir web/static/data
+
+# Or use the build script
+./build-web.sh
+```
+
+This generates `assets.json`, `findings.json`, and `metadata.json` in the output directory. The site is then built with Zola to produce a fully static dashboard in `web/public/`.
+
 #### Exporting Status Reports
 
 Status reports can be exported to multiple formats:
