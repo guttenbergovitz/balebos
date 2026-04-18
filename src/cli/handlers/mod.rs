@@ -8,3 +8,4 @@ pub mod risk;
 pub mod scan;
 pub mod tag;
 pub mod ui;
+pub mod web;

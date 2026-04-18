@@ -414,9 +414,11 @@ The project evolved from pure JSONL storage to a Parquet-backed system with Pola
 - Interpretation should happen at query time
 - Source data should remain as close to original as possible
 
-### Why command-line over web interface?
+### Why command-line first?
 
 - Follows Unix philosophy of tools that do one thing well
 - Easily automated and integrated with other tools
 - Lower overhead and dependencies
 - Natural fit for infrastructure pipelines
+
+That said, Balebos does provide a **static web dashboard** for stakeholders who need a browser-based view. It is generated from the same Parquet data, requires no server-side code, and can be deployed to any static hosting. The CLI remains the primary interface; the web dashboard is a read-only export for sharing.

@@ -9,6 +9,7 @@ use crate::exit_codes::*;
 use crate::inventory::AssetLifecycle;
 use crate::storage::StorageEngine;
 
+#[allow(dead_code)]
 pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine>) {
     match asset_cmd {
         AssetCommand::LifecycleSet {

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div x-data="{ activeTab: 'inventory' }" class="dashboard">
+    <nav class="tabs">
+        <button
+            @click="activeTab = 'inventory'"
+            :class="{ active: activeTab === 'inventory' }"
+            class="tab-button"
+        >
+            Inventory
+        </button>
+        <button
+            @click="activeTab = 'findings'"
+            :class="{ active: activeTab === 'findings' }"
+            class="tab-button"
+        >
+            Findings
+        </button>
+        <button
+            @click="activeTab = 'risk'"
+            :class="{ active: activeTab === 'risk' }"
+            class="tab-button"
+        >
+            Risk
+        </button>
+    </nav>
+
+    <div x-show="activeTab === 'inventory'" x-cloak>
+        {% include "partials/asset-table.html" %}
+    </div>
+
+    <div x-show="activeTab === 'findings'" x-cloak>
+        {% include "partials/findings-list.html" %}
+    </div>
+
+    <div x-show="activeTab === 'risk'" x-cloak>
+        <div class="risk-panel">
+            <h2>Risk Distribution</h2>
+            <div x-data="riskData" class="risk-stats">
+                <div class="risk-stat">
+                    <h3>Critical</h3>
+                    <p class="risk-number critical" x-text="stats.critical || '0'"></p>
+                </div>
+                <div class="risk-stat">
+                    <h3>High</h3>
+                    <p class="risk-number high" x-text="stats.high || '0'"></p>
+                </div>
+                <div class="risk-stat">
+                    <h3>Medium</h3>
+                    <p class="risk-number medium" x-text="stats.medium || '0'"></p>
+                </div>
+                <div class="risk-stat">
+                    <h3>Low</h3>
+                    <p class="risk-number low" x-text="stats.low || '0'"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

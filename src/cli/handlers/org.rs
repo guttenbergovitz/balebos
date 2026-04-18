@@ -7,6 +7,7 @@ use crate::exit_codes::*;
 use crate::org::{BrandId, CompanyId, CountryCode, PersonId, ProjectId, Role};
 use crate::storage::StorageEngine;
 
+#[allow(dead_code)]
 pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
     match org_cmd {
         OrgCommand::PersonAdd {
