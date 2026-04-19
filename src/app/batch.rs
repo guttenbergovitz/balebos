@@ -225,6 +225,8 @@ pub fn batch_process(
         }
     }
 
+    let mut dns_observations = Vec::new();
+
     if dns_targets.is_empty() {
         println!("  → No targets to check");
     } else {
@@ -237,6 +239,7 @@ pub fn batch_process(
                 println!(" ✓");
                 println!("  → Recorded {} DNS observations", observations.len());
                 stats.dns_checks_completed += observations.len();
+                dns_observations = observations;
             }
             Err(e) => {
                 println!(" ✗");
@@ -246,14 +249,26 @@ pub fn batch_process(
     }
     println!();
 
-    // Step 4: Probe HTTP for all domains and subdomains
+    // Step 4: Probe HTTP for domains/subdomains with DNS records
+    // Skip assets that have no A/AAAA/CNAME/MX records — they won't respond to HTTP
     println!("🌐 Step 4/7: Checking HTTP status...");
+
+    let has_dns: std::collections::HashSet<String> = dns_observations
+        .iter()
+        .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
+        .map(|o| o.target.clone())
+        .collect();
 
     let mut http_targets = Vec::new();
     for asset in &all_assets {
-        if !crate::ignore::is_ignored(asset, ignore_patterns) {
+        if !crate::ignore::is_ignored(asset, ignore_patterns) && has_dns.contains(asset) {
             http_targets.push(asset.clone());
         }
+    }
+
+    let skipped_no_dns = all_assets.len().saturating_sub(http_targets.len());
+    if skipped_no_dns > 0 {
+        println!("  ℹ Skipping {} assets without DNS records", skipped_no_dns);
     }
 
     // Store HTTP observations for later hosting detection
@@ -520,29 +535,59 @@ pub fn run_single_recon_with_progress(
         }
     };
 
-    // 6. Batch HTTP Probe
+    // 6. Batch HTTP Probe (skip targets without DNS records)
+    let has_dns: std::collections::HashSet<String> = dns_observations
+        .iter()
+        .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
+        .map(|o| o.target.clone())
+        .collect();
+
+    let http_targets: Vec<String> = targets
+        .iter()
+        .filter(|t| has_dns.contains(*t))
+        .cloned()
+        .collect();
+
+    let skipped = targets.len().saturating_sub(http_targets.len());
+
     on_step("Probing HTTP status...");
-    let http_observations = match probe::probe_http_batch(&targets, storage) {
-        Ok(obs) => {
-            let success_count = obs.iter().filter(|o| o.status.is_some()).count();
-            let r = ReconStepResult {
-                name: "http",
-                success: true,
-                message: format!("HTTP checked {} targets ({} responded)", obs.len(), success_count),
-            };
-            on_result(&r);
-            results.push(r);
-            obs
-        }
-        Err(e) => {
-            let r = ReconStepResult {
-                name: "http",
-                success: false,
-                message: format!("HTTP probe failed: {}", e),
-            };
-            on_result(&r);
-            results.push(r);
-            vec![]
+    let http_observations = if http_targets.is_empty() {
+        let r = ReconStepResult {
+            name: "http",
+            success: true,
+            message: format!("No targets with DNS records (skipped {})", skipped),
+        };
+        on_result(&r);
+        results.push(r);
+        vec![]
+    } else {
+        match probe::probe_http_batch(&http_targets, storage) {
+            Ok(obs) => {
+                let success_count = obs.iter().filter(|o| o.status.is_some()).count();
+                let r = ReconStepResult {
+                    name: "http",
+                    success: true,
+                    message: format!(
+                        "HTTP checked {} targets ({} responded, {} skipped without DNS)",
+                        obs.len(),
+                        success_count,
+                        skipped
+                    ),
+                };
+                on_result(&r);
+                results.push(r);
+                obs
+            }
+            Err(e) => {
+                let r = ReconStepResult {
+                    name: "http",
+                    success: false,
+                    message: format!("HTTP probe failed: {}", e),
+                };
+                on_result(&r);
+                results.push(r);
+                vec![]
+            }
         }
     };
 

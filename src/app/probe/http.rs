@@ -262,7 +262,7 @@ pub fn probe_http_batch_with_progress(
     check_httpx_installation()?;
 
     let mut all_observations = Vec::new();
-    let chunk_size = 10;
+    let chunk_size = 100;
 
     for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
         let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;

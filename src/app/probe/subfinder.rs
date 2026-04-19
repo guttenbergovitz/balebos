@@ -74,7 +74,7 @@ fn run_subfinder_batch(
     storage: &Arc<dyn StorageEngine>,
 ) -> Result<Vec<String>> {
     let mut all_subdomains = Vec::new();
-    let chunk_size = 10; // Frequent updates for better feedback
+    let chunk_size = 100; // Larger chunks = less process spawn overhead
 
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
         let total_chunks = (domains.len() as f32 / chunk_size as f32).ceil() as usize;
