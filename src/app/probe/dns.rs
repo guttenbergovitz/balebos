@@ -49,10 +49,10 @@ fn check_dnsx_installation() -> Result<()> {
     Ok(())
 }
 
-/// Run a batch DNS probe using a single dnsx process for efficiency.
-pub fn probe_dns_batch(
+fn probe_dns_batch_inner(
     targets: &[String],
-    storage: &Arc<dyn StorageEngine>,
+    save_to_storage: bool,
+    storage: Option<&Arc<dyn StorageEngine>>,
 ) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
@@ -150,13 +150,28 @@ pub fn probe_dns_batch(
             }
         }
 
-        if !observations.is_empty() {
-            storage.save_batch(&observations)?;
-            all_observations.extend(observations);
+        if save_to_storage && !observations.is_empty() {
+            if let Some(s) = storage {
+                s.save_batch(&observations)?;
+            }
         }
+        all_observations.extend(observations);
     }
 
     Ok(all_observations)
+}
+
+/// Run a batch DNS probe using a single dnsx process for efficiency.
+pub fn probe_dns_batch(
+    targets: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<DnsObservation>> {
+    probe_dns_batch_inner(targets, true, Some(storage))
+}
+
+/// Run a batch DNS probe without saving to storage.
+pub fn probe_dns_batch_no_save(targets: &[String]) -> Result<Vec<DnsObservation>> {
+    probe_dns_batch_inner(targets, false, None)
 }
 
 pub fn probe_dns(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<DnsObservation> {

@@ -249,10 +249,10 @@ pub fn probe_http_batch(
     probe_http_batch_with_progress(targets, storage, None)
 }
 
-/// Like `probe_http_batch` but with an optional progress callback for TUI integration.
-pub fn probe_http_batch_with_progress(
+fn probe_http_batch_with_progress_inner(
     targets: &[String],
-    storage: &Arc<dyn StorageEngine>,
+    save_to_storage: bool,
+    storage: Option<&Arc<dyn StorageEngine>>,
     on_progress: Option<ProgressCallback>,
 ) -> Result<Vec<HttpObservation>> {
     if targets.is_empty() {
@@ -354,15 +354,31 @@ pub fn probe_http_batch_with_progress(
             }
         }
 
-        if !observations.is_empty() {
-            storage.save_batch(&observations)?;
-            all_observations.extend(observations);
+        if save_to_storage && !observations.is_empty() {
+            if let Some(s) = storage {
+                s.save_batch(&observations)?;
+            }
         }
+        all_observations.extend(observations);
 
         let _ = child.wait()?;
     }
 
     Ok(all_observations)
+}
+
+/// Like `probe_http_batch` but with an optional progress callback for TUI integration.
+pub fn probe_http_batch_with_progress(
+    targets: &[String],
+    storage: &Arc<dyn StorageEngine>,
+    on_progress: Option<ProgressCallback>,
+) -> Result<Vec<HttpObservation>> {
+    probe_http_batch_with_progress_inner(targets, true, Some(storage), on_progress)
+}
+
+/// Run HTTP batch probe without saving to storage.
+pub fn probe_http_batch_no_save(targets: &[String]) -> Result<Vec<HttpObservation>> {
+    probe_http_batch_with_progress_inner(targets, false, None, None)
 }
 
 // Perform HTTP probe (single domain wrapper around batch)

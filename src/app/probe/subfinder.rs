@@ -69,11 +69,20 @@ pub fn probe_subdomains(domain: &str, storage: &Arc<dyn StorageEngine>) -> Resul
     Ok(subdomains)
 }
 
-fn run_subfinder_batch(
+/// Result of subdomain discovery without saving to storage
+#[derive(Debug, Clone)]
+pub struct SubdomainDiscovery {
+    pub subdomain: String,
+    pub original_input: Option<String>,
+}
+
+fn run_subfinder_batch_inner(
     domains: &[String],
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<Vec<String>> {
+    save_to_storage: bool,
+    storage: Option<&Arc<dyn StorageEngine>>,
+) -> Result<(Vec<String>, Vec<InventoryItem>)> {
     let mut all_subdomains = Vec::new();
+    let mut all_items = Vec::new();
     let chunk_size = 100; // Larger chunks = less process spawn overhead
 
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
@@ -148,15 +157,21 @@ fn run_subfinder_batch(
             chunk_items.push(item);
 
             // Periodically save to disk to keep memory low and data safe
-            if chunk_items.len() >= 100 {
-                storage.save_batch(&chunk_items)?;
+            if save_to_storage && chunk_items.len() >= 100 {
+                if let Some(s) = storage {
+                    s.save_batch(&chunk_items)?;
+                }
                 chunk_items.clear();
             }
         }
 
         // Final save for the chunk
-        if !chunk_items.is_empty() {
-            storage.save_batch(&chunk_items)?;
+        if save_to_storage && !chunk_items.is_empty() {
+            if let Some(s) = storage {
+                s.save_batch(&chunk_items)?;
+            }
+        } else if !save_to_storage {
+            all_items.extend(chunk_items);
         }
         println!(); // New line after chunk progress (only in CLI mode)
 
@@ -166,7 +181,26 @@ fn run_subfinder_batch(
         all_subdomains.extend(chunk_subdomains);
     }
 
-    Ok(all_subdomains)
+    Ok((all_subdomains, all_items))
+}
+
+fn run_subfinder_batch(
+    domains: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<Vec<String>> {
+    let (subdomains, _) = run_subfinder_batch_inner(domains, true, Some(storage))?;
+    Ok(subdomains)
+}
+
+/// Discover subdomains without saving to storage.
+/// Returns (subdomains, inventory_items) for batch buffering.
+pub fn probe_subdomains_batch_no_save(
+    domains: &[String],
+) -> Result<(Vec<String>, Vec<InventoryItem>)> {
+    if domains.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    run_subfinder_batch_inner(domains, false, None)
 }
 
 pub fn probe_subdomains_batch(
@@ -176,7 +210,5 @@ pub fn probe_subdomains_batch(
     if domains.is_empty() {
         return Ok(Vec::new());
     }
-
-    // Now returns the collected list, while internal function handles streaming save
     run_subfinder_batch(domains, storage)
 }

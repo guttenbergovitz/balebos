@@ -63,6 +63,7 @@ fn load_domains_from_file(filepath: &str) -> Result<Vec<String>> {
 struct GroupPipelineResult {
     domain: String,
     subdomains: Vec<String>,
+    sub_items: Vec<crate::inventory::InventoryItem>,
     dns_obs: Vec<probe::DnsObservation>,
     http_obs: Vec<probe::HttpObservation>,
 }
@@ -212,6 +213,8 @@ pub fn batch_process(
         group_size
     );
 
+    // Collect all results in memory, save to storage once at the end.
+    // This avoids 3×N save_batch calls per group (Parquet I/O is expensive).
     let pipeline_results: Vec<GroupPipelineResult> = groups
         .par_iter()
         .enumerate()
@@ -229,12 +232,12 @@ pub fn batch_process(
                 return None;
             }
 
-            // --- Subfinder ---
-            let subdomains = match probe::probe_subdomains_batch(&valid_domains, storage) {
-                Ok(subs) => subs,
+            // --- Subfinder (no save) ---
+            let (subdomains, sub_items) = match probe::probe_subdomains_batch_no_save(&valid_domains) {
+                Ok((subs, items)) => (subs, items),
                 Err(e) => {
                     eprintln!("  ✗ Group {} subfinder failed: {}", group_num, e);
-                    vec![]
+                    (vec![], vec![])
                 }
             };
 
@@ -246,8 +249,8 @@ pub fn batch_process(
                 }
             }
 
-            // --- DNS ---
-            let dns_obs = match probe::probe_dns_batch(&targets, storage) {
+            // --- DNS (no save) ---
+            let dns_obs = match probe::probe_dns_batch_no_save(&targets) {
                 Ok(obs) => obs,
                 Err(e) => {
                     eprintln!("  ✗ Group {} DNS failed: {}", group_num, e);
@@ -267,11 +270,11 @@ pub fn batch_process(
                 .filter(|t| has_dns.contains(t))
                 .collect();
 
-            // --- HTTP ---
+            // --- HTTP (no save) ---
             let http_obs = if http_targets.is_empty() {
                 vec![]
             } else {
-                match probe::probe_http_batch(&http_targets, storage) {
+                match probe::probe_http_batch_no_save(&http_targets) {
                     Ok(obs) => obs,
                     Err(e) => {
                         eprintln!("  ✗ Group {} HTTP failed: {}", group_num, e);
@@ -284,19 +287,22 @@ pub fn batch_process(
             Some(GroupPipelineResult {
                 domain: valid_domains.first().cloned().unwrap_or_default(),
                 subdomains,
+                sub_items,
                 dns_obs,
                 http_obs,
             })
         })
         .collect();
 
-    // Aggregate stats from pipeline
+    // Aggregate stats and collect all items for single save
+    let mut all_items = Vec::new();
     let mut all_dns_obs = Vec::new();
     let mut all_http_obs = Vec::new();
 
     for result in &pipeline_results {
         stats.subdomains_found += result.subdomains.len();
         stats.dns_checks_completed += result.dns_obs.len();
+        all_items.extend(result.sub_items.clone());
         all_dns_obs.extend(result.dns_obs.clone());
 
         for obs in &result.http_obs {
@@ -307,6 +313,18 @@ pub fn batch_process(
             }
         }
         all_http_obs.extend(result.http_obs.clone());
+    }
+
+    // Single bulk save to storage — eliminates N× save_batch calls
+    println!("💾 Saving {} observations to storage...", all_items.len() + all_dns_obs.len() + all_http_obs.len());
+    if !all_items.is_empty() {
+        storage.save_batch(&all_items)?;
+    }
+    if !all_dns_obs.is_empty() {
+        storage.save_batch(&all_dns_obs)?;
+    }
+    if !all_http_obs.is_empty() {
+        storage.save_batch(&all_http_obs)?;
     }
 
     println!(
