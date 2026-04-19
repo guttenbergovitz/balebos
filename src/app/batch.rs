@@ -58,7 +58,16 @@ fn load_domains_from_file(filepath: &str) -> Result<Vec<String>> {
     Ok(domains)
 }
 
-/// Run full reconnaissance on a batch of domains
+/// Pipeline result for a single domain group
+#[derive(Debug, Clone)]
+struct GroupPipelineResult {
+    domain: String,
+    subdomains: Vec<String>,
+    dns_obs: Vec<probe::DnsObservation>,
+    http_obs: Vec<probe::HttpObservation>,
+}
+
+/// Run full reconnaissance on a batch of domains with per-group pipelining
 pub fn batch_process(
     filepath: &str,
     storage: &Arc<dyn StorageEngine>,
@@ -95,10 +104,11 @@ pub fn batch_process(
         })
         .unwrap_or_default();
 
-    // Step 1: Scan all domains (Parallel)
+    // ========================================================================
+    // Step 1: Scan all domains (Parallel — already done with rayon)
+    // ========================================================================
     println!("🔍 Step 1/7: Scanning domains and RDAP info (parallel)...");
 
-    // Process domains in parallel
     let results: Vec<_> = domains
         .par_iter()
         .enumerate()
@@ -132,7 +142,6 @@ pub fn batch_process(
     // Save results and print status sequentially to avoid jumbled output
     let mut new_items = Vec::new();
     let mut new_rdaps = Vec::new();
-
     let mut skipped_rdap_count = 0;
 
     for (idx, domain, item_opt, rdap_opt, err_opt, skipped) in results {
@@ -178,145 +187,141 @@ pub fn batch_process(
     }
     println!();
 
-    // Step 2: Probe subdomains for all domains
-    println!(
-        "{} Step 2/7: Discovering subdomains in batch...",
-        '\u{1F577}'
-    );
-    let mut valid_domains = Vec::new();
-    for domain in &domains {
-        if !crate::ignore::is_ignored(domain, ignore_patterns) {
-            valid_domains.push(domain.clone());
-        }
-    }
+    // ========================================================================
+    // Step 2-4: Pipeline per domain group (Parallel)
+    // ========================================================================
+    // Each group runs: subfinder → dnsx → httpx sequentially,
+    // but groups run in parallel via rayon.
+    //
+    // This overlaps slow steps across groups:
+    //   Group 1: [subfinder]→[dnsx]→[httpx]
+    //   Group 2:          [subfinder]→[dnsx]→[httpx]
+    //   Group 3:                   [subfinder]→[dnsx]→[httpx]
+    //
+    // Without pipeline, we wait for ALL subfinders before ANY dnsx starts.
 
-    if valid_domains.is_empty() {
-        println!("  → No domains to check");
-    } else {
-        print!(
-            "  ⟳ Running subfinder for {} domains ... ",
-            valid_domains.len()
-        );
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
-
-        match probe::probe_subdomains_batch(&valid_domains, storage) {
-            Ok(subdomains) => {
-                println!("found {} subdomains", subdomains.len());
-                stats.subdomains_found += subdomains.len();
-            }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
-    }
-    println!();
-
-    // Get all current domains and subdomains
-    let all_assets = get_all_assets(storage)?;
-
-    // Step 3: Probe DNS for all domains and subdomains
-    println!("📡 Step 3/7: Resolving DNS records...");
-
-    let mut dns_targets = Vec::new();
-    for asset in &all_assets {
-        if !crate::ignore::is_ignored(asset, ignore_patterns) {
-            dns_targets.push(asset.clone());
-        }
-    }
-
-    let mut dns_observations = Vec::new();
-
-    if dns_targets.is_empty() {
-        println!("  → No targets to check");
-    } else {
-        print!("  ⟳ Resolving {} targets in batch ", dns_targets.len());
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
-
-        match probe::probe_dns_batch(&dns_targets, storage) {
-            Ok(observations) => {
-                println!(" ✓");
-                println!("  → Recorded {} DNS observations", observations.len());
-                stats.dns_checks_completed += observations.len();
-                dns_observations = observations;
-            }
-            Err(e) => {
-                println!(" ✗");
-                println!("  → DNS batch probe failed: {}", e);
-            }
-        }
-    }
-    println!();
-
-    // Step 4: Probe HTTP for domains/subdomains with DNS records
-    // Skip assets that have no A/AAAA/CNAME/MX records — they won't respond to HTTP
-    println!("🌐 Step 4/7: Checking HTTP status...");
-
-    let has_dns: std::collections::HashSet<String> = dns_observations
-        .iter()
-        .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
-        .map(|o| o.target.clone())
+    let group_size = 10;
+    let groups: Vec<Vec<String>> = domains
+        .chunks(group_size)
+        .map(|chunk| chunk.to_vec())
         .collect();
 
-    let mut http_targets = Vec::new();
-    for asset in &all_assets {
-        if !crate::ignore::is_ignored(asset, ignore_patterns) && has_dns.contains(asset) {
-            http_targets.push(asset.clone());
-        }
-    }
+    println!(
+        "🔄 Steps 2-4: Pipelined reconnaissance ({} groups of ~{} domains, parallel)...",
+        groups.len(),
+        group_size
+    );
 
-    let skipped_no_dns = all_assets.len().saturating_sub(http_targets.len());
-    if skipped_no_dns > 0 {
-        println!("  ℹ Skipping {} assets without DNS records", skipped_no_dns);
-    }
+    let pipeline_results: Vec<GroupPipelineResult> = groups
+        .par_iter()
+        .enumerate()
+        .filter_map(|(group_idx, group_domains)| {
+            let group_num = group_idx + 1;
 
-    // Store HTTP observations for later hosting detection
-    let mut http_observations = Vec::new();
+            // Filter ignored domains for this group
+            let valid_domains: Vec<String> = group_domains
+                .iter()
+                .filter(|d| !crate::ignore::is_ignored(d, ignore_patterns))
+                .cloned()
+                .collect();
 
-    if http_targets.is_empty() {
-        println!("  → No targets to check");
-    } else {
-        print!(
-            "  {} Checking {} targets in batch ",
-            '\u{27F3}',
-            http_targets.len()
-        );
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
+            if valid_domains.is_empty() {
+                return None;
+            }
 
-        match probe::probe_http_batch(&http_targets, storage) {
-            Ok(observations) => {
-                println!(" {}", '\u{2713}');
-                println!("  → Recorded {} HTTP observations", observations.len());
+            // --- Subfinder ---
+            let subdomains = match probe::probe_subdomains_batch(&valid_domains, storage) {
+                Ok(subs) => subs,
+                Err(e) => {
+                    eprintln!("  ✗ Group {} subfinder failed: {}", group_num, e);
+                    vec![]
+                }
+            };
 
-                // For batch stats, we estimate based on observations returned
-                for obs in &observations {
-                    if obs.status.is_some() {
-                        stats.http_checks_completed += 1;
-                    } else if obs.error_kind.is_some() {
-                        stats.http_errors += 1;
+            // Build targets: domains + subdomains
+            let mut targets = valid_domains.clone();
+            for sub in &subdomains {
+                if !crate::ignore::is_ignored(sub, ignore_patterns) {
+                    targets.push(sub.clone());
+                }
+            }
+
+            // --- DNS ---
+            let dns_obs = match probe::probe_dns_batch(&targets, storage) {
+                Ok(obs) => obs,
+                Err(e) => {
+                    eprintln!("  ✗ Group {} DNS failed: {}", group_num, e);
+                    vec![]
+                }
+            };
+
+            // Filter HTTP targets: only those with DNS records
+            let has_dns: std::collections::HashSet<String> = dns_obs
+                .iter()
+                .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
+                .map(|o| o.target.clone())
+                .collect();
+
+            let http_targets: Vec<String> = targets
+                .into_iter()
+                .filter(|t| has_dns.contains(t))
+                .collect();
+
+            // --- HTTP ---
+            let http_obs = if http_targets.is_empty() {
+                vec![]
+            } else {
+                match probe::probe_http_batch(&http_targets, storage) {
+                    Ok(obs) => obs,
+                    Err(e) => {
+                        eprintln!("  ✗ Group {} HTTP failed: {}", group_num, e);
+                        vec![]
                     }
                 }
-                http_observations = observations;
-            }
-            Err(e) => {
-                println!(" {}", '\u{2717}');
-                println!("  → HTTP batch probe failed: {}", e);
+            };
+
+            // Collect results for this group
+            Some(GroupPipelineResult {
+                domain: valid_domains.first().cloned().unwrap_or_default(),
+                subdomains,
+                dns_obs,
+                http_obs,
+            })
+        })
+        .collect();
+
+    // Aggregate stats from pipeline
+    let mut all_dns_obs = Vec::new();
+    let mut all_http_obs = Vec::new();
+
+    for result in &pipeline_results {
+        stats.subdomains_found += result.subdomains.len();
+        stats.dns_checks_completed += result.dns_obs.len();
+        all_dns_obs.extend(result.dns_obs.clone());
+
+        for obs in &result.http_obs {
+            if obs.status.is_some() {
+                stats.http_checks_completed += 1;
+            } else if obs.error_kind.is_some() {
+                stats.http_errors += 1;
             }
         }
+        all_http_obs.extend(result.http_obs.clone());
     }
-    println!();
 
-    // Step 5: Probe ASN for all unique IPs
+    println!(
+        "  ✓ Pipeline complete: {} subdomains, {} DNS, {} HTTP checks\n",
+        stats.subdomains_found,
+        stats.dns_checks_completed,
+        stats.http_checks_completed
+    );
+
+    // ========================================================================
+    // Step 5: Probe ASN for all unique IPs (uses DNS from pipeline)
+    // ========================================================================
     println!("🔍 Step 5/7: Looking up ASN information...");
 
-    // Get latest DNS observations for IP extraction
-    let dns_records = storage.read_all_records()?.dns_observations;
-
-    // Build IP to host mapping
-    let ip_to_host = probe::asn::build_ip_host_map(&dns_records);
-
+    let ip_to_host = probe::asn::build_ip_host_map(&all_dns_obs);
     let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
 
     if ip_to_host.is_empty() {
@@ -346,18 +351,21 @@ pub fn batch_process(
     }
     println!();
 
+    // ========================================================================
     // Step 6: Detect hosting providers
+    // ========================================================================
     println!("🏠 Step 6/7: Detecting hosting providers...");
 
-    // Build lookup maps for hosting detection
+    let all_assets = get_all_assets(storage)?;
+
     let mut dns_map: HashMap<String, probe::DnsObservation> = HashMap::new();
-    for obs in dns_records {
-        dns_map.entry(obs.target.clone()).or_insert(obs);
+    for obs in &all_dns_obs {
+        dns_map.entry(obs.target.clone()).or_insert_with(|| obs.clone());
     }
 
     let mut http_map: HashMap<String, probe::HttpObservation> = HashMap::new();
-    for obs in http_observations {
-        http_map.entry(obs.target.clone()).or_insert(obs);
+    for obs in &all_http_obs {
+        http_map.entry(obs.target.clone()).or_insert_with(|| obs.clone());
     }
 
     if all_assets.is_empty() {
@@ -371,7 +379,6 @@ pub fn batch_process(
             Ok(observations) => {
                 println!(" {}", '\u{2713}');
 
-                // Count detection results
                 let detected_count = observations
                     .iter()
                     .filter(|o| o.provider_id.is_some())
