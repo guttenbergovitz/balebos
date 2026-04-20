@@ -163,12 +163,19 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
 
 fn build_asset_index(records: &crate::storage::reader::Records) -> Vec<ExportedAsset> {
     use crate::inventory::item::ItemType;
+    use std::collections::HashSet;
 
+    let mut seen = HashSet::new();
     let mut assets = Vec::new();
 
     for item in &records.items {
         // Only export domains and subdomains
         if item.item_type != ItemType::Domain && item.item_type != ItemType::Subdomain {
+            continue;
+        }
+
+        // Deduplicate by name — keep first occurrence
+        if !seen.insert(item.name.clone()) {
             continue;
         }
 
