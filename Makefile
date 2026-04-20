@@ -29,6 +29,10 @@ list:
 scan:
 	cargo run -- scan $(domain)
 
+# Batch scan domains from file (usage: make batch file=domains.txt)
+batch:
+	cargo run -- batch $(file)
+
 # Clean local build artifacts
 clean:
 	cargo clean
@@ -111,7 +115,8 @@ help:
 	@echo "  make build                 - Build release binary"
 	@echo "  make run-ui                - Run interactive TUI"
 	@echo "  make list                  - List assets"
-	@echo "  make scan domain=X         - Scan a single domain"
+	@echo "  make scan domain=X         - Scan a single domain
+  make batch file=X          - Batch scan from domain list file"
 	@echo "  make clean                 - Remove build files"
 	@echo ""
 	@echo "Dev & Quality:"
