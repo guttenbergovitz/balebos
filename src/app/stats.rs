@@ -12,7 +12,13 @@ pub struct DomainStats {
 }
 
 pub fn get_domain_stats(storage: &Arc<dyn StorageEngine>) -> Result<DomainStats> {
-    let items = storage.read_all_records()?.items;
+    let records = storage.read_all_records()?;
+    let junk_assets = crate::app::tags::get_junk_assets(&records.asset_tags);
+    let items: Vec<_> = records
+        .items
+        .into_iter()
+        .filter(|item| !crate::ignore::is_junk(&item.name, &junk_assets))
+        .collect();
 
     // Total count of domain entries (items already filtered to domain/subdomain)
     let total_entries = items.len();

@@ -45,4 +45,55 @@ impl App {
     pub fn selected_asset(&self) -> Option<&AssetState> {
         self.inventory.selected_asset(&self.model)
     }
+
+    pub fn toggle_junk_filter(&mut self) {
+        self.inventory.hide_junk = !self.inventory.hide_junk;
+        self.update_visible_items();
+        let msg = if self.inventory.hide_junk {
+            "Hiding junk assets".to_string()
+        } else {
+            "Showing junk assets".to_string()
+        };
+        self.set_status(msg);
+    }
+
+    /// Mark or unmark the selected asset as junk.
+    pub fn toggle_junk_mark(&mut self) {
+        let asset_name = match self.selected_asset() {
+            Some(a) => a.name.clone(),
+            None => return,
+        };
+
+        let is_junk = self
+            .model
+            .asset_tags
+            .get(&asset_name)
+            .map(|tags| tags.contains(crate::app::tags::JUNK_TAG))
+            .unwrap_or(false);
+
+        let result = if is_junk {
+            crate::app::tags::remove_tag(&self.storage, &asset_name, crate::app::tags::JUNK_TAG)
+        } else {
+            crate::app::tags::add_tag(&self.storage, &asset_name, crate::app::tags::JUNK_TAG)
+        };
+
+        match result {
+            Ok(()) => {
+                let msg = if is_junk {
+                    format!("✓ Unmarked '{}' as junk", asset_name)
+                } else {
+                    format!("🗑 Marked '{}' as junk", asset_name)
+                };
+                self.set_status(msg);
+                // Refresh model to reflect tag changes
+                if let Ok(new_model) = crate::tui::model::load_tui_model(&self.storage) {
+                    self.model = new_model;
+                    self.update_visible_items();
+                }
+            }
+            Err(e) => {
+                self.set_status(format!("Error: {}", e));
+            }
+        }
+    }
 }

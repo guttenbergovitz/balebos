@@ -81,6 +81,12 @@ pub fn batch_process(
     let domains = load_domains_from_file(filepath)?;
     println!("✓ Loaded {} domains\n", domains.len());
 
+    // Load junk assets for filtering
+    let junk_assets: std::collections::BTreeSet<String> = storage
+        .read_all_records()
+        .map(|r| crate::app::tags::get_junk_assets(&r.asset_tags))
+        .unwrap_or_default();
+
     let mut stats = BatchStats {
         domains_added: 0,
         domains_failed: 0,
@@ -114,7 +120,9 @@ pub fn batch_process(
         .par_iter()
         .enumerate()
         .map(|(idx, domain)| {
-            if crate::ignore::is_ignored(domain, ignore_patterns) {
+            if crate::ignore::is_ignored(domain, ignore_patterns)
+                || crate::ignore::is_junk(domain, &junk_assets)
+            {
                 return (idx, domain.clone(), None, None, None, true);
             }
 
@@ -221,10 +229,13 @@ pub fn batch_process(
         .filter_map(|(group_idx, group_domains)| {
             let group_num = group_idx + 1;
 
-            // Filter ignored domains for this group
+            // Filter ignored and junk domains for this group
             let valid_domains: Vec<String> = group_domains
                 .iter()
-                .filter(|d| !crate::ignore::is_ignored(d, ignore_patterns))
+                .filter(|d| {
+                    !crate::ignore::is_ignored(d, ignore_patterns)
+                        && !crate::ignore::is_junk(d, &junk_assets)
+                })
                 .cloned()
                 .collect();
 
@@ -244,7 +255,9 @@ pub fn batch_process(
             // Build targets: domains + subdomains
             let mut targets = valid_domains.clone();
             for sub in &subdomains {
-                if !crate::ignore::is_ignored(sub, ignore_patterns) {
+                if !crate::ignore::is_ignored(sub, ignore_patterns)
+                    && !crate::ignore::is_junk(sub, &junk_assets)
+                {
                     targets.push(sub.clone());
                 }
             }
@@ -443,7 +456,14 @@ pub fn run_single_recon_with_progress(
     on_step: &dyn Fn(&str),
     on_result: &dyn Fn(&ReconStepResult),
 ) -> crate::error::Result<Vec<ReconStepResult>> {
-    if crate::ignore::is_ignored(domain, ignore_patterns) {
+    let junk_assets: std::collections::BTreeSet<String> = storage
+        .read_all_records()
+        .map(|r| crate::app::tags::get_junk_assets(&r.asset_tags))
+        .unwrap_or_default();
+
+    if crate::ignore::is_ignored(domain, ignore_patterns)
+        || crate::ignore::is_junk(domain, &junk_assets)
+    {
         let result = ReconStepResult {
             name: "ignore",
             success: true,
@@ -530,7 +550,9 @@ pub fn run_single_recon_with_progress(
     // 4. Prepare targets for batch probes (domain + subdomains)
     let mut targets = vec![domain.to_string()];
     for sub in subdomains {
-        if !crate::ignore::is_ignored(&sub, ignore_patterns) {
+        if !crate::ignore::is_ignored(&sub, ignore_patterns)
+            && !crate::ignore::is_junk(&sub, &junk_assets)
+        {
             targets.push(sub);
         }
     }

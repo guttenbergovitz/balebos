@@ -24,6 +24,7 @@ pub struct InventoryState {
     pub expanded_roots: HashSet<String>,
     pub visible_items: Vec<VisibleItem>,
     pub hide_external_redirects: bool,
+    pub hide_junk: bool,
     pub marked_assets: HashSet<String>,
     pub filter_tag: Option<String>,
     pub sort_by_risk: bool,
@@ -37,6 +38,7 @@ impl InventoryState {
             expanded_roots: HashSet::new(),
             visible_items: Vec::new(),
             hide_external_redirects: false,
+            hide_junk: true,
             marked_assets: HashSet::new(),
             filter_tag: None,
             sort_by_risk: false,
@@ -147,12 +149,21 @@ impl InventoryState {
     /// This method recalculates which items should be visible based on:
     /// - Current filter string
     /// - Whether to hide external redirects
+    /// - Whether to hide junk assets
     /// - Which roots are expanded
     ///
     /// It also ensures the selection stays in bounds.
     pub fn update_visible_items(&mut self, model: &TuiModel, filter: &str) {
         let mut visible = Vec::new();
         let filter_lower = filter.to_lowercase();
+
+        // Build junk set from model tags
+        let junk_assets: std::collections::BTreeSet<String> = model
+            .asset_tags
+            .iter()
+            .filter(|(_, tags)| tags.contains(crate::app::tags::JUNK_TAG))
+            .map(|(name, _)| name.clone())
+            .collect();
 
         let mut groups: Vec<_> = model.groups.iter().collect();
         if self.sort_by_risk {
@@ -165,6 +176,12 @@ impl InventoryState {
 
         for group in groups {
             let root_name = &group.root.name;
+
+            // Hide junk assets unless explicitly showing them
+            let root_is_junk = junk_assets.contains(root_name);
+            if self.hide_junk && root_is_junk {
+                continue;
+            }
 
             // Check tag filter first
             if let Some(ref tag) = self.filter_tag {
@@ -200,6 +217,11 @@ impl InventoryState {
 
             if self.expanded_roots.contains(root_name) {
                 for sub in &group.subdomains {
+                    // Filter junk subdomains when hide_junk is enabled
+                    let sub_is_junk = junk_assets.contains(&sub.name);
+                    if self.hide_junk && sub_is_junk {
+                        continue;
+                    }
                     if filter_lower.is_empty() || sub.name.to_lowercase().contains(&filter_lower) {
                         visible.push(VisibleItem::Subdomain(root_name.clone(), sub.name.clone()));
                     }

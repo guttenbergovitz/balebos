@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::app::{
     display_lifecycle_info, display_lifecycle_summary, get_lifecycle_history, set_lifecycle,
+    tags::{add_tag, get_junk_assets, JUNK_TAG},
 };
 use crate::cli::router::AssetCommand;
 use crate::exit_codes::*;
@@ -98,6 +99,49 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
                     process::exit(EXIT_STORAGE_ERROR);
                 }
             }
+        }
+        AssetCommand::Junk { asset_name } => {
+            match add_tag(storage, &asset_name, JUNK_TAG) {
+                Ok(()) => {
+                    println!("🗑  Marked '{}' as junk", asset_name);
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error marking asset as junk: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            }
+        }
+        AssetCommand::Unjunk { asset_name } => {
+            match crate::app::tags::remove_tag(storage, &asset_name, JUNK_TAG) {
+                Ok(()) => {
+                    println!("✓  Unmarked '{}' as junk", asset_name);
+                    process::exit(EXIT_SUCCESS);
+                }
+                Err(e) => {
+                    eprintln!("Error unmarking asset as junk: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            }
+        }
+        AssetCommand::ListJunk => {
+            let records = match storage.read_all_records() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Error reading records: {}", e);
+                    process::exit(EXIT_STORAGE_ERROR);
+                }
+            };
+            let junk = get_junk_assets(&records.asset_tags);
+            if junk.is_empty() {
+                println!("No junk assets found.");
+            } else {
+                println!("Junk assets ({}):", junk.len());
+                for asset in &junk {
+                    println!("  🗑  {}", asset);
+                }
+            }
+            process::exit(EXIT_SUCCESS);
         }
     }
 }

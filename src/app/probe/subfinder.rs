@@ -37,6 +37,38 @@ fn parse_subdomains(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// Detect auto-junk candidates from subdomain discovery results.
+/// Returns candidates that are likely noise: wildcards, deep nesting, cross-domain.
+pub fn detect_junk_candidates(subs: &[String], parent_domains: &[String]) -> Vec<String> {
+    subs.iter()
+        .filter(|s| is_likely_junk(s, parent_domains))
+        .cloned()
+        .collect()
+}
+
+fn is_likely_junk(subdomain: &str, parent_domains: &[String]) -> bool {
+    // Wildcard pattern (starts with *.)
+    if subdomain.starts_with("*.") {
+        return true;
+    }
+
+    // Deep nesting: 5+ levels (e.g., www.stage.de.beta.green-petfood.com)
+    let level = subdomain.matches('.').count();
+    if level >= 5 {
+        return true;
+    }
+
+    // Cross-domain: not actually a subdomain of any parent domain
+    let is_subdomain_of_parent = parent_domains.iter().any(|parent| {
+        subdomain == parent || subdomain.ends_with(&format!(".{}", parent))
+    });
+    if !is_subdomain_of_parent {
+        return true;
+    }
+
+    false
+}
+
 pub fn probe_subdomains(domain: &str, storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
     // Run subfinder to get subdomains
     let output = run_subfinder(domain)?;

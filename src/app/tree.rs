@@ -51,16 +51,20 @@ impl TreeNode {
 /// Build a hierarchical tree of domains and subdomains
 /// Returns root nodes (base domains) with their subdomain hierarchy
 fn build_domain_tree(storage: &Arc<dyn StorageEngine>) -> Result<Vec<TreeNode>> {
-    let items = storage.read_all_records()?.items;
+    let records = storage.read_all_records()?;
+    let junk_assets = crate::app::tags::get_junk_assets(&records.asset_tags);
+    let items = records.items;
 
     let domain_records: Vec<String> = items
         .iter()
         .filter(|item| item.item_type == ItemType::Domain)
+        .filter(|item| !crate::ignore::is_junk(&item.name, &junk_assets))
         .map(|item| item.name.clone())
         .collect();
 
     let mut all_items: Vec<(String, ItemType)> = items
         .into_iter()
+        .filter(|item| !crate::ignore::is_junk(&item.name, &junk_assets))
         .map(|item| (item.name, item.item_type))
         .collect();
 

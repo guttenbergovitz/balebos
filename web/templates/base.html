@@ -27,9 +27,20 @@
                 expandedGroups: {},
                 page: 1,
                 perPage: 15,
+                showJunk: false,
 
                 async init() {
                     this.assets = await fetch('/data/assets.json').then(r => r.json());
+                },
+
+                toggleShowJunk() {
+                    this.showJunk = !this.showJunk;
+                    this.page = 1;
+                    const url = this.showJunk ? '/data/assets-all.json' : '/data/assets.json';
+                    fetch(url)
+                        .then(r => r.json())
+                        .then(data => { this.assets = data; })
+                        .catch(err => console.error('Failed to load assets:', err));
                 },
 
                 get filteredAssets() {

@@ -30,6 +30,15 @@
             <option value="low">Low (1-24)</option>
             <option value="none">None (0)</option>
         </select>
+
+        <button
+            @click="toggleShowJunk"
+            class="filter-btn"
+            :class="{ 'active': showJunk }"
+            title="Toggle junk assets"
+        >
+            <span x-text="showJunk ? '🗑 Hide Junk' : '🗑 Show Junk'"></span>
+        </button>
     </div>
 
     <!-- Asset Table -->

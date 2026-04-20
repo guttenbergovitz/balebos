@@ -474,15 +474,24 @@ pub fn run_checks_and_persist(
         return Ok(Vec::new());
     }
 
-    // Filter out ignored items
+    // Load junk assets for filtering
+    let junk_assets = crate::app::tags::get_junk_assets(&records.asset_tags);
+
+    // Filter out ignored and junk items
     let filtered_items: Vec<InventoryItem> = items
         .into_iter()
-        .filter(|item| !crate::ignore::is_ignored(&item.name, ignore_patterns))
+        .filter(|item| {
+            !crate::ignore::is_ignored(&item.name, ignore_patterns)
+                && !crate::ignore::is_junk(&item.name, &junk_assets)
+        })
         .collect();
 
     let filtered_http_observations: Vec<HttpObservation> = http_observations
         .into_iter()
-        .filter(|obs| !crate::ignore::is_ignored(&obs.target, ignore_patterns))
+        .filter(|obs| {
+            !crate::ignore::is_ignored(&obs.target, ignore_patterns)
+                && !crate::ignore::is_junk(&obs.target, &junk_assets)
+        })
         .collect();
 
     // Run checks
@@ -693,31 +702,42 @@ pub fn check_inventory(
         return Ok(vec![Issue::warning("No items in inventory")]);
     }
 
-    // Filter out ignored items
+    // Load junk assets for filtering
+    let junk_assets = crate::app::tags::get_junk_assets(&records.asset_tags);
+
+    // Filter out ignored and junk items
     let mut ignored_count = 0;
+    let mut junk_count = 0;
 
     let filtered_items: Vec<InventoryItem> = items
         .into_iter()
         .filter(|item| {
             let should_ignore = crate::ignore::is_ignored(&item.name, ignore_patterns);
+            let is_junk = crate::ignore::is_junk(&item.name, &junk_assets);
             if should_ignore {
                 ignored_count += 1;
             }
-            !should_ignore
+            if is_junk {
+                junk_count += 1;
+            }
+            !should_ignore && !is_junk
         })
         .collect();
 
-    // If we filtered out everything, special case
-    if !filtered_items.is_empty() {
+    // If we filtered out anything, report it
+    if ignored_count > 0 || junk_count > 0 {
         println!(
-            "Ignoring {} items based on balebos.ignore patterns",
-            ignored_count
+            "Filtering: {} ignored by pattern, {} junk assets excluded",
+            ignored_count, junk_count
         );
     }
 
     let filtered_http_observations: Vec<HttpObservation> = http_observations
         .into_iter()
-        .filter(|obs| !crate::ignore::is_ignored(&obs.target, ignore_patterns))
+        .filter(|obs| {
+            !crate::ignore::is_ignored(&obs.target, ignore_patterns)
+                && !crate::ignore::is_junk(&obs.target, &junk_assets)
+        })
         .collect();
 
     // Run checks via Finding-based internals, then convert to Issue

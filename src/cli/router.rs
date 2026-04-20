@@ -150,6 +150,13 @@ pub enum AssetCommand {
         asset_name: String,
     },
     LifecycleList,
+    Junk {
+        asset_name: String,
+    },
+    Unjunk {
+        asset_name: String,
+    },
+    ListJunk,
 }
 
 pub enum RiskCommand {
@@ -472,6 +479,15 @@ fn parse_asset_command(args: &[String]) -> Option<Command> {
                 _ => None,
             }
         }
+        "junk" => {
+            let asset_name = args.get(3)?.clone();
+            Some(Command::Asset(AssetCommand::Junk { asset_name }))
+        }
+        "unjunk" => {
+            let asset_name = args.get(3)?.clone();
+            Some(Command::Asset(AssetCommand::Unjunk { asset_name }))
+        }
+        "list-junk" => Some(Command::Asset(AssetCommand::ListJunk)),
         _ => None,
     }
 }

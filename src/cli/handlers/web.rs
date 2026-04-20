@@ -4,6 +4,7 @@ use std::process;
 use std::sync::Arc;
 use serde::Serialize;
 
+use crate::app::tags::get_junk_assets;
 use crate::storage::StorageEngine;
 use crate::exit_codes::*;
 
@@ -105,9 +106,12 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
         }
     };
 
-    // Build asset index
-    let assets = build_asset_index(&records);
-    let assets_json = match serde_json::to_string_pretty(&assets) {
+    // Build asset indexes
+    let junk_set = get_junk_assets(&records.asset_tags);
+    let all_assets = build_asset_index(&records, &junk_set, false);
+    let clean_assets = build_asset_index(&records, &junk_set, true);
+
+    let assets_json = match serde_json::to_string_pretty(&clean_assets) {
         Ok(json) => json,
         Err(e) => {
             eprintln!("Error serializing assets: {}", e);
@@ -116,6 +120,18 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
     };
     if let Err(e) = fs::write(output_path.join("assets.json"), assets_json) {
         eprintln!("Error writing assets.json: {}", e);
+        process::exit(EXIT_GENERAL_ERROR);
+    }
+
+    let assets_all_json = match serde_json::to_string_pretty(&all_assets) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Error serializing assets-all: {}", e);
+            process::exit(EXIT_GENERAL_ERROR);
+        }
+    };
+    if let Err(e) = fs::write(output_path.join("assets-all.json"), assets_all_json) {
+        eprintln!("Error writing assets-all.json: {}", e);
         process::exit(EXIT_GENERAL_ERROR);
     }
 
@@ -133,14 +149,14 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
         process::exit(EXIT_GENERAL_ERROR);
     }
 
-    // Build metadata
+    // Build metadata (use clean asset count for stakeholder-facing metadata)
     let metadata = ExportedMetadata {
         generated_at: chrono::Utc::now().to_rfc3339(),
-        total_assets: assets.len(),
+        total_assets: clean_assets.len(),
         total_findings: findings.len(),
         open_findings: findings.iter().filter(|f| f.status == "open").count(),
         critical_findings: findings.iter().filter(|f| f.severity == "Critical").count(),
-        high_risk_assets: assets.iter().filter(|a| a.risk_score >= 100).count(),
+        high_risk_assets: clean_assets.iter().filter(|a| a.risk_score >= 100).count(),
     };
     let metadata_json = match serde_json::to_string_pretty(&metadata) {
         Ok(json) => json,
@@ -154,14 +170,18 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
         process::exit(EXIT_GENERAL_ERROR);
     }
 
-    println!("✓ Exported {} assets", assets.len());
+    println!("✓ Exported {} assets ({} clean, {} junk)", all_assets.len(), clean_assets.len(), all_assets.len() - clean_assets.len());
     println!("✓ Exported {} findings", findings.len());
     println!("✓ Output: {}", output_dir);
 
     process::exit(EXIT_SUCCESS);
 }
 
-fn build_asset_index(records: &crate::storage::reader::Records) -> Vec<ExportedAsset> {
+fn build_asset_index(
+    records: &crate::storage::reader::Records,
+    junk_set: &std::collections::BTreeSet<String>,
+    exclude_junk: bool,
+) -> Vec<ExportedAsset> {
     use crate::inventory::item::ItemType;
     use std::collections::HashSet;
 
@@ -171,6 +191,11 @@ fn build_asset_index(records: &crate::storage::reader::Records) -> Vec<ExportedA
     for item in &records.items {
         // Only export domains and subdomains
         if item.item_type != ItemType::Domain && item.item_type != ItemType::Subdomain {
+            continue;
+        }
+
+        // Skip junk assets when exclude_junk is true
+        if exclude_junk && junk_set.contains(&item.name) {
             continue;
         }
 

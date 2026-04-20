@@ -4,6 +4,9 @@ use crate::storage::{StorageEngine, StorageEngineExt};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+/// Reserved system tag for marking assets as junk/noise.
+pub const JUNK_TAG: &str = "junk";
+
 pub fn add_tag(storage: &Arc<dyn StorageEngine>, asset_name: &str, tag: &str) -> Result<()> {
     let asset_tag = AssetTag::new(asset_name.to_string(), tag.to_string());
     storage.save(&asset_tag)?;
@@ -122,6 +125,16 @@ pub fn list_assets_by_tag(storage: &Arc<dyn StorageEngine>, tag: &str) -> Result
     }
 
     Ok(())
+}
+
+/// Get the set of asset names currently marked as junk.
+pub fn get_junk_assets(all_tags: &[AssetTag]) -> BTreeSet<String> {
+    let active = get_active_tags(all_tags);
+    active
+        .iter()
+        .filter(|(_, tags)| tags.contains(JUNK_TAG))
+        .map(|(asset, _)| asset.clone())
+        .collect()
 }
 
 pub fn get_active_tags(all_tags: &[AssetTag]) -> BTreeMap<String, BTreeSet<String>> {
