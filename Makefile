@@ -6,7 +6,7 @@ DOCKER_IMAGE = balebos
 DOCKER_IMAGE_DEV = balebos-dev
 
 .PHONY: all build run-ui list scan clean help \
-	docker-build docker-dev docker-ui docker-scan docker-list docker-shell docker-clean \
+	docker-build docker-dev docker-ui docker-scan docker-list docker-batch docker-shell docker-clean \
 	dev-check dev-test dev-fix dev-doc
 
 all: help
@@ -88,6 +88,11 @@ docker-scan:
 docker-list:
 	docker run --rm -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) list
 
+# Batch scan in production container
+# Usage: make docker-batch file=domains.txt
+docker-batch:
+	docker run --rm -v "$(PWD)/data:/app/data" -v "$(PWD)/$(file):/app/$(file)" $(DOCKER_IMAGE) batch $(file)
+
 # Enter shell inside the production container for debugging
 docker-shell:
 	docker run --rm -it -v "$(PWD)/data:/app/data" --entrypoint bash $(DOCKER_IMAGE)
@@ -108,6 +113,7 @@ help:
 	@echo "  make docker-ui             - Run interactive TUI in production container"
 	@echo "  make docker-scan domain=X  - Scan a domain via Docker"
 	@echo "  make docker-list           - List assets via Docker"
+	@echo "  make docker-batch file=X   - Batch scan via Docker"
 	@echo "  make docker-shell          - Enter production container shell"
 	@echo "  make docker-clean          - Remove Docker images"
 	@echo ""
