@@ -473,7 +473,9 @@ fn parse_asset_command(args: &[String]) -> Option<Command> {
                 }
                 "history" => {
                     let asset_name = args.get(4)?.clone();
-                    Some(Command::Asset(AssetCommand::LifecycleHistory { asset_name }))
+                    Some(Command::Asset(AssetCommand::LifecycleHistory {
+                        asset_name,
+                    }))
                 }
                 "list" => Some(Command::Asset(AssetCommand::LifecycleList)),
                 _ => None,

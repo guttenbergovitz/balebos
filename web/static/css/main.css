@@ -201,6 +201,17 @@ main { flex: 1; position: relative; overflow-x: hidden; }
 
 .filter-select { min-width: 140px; }
 
+.placeholder-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    background-color: var(--bg-highlight);
+    color: var(--text-muted);
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+}
+
 .search-input:focus,
 .filter-select:focus {
   outline: none;

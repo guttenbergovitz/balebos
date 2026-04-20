@@ -88,9 +88,7 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Span::styled(
                     asset.name.clone(),
-                    Style::default()
-                        .fg(risk_fg)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(risk_fg).add_modifier(Modifier::BOLD),
                 )
             };
 
@@ -100,7 +98,8 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                 "-".to_string()
             };
 
-            let lifecycle = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+            let lifecycle =
+                crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
             let (life_text, life_color) = match lifecycle {
                 Some(state) => (state.icon().to_string(), state.color()),
                 None => ("-".to_string(), Color::DarkGray),
@@ -237,7 +236,8 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
     }
 
     // Lifecycle
-    let lifecycle = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+    let lifecycle =
+        crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
     if let Some(state) = lifecycle {
         text.push(Line::from(vec![
             Span::styled("Lifecycle: ", Style::default().add_modifier(Modifier::BOLD)),

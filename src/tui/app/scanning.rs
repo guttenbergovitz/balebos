@@ -33,14 +33,18 @@ impl App {
 
             let scan_status_for_step = scan_status.clone();
             let on_step = move |step: &str| {
-                let mut status = scan_status_for_step.lock().unwrap_or_else(|p| p.into_inner());
+                let mut status = scan_status_for_step
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
                 status.message = step.to_string();
                 status.timestamp = chrono::Utc::now();
             };
 
             let scan_status_for_result = scan_status.clone();
             let on_result = move |result: &crate::app::batch::ReconStepResult| {
-                let mut status = scan_status_for_result.lock().unwrap_or_else(|p| p.into_inner());
+                let mut status = scan_status_for_result
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
                 status.steps.push(result.clone());
                 status.timestamp = chrono::Utc::now();
             };

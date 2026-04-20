@@ -245,13 +245,14 @@ pub fn batch_process(
             }
 
             // --- Subfinder (no save) ---
-            let (subdomains, sub_items) = match probe::probe_subdomains_batch_no_save(&valid_domains) {
-                Ok((subs, items)) => (subs, items),
-                Err(e) => {
-                    eprintln!("  ✗ Group {} subfinder failed: {}", group_num, e);
-                    (vec![], vec![])
-                }
-            };
+            let (subdomains, sub_items) =
+                match probe::probe_subdomains_batch_no_save(&valid_domains) {
+                    Ok((subs, items)) => (subs, items),
+                    Err(e) => {
+                        eprintln!("  ✗ Group {} subfinder failed: {}", group_num, e);
+                        (vec![], vec![])
+                    }
+                };
 
             // Detect junk candidates from this group's results
             let junk_candidates = probe::detect_junk_candidates(&subdomains, &valid_domains);
@@ -278,7 +279,9 @@ pub fn batch_process(
             // Filter HTTP targets: only those with DNS records
             let has_dns: std::collections::HashSet<String> = dns_obs
                 .iter()
-                .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
+                .filter(|o| {
+                    !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty()
+                })
                 .map(|o| o.target.clone())
                 .collect();
 
@@ -339,7 +342,10 @@ pub fn batch_process(
     if !all_junk_candidates.is_empty() {
         all_junk_candidates.sort();
         all_junk_candidates.dedup();
-        println!("\n⚠️  {} auto-junk candidates detected:", all_junk_candidates.len());
+        println!(
+            "\n⚠️  {} auto-junk candidates detected:",
+            all_junk_candidates.len()
+        );
         for candidate in &all_junk_candidates {
             println!("   • {}", candidate);
         }
@@ -348,7 +354,10 @@ pub fn batch_process(
     }
 
     // Single bulk save to storage — eliminates N× save_batch calls
-    println!("💾 Saving {} observations to storage...", all_items.len() + all_dns_obs.len() + all_http_obs.len());
+    println!(
+        "💾 Saving {} observations to storage...",
+        all_items.len() + all_dns_obs.len() + all_http_obs.len()
+    );
     if !all_items.is_empty() {
         storage.save_batch(&all_items)?;
     }
@@ -361,9 +370,7 @@ pub fn batch_process(
 
     println!(
         "  ✓ Pipeline complete: {} subdomains, {} DNS, {} HTTP checks\n",
-        stats.subdomains_found,
-        stats.dns_checks_completed,
-        stats.http_checks_completed
+        stats.subdomains_found, stats.dns_checks_completed, stats.http_checks_completed
     );
 
     // ========================================================================
@@ -410,12 +417,16 @@ pub fn batch_process(
 
     let mut dns_map: HashMap<String, probe::DnsObservation> = HashMap::new();
     for obs in &all_dns_obs {
-        dns_map.entry(obs.target.clone()).or_insert_with(|| obs.clone());
+        dns_map
+            .entry(obs.target.clone())
+            .or_insert_with(|| obs.clone());
     }
 
     let mut http_map: HashMap<String, probe::HttpObservation> = HashMap::new();
     for obs in &all_http_obs {
-        http_map.entry(obs.target.clone()).or_insert_with(|| obs.clone());
+        http_map
+            .entry(obs.target.clone())
+            .or_insert_with(|| obs.clone());
     }
 
     if all_assets.is_empty() {
@@ -604,7 +615,9 @@ pub fn run_single_recon_with_progress(
     // 6. Batch HTTP Probe (skip targets without DNS records)
     let has_dns: std::collections::HashSet<String> = dns_observations
         .iter()
-        .filter(|o| !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty())
+        .filter(|o| {
+            !o.a.is_empty() || !o.aaaa.is_empty() || !o.cname.is_empty() || !o.mx.is_empty()
+        })
         .map(|o| o.target.clone())
         .collect();
 

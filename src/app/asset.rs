@@ -18,7 +18,8 @@ pub fn set_lifecycle(
 ) -> Result<LifecycleEvent> {
     // Read current state
     let records = storage.read_all_records()?;
-    let current_state = crate::inventory::get_current_lifecycle(&records.lifecycle_events, asset_name);
+    let current_state =
+        crate::inventory::get_current_lifecycle(&records.lifecycle_events, asset_name);
 
     // Create transition event
     let event = LifecycleEvent::new(
@@ -66,11 +67,8 @@ pub fn list_assets_with_lifecycle(
     let records = storage.read_all_records()?;
 
     // Get unique asset names from items
-    let asset_names: std::collections::HashSet<String> = records
-        .items
-        .iter()
-        .map(|item| item.name.clone())
-        .collect();
+    let asset_names: std::collections::HashSet<String> =
+        records.items.iter().map(|item| item.name.clone()).collect();
 
     // Get lifecycle for each asset
     let mut result: Vec<(String, Option<AssetLifecycle>)> = asset_names
@@ -88,10 +86,7 @@ pub fn list_assets_with_lifecycle(
 }
 
 /// Display lifecycle information for an asset (CLI output)
-pub fn display_lifecycle_info(
-    storage: &Arc<dyn StorageEngine>,
-    asset_name: &str,
-) -> Result<()> {
+pub fn display_lifecycle_info(storage: &Arc<dyn StorageEngine>, asset_name: &str) -> Result<()> {
     let current = get_lifecycle(storage, asset_name)?;
     let history = get_lifecycle_history(storage, asset_name)?;
 
@@ -167,17 +162,26 @@ pub fn display_lifecycle_summary(storage: &Arc<dyn StorageEngine>) -> Result<()>
 
     // Display by state
     for (state, names) in [
-        (AssetLifecycle::Active, by_state.get(&AssetLifecycle::Active)),
+        (
+            AssetLifecycle::Active,
+            by_state.get(&AssetLifecycle::Active),
+        ),
         (
             AssetLifecycle::UnderReview,
             by_state.get(&AssetLifecycle::UnderReview),
         ),
-        (AssetLifecycle::Deprecated, by_state.get(&AssetLifecycle::Deprecated)),
+        (
+            AssetLifecycle::Deprecated,
+            by_state.get(&AssetLifecycle::Deprecated),
+        ),
         (
             AssetLifecycle::Decommissioned,
             by_state.get(&AssetLifecycle::Decommissioned),
         ),
-        (AssetLifecycle::Abandoned, by_state.get(&AssetLifecycle::Abandoned)),
+        (
+            AssetLifecycle::Abandoned,
+            by_state.get(&AssetLifecycle::Abandoned),
+        ),
     ] {
         if let Some(names) = names {
             if !names.is_empty() {
@@ -195,7 +199,7 @@ pub fn display_lifecycle_summary(storage: &Arc<dyn StorageEngine>) -> Result<()>
 
     // Assets with no explicit state
     if !no_state.is_empty() {
-        println!("Not set (implicitly Active) ({})" , no_state.len());
+        println!("Not set (implicitly Active) ({})", no_state.len());
         for name in no_state.iter().take(10) {
             println!("  - {}", name);
         }
@@ -257,7 +261,14 @@ mod tests {
         let storage = create_test_storage();
 
         // Create some history
-        set_lifecycle(&storage, "example.com", AssetLifecycle::Active, None, "test").unwrap();
+        set_lifecycle(
+            &storage,
+            "example.com",
+            AssetLifecycle::Active,
+            None,
+            "test",
+        )
+        .unwrap();
         set_lifecycle(
             &storage,
             "example.com",

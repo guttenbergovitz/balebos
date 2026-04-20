@@ -1,12 +1,12 @@
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::process;
 use std::sync::Arc;
-use serde::Serialize;
 
 use crate::app::tags::get_junk_assets;
-use crate::storage::StorageEngine;
 use crate::exit_codes::*;
+use crate::storage::StorageEngine;
 
 /// Asset exported for web dashboard
 #[derive(Serialize, Debug, Clone)]
@@ -170,7 +170,12 @@ pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>)
         process::exit(EXIT_GENERAL_ERROR);
     }
 
-    println!("✓ Exported {} assets ({} clean, {} junk)", all_assets.len(), clean_assets.len(), all_assets.len() - clean_assets.len());
+    println!(
+        "✓ Exported {} assets ({} clean, {} junk)",
+        all_assets.len(),
+        clean_assets.len(),
+        all_assets.len() - clean_assets.len()
+    );
     println!("✓ Exported {} findings", findings.len());
     println!("✓ Output: {}", output_dir);
 
@@ -183,13 +188,19 @@ fn build_asset_index(
     exclude_junk: bool,
 ) -> Vec<ExportedAsset> {
     use crate::inventory::item::ItemType;
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
-    let mut seen = HashSet::new();
-    let mut assets = Vec::new();
+    // First pass: collect all domains and subdomains by name
+    let mut by_name: HashMap<
+        String,
+        (
+            Option<&crate::inventory::InventoryItem>,
+            Option<&crate::inventory::InventoryItem>,
+        ),
+    > = HashMap::new();
 
     for item in &records.items {
-        // Only export domains and subdomains
+        // Only process domains and subdomains
         if item.item_type != ItemType::Domain && item.item_type != ItemType::Subdomain {
             continue;
         }
@@ -199,12 +210,28 @@ fn build_asset_index(
             continue;
         }
 
-        // Deduplicate by name — keep first occurrence
-        if !seen.insert(item.name.clone()) {
-            continue;
+        let entry = by_name.entry(item.name.clone()).or_insert((None, None));
+        match item.item_type {
+            ItemType::Domain => entry.0 = Some(item),
+            ItemType::Subdomain => entry.1 = Some(item),
+            _ => {}
         }
+    }
 
-        let is_subdomain = item.item_type == ItemType::Subdomain;
+    let mut assets = Vec::new();
+
+    // Second pass: decide is_subdomain based on available types
+    for (name, (domain_item, subdomain_item)) in by_name {
+        // Prefer domain over subdomain if both exist
+        let item = if let Some(domain) = domain_item {
+            domain
+        } else if let Some(subdomain) = subdomain_item {
+            subdomain
+        } else {
+            continue;
+        };
+
+        let is_subdomain = subdomain_item.is_some() && domain_item.is_none();
 
         // Get latest HTTP observation
         let http_obs = records
@@ -251,9 +278,7 @@ fn build_asset_index(
             lifecycle,
             http_status: http_obs.and_then(|o| o.status),
             http_status_text: format_http_status(http_obs),
-            tech: http_obs
-                .map(|o| o.tech.clone())
-                .unwrap_or_default(),
+            tech: http_obs.map(|o| o.tech.clone()).unwrap_or_default(),
             dns: ExportedDns {
                 a: dns_obs.map(|o| o.a.clone()).unwrap_or_default(),
                 aaaa: dns_obs.map(|o| o.aaaa.clone()).unwrap_or_default(),
@@ -264,11 +289,7 @@ fn build_asset_index(
                 title: o.title.clone(),
                 server: o.webserver.clone(),
                 final_url: o.final_url.clone(),
-                redirect_chain: o
-                    .redirect_chain
-                    .iter()
-                    .map(|r| r.url.clone())
-                    .collect(),
+                redirect_chain: o.redirect_chain.iter().map(|r| r.url.clone()).collect(),
                 response_time_ms: o.response_time_ms,
             }),
             tls: http_obs.and_then(|o| {

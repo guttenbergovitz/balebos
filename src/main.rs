@@ -81,19 +81,22 @@ fn print_usage() {
     eprintln!("                                     - States: active, under_review, deprecated, decommissioned, abandoned");
     eprintln!("  balebos asset lifecycle show <asset>           - Show asset lifecycle info");
     eprintln!("  balebos asset lifecycle history <asset>        - Show lifecycle history");
-    eprintln!("  balebos asset lifecycle list                   - List all assets by lifecycle state");
+    eprintln!(
+        "  balebos asset lifecycle list                   - List all assets by lifecycle state"
+    );
     eprintln!();
     eprintln!("Risk scoring:");
     eprintln!("  balebos risk report                - Show full risk report for all assets");
-    eprintln!("  balebos risk top [N]               - Show top N highest risk assets (default: 10)");
+    eprintln!(
+        "  balebos risk top [N]               - Show top N highest risk assets (default: 10)"
+    );
     eprintln!("  balebos risk show <asset>          - Show detailed risk score for an asset");
 }
 
 fn main() {
     // Initialize Parquet storage
     let storage: Arc<dyn StorageEngine> = Arc::new(
-        crate::storage::ParquetStorage::new("data/parquet")
-            .expect("Failed to initialize storage"),
+        crate::storage::ParquetStorage::new("data/parquet").expect("Failed to initialize storage"),
     );
 
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
@@ -121,7 +124,9 @@ fn main() {
         Command::Web { output_dir } => handlers::web::cmd_web_export(&output_dir, &storage),
         Command::Org(org_cmd) => handlers::org::cmd_org(org_cmd, &storage),
         Command::Tag(tag_cmd) => handlers::tag::cmd_tag(tag_cmd, &storage),
-        Command::Finding(finding_cmd) => handlers::finding::cmd_finding(finding_cmd, &storage, &ignore_patterns),
+        Command::Finding(finding_cmd) => {
+            handlers::finding::cmd_finding(finding_cmd, &storage, &ignore_patterns)
+        }
         Command::Asset(asset_cmd) => handlers::asset::cmd_asset(asset_cmd, &storage),
         Command::Risk(risk_cmd) => handlers::risk::cmd_risk(risk_cmd, &storage),
     }

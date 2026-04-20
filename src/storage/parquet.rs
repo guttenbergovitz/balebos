@@ -37,7 +37,10 @@ impl std::fmt::Debug for ParquetStorage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ParquetStorage")
             .field("base_dir", &self.base_dir)
-            .field("buffer_len", &self.buffer.lock().map(|b| b.len()).unwrap_or(0))
+            .field(
+                "buffer_len",
+                &self.buffer.lock().map(|b| b.len()).unwrap_or(0),
+            )
             .field("buffer_size", &self.buffer_size)
             .finish()
     }
@@ -70,7 +73,8 @@ impl ParquetStorage {
     }
 
     fn type_file_path(&self, item_type: ItemType) -> PathBuf {
-        self.base_dir.join(format!("{}.parquet", item_type.as_str()))
+        self.base_dir
+            .join(format!("{}.parquet", item_type.as_str()))
     }
 
     fn write_type_batch(&self, item_type: ItemType, values: &[serde_json::Value]) -> Result<()> {
@@ -269,13 +273,234 @@ impl StorageEngine for ParquetStorage {
     fn cleanup_old_records(&self, _max_age_days: u32) -> Result<()> {
         Ok(())
     }
+
+    fn export_to_file(&self, path: &str, format: crate::tui::app::ExportFormat) -> Result<usize> {
+        self.flush()?;
+
+        // Get all raw JSON lines from Parquet files
+        let mut all_lines = Vec::new();
+
+        if !self.base_dir.exists() {
+            return Ok(0);
+        }
+
+        for entry in std::fs::read_dir(&self.base_dir)? {
+            let entry = entry?;
+            let path_obj = entry.path();
+            if path_obj.extension().and_then(|s| s.to_str()) != Some("parquet") {
+                continue;
+            }
+
+            let df = LazyFrame::scan_parquet(
+                path_obj.to_string_lossy().as_ref().into(),
+                ScanArgsParquet::default(),
+            )
+            .map_err(polars_err)?
+            .collect()
+            .map_err(polars_err)?;
+
+            if df.height() == 0 {
+                continue;
+            }
+
+            // Extract the "raw_json" column as a Series of strings
+            let s = df
+                .column("raw_json")
+                .map_err(|_| storage_io_err("Missing 'raw_json' column in Parquet file"))?
+                .str()
+                .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
+
+            for opt_val in s.into_iter() {
+                if let Some(val) = opt_val {
+                    all_lines.push(val.to_string());
+                }
+            }
+        }
+
+        let total_count = all_lines.len();
+
+        if total_count == 0 {
+            return Ok(0);
+        }
+
+        match format {
+            crate::tui::app::ExportFormat::Json => {
+                // Write JSON lines (one JSON object per line)
+                let content = all_lines.join("\n");
+                std::fs::write(path, content)?;
+            }
+            crate::tui::app::ExportFormat::Csv => {
+                // For CSV, we need to parse JSON and extract common fields
+                let mut wtr = csv::Writer::from_path(path)
+                    .map_err(|e| storage_io_err(format!("CSV writer error: {}", e)))?;
+
+                // Write header
+                wtr.write_record(&[
+                    "item_type",
+                    "id",
+                    "name",
+                    "discovered_at",
+                    "source",
+                    "original_input",
+                ])
+                .map_err(|e| storage_io_err(format!("CSV write error: {}", e)))?;
+
+                for line in &all_lines {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+                        let item_type = value
+                            .get("item_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let discovered_at = value
+                            .get("discovered_at")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let source = value.get("source").and_then(|v| v.as_str()).unwrap_or("");
+                        let original_input = value
+                            .get("original_input")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+
+                        wtr.write_record(&[
+                            item_type,
+                            id,
+                            name,
+                            discovered_at,
+                            source,
+                            original_input,
+                        ])
+                        .map_err(|e| storage_io_err(format!("CSV write error: {}", e)))?;
+                    }
+                }
+
+                wtr.flush()
+                    .map_err(|e| storage_io_err(format!("CSV flush error: {}", e)))?;
+            }
+            crate::tui::app::ExportFormat::Parquet => {
+                // Create DataFrame with single column
+                let height = all_lines.len();
+                let s = Series::new("raw_json".into(), all_lines);
+                let mut df = DataFrame::new(height, vec![s.into()]).map_err(polars_err)?;
+
+                // Write to Parquet
+                let file = File::create(path)?;
+                ParquetWriter::new(file)
+                    .finish(&mut df)
+                    .map_err(polars_err)?;
+            }
+        }
+
+        Ok(total_count)
+    }
+
+    fn import_from_file(&self, path: &str, format: crate::tui::app::ExportFormat) -> Result<usize> {
+        let path_obj = std::path::Path::new(path);
+        if !path_obj.exists() {
+            return Err(storage_io_err(format!("File not found: {}", path)));
+        }
+
+        let mut imported_count = 0;
+
+        match format {
+            crate::tui::app::ExportFormat::Json => {
+                let content = std::fs::read_to_string(path)?;
+                // Parse as JSONL (one JSON object per line)
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    // Validate it's valid JSON
+                    if let Err(e) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        eprintln!("Warning: skipping invalid JSON line: {}", e);
+                        continue;
+                    }
+
+                    self.save_string(trimmed)?;
+                    imported_count += 1;
+                }
+            }
+            crate::tui::app::ExportFormat::Csv => {
+                let mut rdr = csv::Reader::from_path(path)
+                    .map_err(|e| storage_io_err(format!("CSV reader error: {}", e)))?;
+
+                // Clone headers before iterating records
+                let headers = rdr
+                    .headers()
+                    .map_err(|e| storage_io_err(format!("CSV header error: {}", e)))?
+                    .clone();
+
+                for result in rdr.records() {
+                    let record =
+                        result.map_err(|e| storage_io_err(format!("CSV read error: {}", e)))?;
+
+                    // Create JSON object from CSV row
+                    let mut json_obj = serde_json::Map::new();
+
+                    for (i, header) in headers.iter().enumerate() {
+                        if i < record.len() {
+                            let value = record.get(i).unwrap_or("");
+                            // Try to parse as JSON value, otherwise use as string
+                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(value)
+                            {
+                                json_obj.insert(header.to_string(), json_value);
+                            } else {
+                                json_obj.insert(
+                                    header.to_string(),
+                                    serde_json::Value::String(value.to_string()),
+                                );
+                            }
+                        }
+                    }
+
+                    let json_str = serde_json::to_string(&serde_json::Value::Object(json_obj))
+                        .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
+
+                    self.save_string(&json_str)?;
+                    imported_count += 1;
+                }
+            }
+            crate::tui::app::ExportFormat::Parquet => {
+                let df = LazyFrame::scan_parquet(path.into(), ScanArgsParquet::default())
+                    .map_err(polars_err)?
+                    .collect()
+                    .map_err(polars_err)?;
+
+                if df.height() == 0 {
+                    return Ok(0);
+                }
+
+                // Extract the "raw_json" column
+                let s = df
+                    .column("raw_json")
+                    .map_err(|_| storage_io_err("Missing 'raw_json' column in Parquet file"))?
+                    .str()
+                    .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
+
+                for opt_val in s.into_iter() {
+                    if let Some(val) = opt_val {
+                        self.save_string(val)?;
+                        imported_count += 1;
+                    }
+                }
+            }
+        }
+
+        // Flush any buffered records
+        self.flush()?;
+
+        Ok(imported_count)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use crate::storage::StorageEngineExt;
+    use std::sync::Arc;
 
     fn setup_test_dir() -> String {
         let path = std::env::temp_dir().join(format!("balebos_test_{}", uuid::Uuid::new_v4()));
@@ -298,7 +523,7 @@ mod tests {
 
         storage.save(&item).unwrap();
         storage.flush().unwrap();
-        
+
         // Zapisujemy coś bardziej złożonego (np. HTTP Observation)
         let http_obs = serde_json::json!({
             "item_type": "http_check",
@@ -311,19 +536,17 @@ mod tests {
 
         let records = storage.read_all_records().unwrap();
         assert!(records.items.len() >= 1);
-        
+
         let found = records.items.iter().any(|i| i.name == "example.com");
         assert!(found);
-        
+
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn test_save_and_read_roundtrip() {
         let dir = setup_test_dir();
-        let storage = ParquetStorage::new(&dir)
-            .unwrap()
-            .with_buffer_size(2);
+        let storage = ParquetStorage::new(&dir).unwrap().with_buffer_size(2);
         let storage = Arc::new(storage);
 
         let item = serde_json::json!({
@@ -339,7 +562,7 @@ mod tests {
 
         let records = storage.read_all_records().unwrap();
         assert_eq!(records.items.len(), 2);
-        
+
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

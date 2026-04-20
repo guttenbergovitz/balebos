@@ -210,8 +210,8 @@ impl FindingsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Finding, FindingEvent, FindingEventType, FindingSeverity};
     use crate::app::finding::FindingCategory;
+    use crate::app::{Finding, FindingEvent, FindingEventType, FindingSeverity};
 
     fn create_test_finding(id: &str, severity: FindingSeverity) -> Finding {
         Finding::new(

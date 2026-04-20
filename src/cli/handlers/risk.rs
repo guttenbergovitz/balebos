@@ -19,11 +19,7 @@ pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) 
     };
 
     // Build asset list from inventory items and all observations
-    let mut asset_names: HashSet<String> = records
-        .items
-        .iter()
-        .map(|i| i.name.clone())
-        .collect();
+    let mut asset_names: HashSet<String> = records.items.iter().map(|i| i.name.clone()).collect();
     for obs in &records.http_observations {
         asset_names.insert(obs.target.clone());
     }
@@ -81,7 +77,8 @@ pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) 
                 process::exit(EXIT_SUCCESS);
             }
             println!("Total assets assessed: {}", scores.len());
-            let avg_score = scores.iter().map(|s| s.total_score as u64).sum::<u64>() / scores.len() as u64;
+            let avg_score =
+                scores.iter().map(|s| s.total_score as u64).sum::<u64>() / scores.len() as u64;
             println!("Average risk score: {}", avg_score);
             println!();
             for score in &scores {
@@ -96,7 +93,10 @@ pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) 
         }
         RiskCommand::Top { n } => {
             println!("Top {} Highest Risk Assets", n);
-            println!("========================={}", "=".repeat(n.to_string().len()));
+            println!(
+                "========================={}",
+                "=".repeat(n.to_string().len())
+            );
             println!();
             let top: Vec<_> = scores.into_iter().take(n).collect();
             if top.is_empty() {
@@ -120,8 +120,15 @@ pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) 
                 Some(s) => {
                     println!("Risk Score for '{}'", asset_name);
                     println!("{}", "=".repeat(20 + asset_name.len()));
-                    println!("Total Score: {} ({})", s.total_score, risk_label(s.total_score));
-                    println!("Calculated at: {}", s.calculated_at.format("%Y-%m-%d %H:%M:%S"));
+                    println!(
+                        "Total Score: {} ({})",
+                        s.total_score,
+                        risk_label(s.total_score)
+                    );
+                    println!(
+                        "Calculated at: {}",
+                        s.calculated_at.format("%Y-%m-%d %H:%M:%S")
+                    );
                     println!();
                     if !s.severity_breakdown.is_empty() {
                         println!("Severity Breakdown:");
@@ -140,7 +147,10 @@ pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) 
                     if !s.factors.is_empty() {
                         println!("Risk Factors ({}):", s.factors.len());
                         for factor in &s.factors {
-                            println!("  - {} (contribution: +{})", factor.description, factor.contribution);
+                            println!(
+                                "  - {} (contribution: +{})",
+                                factor.description, factor.contribution
+                            );
                         }
                     } else {
                         println!("No risk factors detected.");

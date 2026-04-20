@@ -124,7 +124,10 @@ impl LifecycleEvent {
 }
 
 /// Get current lifecycle state for an asset from its event history
-pub fn get_current_lifecycle(events: &[LifecycleEvent], asset_name: &str) -> Option<AssetLifecycle> {
+pub fn get_current_lifecycle(
+    events: &[LifecycleEvent],
+    asset_name: &str,
+) -> Option<AssetLifecycle> {
     events
         .iter()
         .filter(|e| e.asset_name == asset_name)
@@ -133,10 +136,7 @@ pub fn get_current_lifecycle(events: &[LifecycleEvent], asset_name: &str) -> Opt
 }
 
 /// Get full lifecycle history for an asset
-pub fn get_lifecycle_history(
-    events: &[LifecycleEvent],
-    asset_name: &str,
-) -> Vec<LifecycleEvent> {
+pub fn get_lifecycle_history(events: &[LifecycleEvent], asset_name: &str) -> Vec<LifecycleEvent> {
     let mut history: Vec<LifecycleEvent> = events
         .iter()
         .filter(|e| e.asset_name == asset_name)
@@ -208,8 +208,11 @@ mod tests {
 
     #[test]
     fn test_lifecycle_event_initial() {
-        let event =
-            LifecycleEvent::initial("example.com".to_string(), AssetLifecycle::Active, "cli".to_string());
+        let event = LifecycleEvent::initial(
+            "example.com".to_string(),
+            AssetLifecycle::Active,
+            "cli".to_string(),
+        );
 
         assert_eq!(event.asset_name, "example.com");
         assert_eq!(event.from_state, None);

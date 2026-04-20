@@ -1,7 +1,7 @@
 use crate::app::finding::{Finding, FindingEvent};
-use crate::inventory::LifecycleEvent;
 use crate::app::probe::{AsnObservation, DnsObservation, HostingObservation, HttpObservation};
 use crate::error::Result;
+use crate::inventory::LifecycleEvent;
 use crate::inventory::{AssetTag, InventoryItem, ItemType};
 use crate::org::{
     AssetAssignmentRecord, AssetImportanceRecord, BrandRecord, CompanyRecord,
@@ -167,5 +167,3 @@ pub fn read_records(file_path: &str) -> Result<Records> {
 
     parse_records(reader.lines().map_while(|r| r.ok()))
 }
-
-

@@ -1,7 +1,9 @@
 use std::process;
 use std::sync::Arc;
 
-use crate::app::finding::{Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity};
+use crate::app::finding::{
+    Finding, FindingCategory, FindingEvent, FindingEventType, FindingSeverity,
+};
 use crate::cli::{FindingCommand, FindingSeverityFilter, FindingStatus};
 use crate::exit_codes::*;
 use crate::storage::{StorageEngine, StorageEngineExt};

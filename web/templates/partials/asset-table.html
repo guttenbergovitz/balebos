@@ -65,7 +65,7 @@
                     <!-- Root domain row -->
                     <tr
                         @click="selectAsset(group.root)"
-                        :class="{ 'selected': selectedAsset?.name === group.root.name, 'group-root': true }"
+                        :class="{ 'selected': selectedAsset?.name === group.root.name, 'group-root': true, 'placeholder-root': group.is_placeholder_root }"
                         class="asset-row"
                     >
                         <td>
@@ -77,6 +77,7 @@
                                     x-show="group.subs.length > 0"
                                 >▶</span>
                                 <span x-text="group.root.name"></span>
+                                <span class="placeholder-badge" x-show="group.is_placeholder_root">(placeholder)</span>
                                 <span class="group-count" x-show="group.subs.length > 0" x-text="group.subs.length + ' sub' + (group.subs.length > 1 ? 's' : '')"></span>
                             </span>
                         </td>

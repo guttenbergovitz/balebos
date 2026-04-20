@@ -59,9 +59,9 @@ fn is_likely_junk(subdomain: &str, parent_domains: &[String]) -> bool {
     }
 
     // Cross-domain: not actually a subdomain of any parent domain
-    let is_subdomain_of_parent = parent_domains.iter().any(|parent| {
-        subdomain == parent || subdomain.ends_with(&format!(".{}", parent))
-    });
+    let is_subdomain_of_parent = parent_domains
+        .iter()
+        .any(|parent| subdomain == parent || subdomain.ends_with(&format!(".{}", parent)));
     if !is_subdomain_of_parent {
         return true;
     }

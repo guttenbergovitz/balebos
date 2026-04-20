@@ -434,8 +434,16 @@ fn run_all_checks(
     findings.extend(check_invalid_data_findings(items));
     findings.extend(check_subdomain_patterns_findings(items));
     findings.extend(check_http_status_findings(items, http_observations));
-    findings.extend(check_abandoned_assets(items, lifecycle_events, http_observations));
-    findings.extend(check_decommissioned_still_present(items, lifecycle_events, http_observations));
+    findings.extend(check_abandoned_assets(
+        items,
+        lifecycle_events,
+        http_observations,
+    ));
+    findings.extend(check_decommissioned_still_present(
+        items,
+        lifecycle_events,
+        http_observations,
+    ));
 
     findings
 }
@@ -495,7 +503,11 @@ pub fn run_checks_and_persist(
         .collect();
 
     // Run checks
-    let candidate_findings = run_all_checks(&filtered_items, &filtered_http_observations, &records.lifecycle_events);
+    let candidate_findings = run_all_checks(
+        &filtered_items,
+        &filtered_http_observations,
+        &records.lifecycle_events,
+    );
 
     // Determine which check_name+target combos are already open
     let existing_keys = open_finding_keys(&records.findings, &records.finding_events);
@@ -741,7 +753,11 @@ pub fn check_inventory(
         .collect();
 
     // Run checks via Finding-based internals, then convert to Issue
-    let findings = run_all_checks(&filtered_items, &filtered_http_observations, &records.lifecycle_events);
+    let findings = run_all_checks(
+        &filtered_items,
+        &filtered_http_observations,
+        &records.lifecycle_events,
+    );
     let issues: Vec<Issue> = findings.iter().map(Issue::from).collect();
 
     Ok(issues)

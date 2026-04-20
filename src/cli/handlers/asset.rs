@@ -22,21 +22,26 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
                 Some(s) => s,
                 None => {
                     eprintln!("Invalid lifecycle state: {}", state);
-                    eprintln!("Valid states: active, under_review, deprecated, decommissioned, abandoned");
+                    eprintln!(
+                        "Valid states: active, under_review, deprecated, decommissioned, abandoned"
+                    );
                     process::exit(EXIT_INVALID_ARGUMENT);
                 }
             };
 
-            match set_lifecycle(storage, &asset_name, lifecycle_state, reason.as_deref(), "cli") {
+            match set_lifecycle(
+                storage,
+                &asset_name,
+                lifecycle_state,
+                reason.as_deref(),
+                "cli",
+            ) {
                 Ok(event) => {
                     let from_str = event
                         .from_state
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| "(none)".to_string());
-                    println!(
-                        "Lifecycle updated: {} → {}",
-                        from_str, event.to_state
-                    );
+                    println!("Lifecycle updated: {} → {}", from_str, event.to_state);
                     println!("Asset: {}", asset_name);
                     if let Some(ref r) = reason {
                         println!("Reason: {}", r);
@@ -91,27 +96,23 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
                 }
             }
         }
-        AssetCommand::LifecycleList => {
-            match display_lifecycle_summary(storage) {
-                Ok(()) => process::exit(EXIT_SUCCESS),
-                Err(e) => {
-                    eprintln!("Error displaying lifecycle summary: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
+        AssetCommand::LifecycleList => match display_lifecycle_summary(storage) {
+            Ok(()) => process::exit(EXIT_SUCCESS),
+            Err(e) => {
+                eprintln!("Error displaying lifecycle summary: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
             }
-        }
-        AssetCommand::Junk { asset_name } => {
-            match add_tag(storage, &asset_name, JUNK_TAG) {
-                Ok(()) => {
-                    println!("🗑  Marked '{}' as junk", asset_name);
-                    process::exit(EXIT_SUCCESS);
-                }
-                Err(e) => {
-                    eprintln!("Error marking asset as junk: {}", e);
-                    process::exit(EXIT_STORAGE_ERROR);
-                }
+        },
+        AssetCommand::Junk { asset_name } => match add_tag(storage, &asset_name, JUNK_TAG) {
+            Ok(()) => {
+                println!("🗑  Marked '{}' as junk", asset_name);
+                process::exit(EXIT_SUCCESS);
             }
-        }
+            Err(e) => {
+                eprintln!("Error marking asset as junk: {}", e);
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        },
         AssetCommand::Unjunk { asset_name } => {
             match crate::app::tags::remove_tag(storage, &asset_name, JUNK_TAG) {
                 Ok(()) => {

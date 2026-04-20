@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{App, InputMode, OrgAddType, Tab};
+use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
 use crate::tui::tabs::{draw_findings, draw_inventory, draw_organization, draw_projects};
 
 // ---------------------------------------------------------------------------
@@ -99,6 +99,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if app.input_mode == InputMode::LifecycleEditing {
         draw_lifecycle_edit_modal(f, app);
+    }
+    if app.input_mode == InputMode::ResetFilters {
+        draw_reset_filters_modal(f, app);
+    }
+    if app.input_mode == InputMode::ExportData {
+        draw_export_data_modal(f, app);
+    }
+    if app.input_mode == InputMode::ImportData {
+        draw_import_data_modal(f, app);
     }
 }
 
@@ -280,7 +289,14 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     // Check if status expired (older than 5 seconds) or empty
     let now = chrono::Utc::now();
     let should_show_status = !scan_state.message.is_empty()
-        && (is_scanning || now.signed_duration_since(scan_state.timestamp).num_seconds() < 5);
+        && (is_scanning
+            || now
+                .signed_duration_since(scan_state.timestamp)
+                .num_seconds()
+                < 5);
+
+    // Get active filters summary
+    let filters_summary = app.inventory.active_filters_summary();
 
     let status_text = if should_show_status {
         if is_scanning && !scan_state.steps.is_empty() {
@@ -293,9 +309,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     } else if let Some((ref msg, msg_time)) = app.status_message {
         if now.signed_duration_since(msg_time).num_seconds() < 5 {
             msg.clone()
+        } else if !filters_summary.is_empty() {
+            // Show filters summary when no other status
+            filters_summary
         } else {
             get_random_quote().to_string()
         }
+    } else if !filters_summary.is_empty() {
+        // Show filters summary when no other status
+        filters_summary
     } else {
         get_random_quote().to_string()
     };
@@ -1264,12 +1286,12 @@ fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                "Current: ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("Current: ", Style::default().add_modifier(Modifier::BOLD)),
             if let Some(asset) = app.selected_asset() {
-                let state = crate::inventory::get_current_lifecycle(&app.model.lifecycle_events, &asset.name);
+                let state = crate::inventory::get_current_lifecycle(
+                    &app.model.lifecycle_events,
+                    &asset.name,
+                );
                 match state {
                     Some(s) => Span::styled(
                         format!("{} {}", s.icon(), s),
@@ -1280,6 +1302,199 @@ fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
             } else {
                 Span::raw("No asset selected")
             },
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn draw_reset_filters_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(50, 20, f.area());
+    let block = Block::default()
+        .title(" Reset All Filters (y/n) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    // Show current active filters
+    let filters_summary = app.inventory.active_filters_summary();
+    let current_filters = if filters_summary.is_empty() {
+        "No active filters".to_string()
+    } else {
+        filters_summary
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Are you sure you want to reset all filters?"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Current filters: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(current_filters, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        Line::from("This will reset:"),
+        Line::from("  • Tag filter"),
+        Line::from("  • Junk filter (will hide junk)"),
+        Line::from("  • External redirects filter"),
+        Line::from("  • Risk sort"),
+        Line::from("  • Marked assets"),
+        Line::from("  • Search filter"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "y",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" - Reset all filters"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "n",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" or "),
+            Span::styled(
+                "Esc",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" - Cancel"),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn draw_export_data_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 25, f.area());
+    let block = Block::default()
+        .title(" Export Data (←/→: format, Enter: export, Esc: cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    let formats = ExportFormat::all();
+    let current_format = app.export_format;
+
+    let format_line = Line::from(
+        formats
+            .iter()
+            .map(|&format| {
+                if format == current_format {
+                    Span::styled(
+                        format!(" [{}] ", format.title()),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(
+                        format!(" {} ", format.title()),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                }
+            })
+            .collect::<Vec<Span>>(),
+    );
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Select export format:"),
+        Line::from(""),
+        format_line,
+        Line::from(""),
+        Line::from("Export path:"),
+        Line::from(vec![
+            Span::styled(
+                "> ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(&app.export_path, Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("←/→", Style::default().fg(Color::Cyan)),
+            Span::raw(" or "),
+            Span::styled("h/l", Style::default().fg(Color::Cyan)),
+            Span::raw(" - Change format"),
+        ]),
+        Line::from(vec![
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::raw(" - Export to file"),
+        ]),
+        Line::from(vec![
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(" - Cancel"),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(text).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn draw_import_data_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 20, f.area());
+    let block = Block::default()
+        .title(" Import Data (Enter: import, Esc: cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(Clear, area);
+
+    // Auto-detect format from extension
+    let detected_format = if app.import_path.ends_with(".json") {
+        Some("JSON")
+    } else if app.import_path.ends_with(".csv") {
+        Some("CSV")
+    } else if app.import_path.ends_with(".parquet") {
+        Some("Parquet")
+    } else {
+        None
+    };
+
+    let format_hint = if let Some(format) = detected_format {
+        format!(" (Detected: {})", format)
+    } else {
+        String::new()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Import file path:"),
+        Line::from(vec![
+            Span::styled(
+                "> ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(&app.import_path, Style::default().fg(Color::Yellow)),
+            Span::styled(format_hint, Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(""),
+        Line::from("Supported formats:"),
+        Line::from("  • JSON (.json)"),
+        Line::from("  • CSV (.csv)"),
+        Line::from("  • Parquet (.parquet)"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::raw(" - Import from file"),
+        ]),
+        Line::from(vec![
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(" - Cancel"),
         ]),
     ];
 

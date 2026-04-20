@@ -7,7 +7,7 @@ pub mod ui;
 pub mod workflows;
 
 use crate::storage::StorageEngine;
-use crate::tui::app::{App, InputMode, OrgAddType, Tab};
+use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
 use crate::tui::state::OrgPane;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -81,6 +81,9 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     }
                     InputMode::AssetDetails => handle_asset_details_mode(app, key.code),
                     InputMode::LifecycleEditing => handle_lifecycle_editing_mode(app, key.code)?,
+                    InputMode::ResetFilters => handle_reset_filters_mode(app, key.code)?,
+                    InputMode::ExportData => handle_export_data_mode(app, key.code)?,
+                    InputMode::ImportData => handle_import_data_mode(app, key.code)?,
                 }
             }
         }
@@ -108,6 +111,22 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         // Global keys
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('R') => app.refresh()?,
+        KeyCode::Char('r') => {
+            // Reset filters confirmation (only in Inventory tab)
+            if app.active_tab == Tab::Inventory {
+                app.input_mode = InputMode::ResetFilters;
+            }
+        }
+        KeyCode::Char('E') => {
+            // Export data
+            app.input_mode = InputMode::ExportData;
+            app.export_path = format!("balebos_export.{}", app.export_format.extension());
+        }
+        KeyCode::Char('I') => {
+            // Import data
+            app.input_mode = InputMode::ImportData;
+            app.import_path.clear();
+        }
 
         // Tab navigation
         KeyCode::Char('1') => app.set_tab(Tab::Inventory),
@@ -660,13 +679,8 @@ fn handle_lifecycle_editing_mode(app: &mut App, code: KeyCode) -> crate::error::
         };
 
         for name in targets {
-            let _ = crate::app::set_lifecycle(
-                &app.storage,
-                &name,
-                state,
-                Some("Set from TUI"),
-                "tui",
-            );
+            let _ =
+                crate::app::set_lifecycle(&app.storage, &name, state, Some("Set from TUI"), "tui");
         }
         if !app.inventory.marked_assets.is_empty() {
             app.inventory.clear_marks();
@@ -703,4 +717,147 @@ fn handle_lifecycle_editing_mode(app: &mut App, code: KeyCode) -> crate::error::
         _ => {}
     }
     Ok(())
+}
+
+fn handle_reset_filters_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    match code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            // Reset all filters
+            app.inventory.reset_all_filters();
+            app.filter.clear();
+            app.update_visible_items();
+            app.set_status("✓ All filters reset".to_string());
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            // Cancel reset
+            app.set_status("Filter reset cancelled".to_string());
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_export_data_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    match code {
+        KeyCode::Left | KeyCode::Char('h') => {
+            // Cycle format backward
+            let formats = ExportFormat::all();
+            let current_idx = formats
+                .iter()
+                .position(|&f| f == app.export_format)
+                .unwrap_or(0);
+            let next_idx = if current_idx == 0 {
+                formats.len() - 1
+            } else {
+                current_idx - 1
+            };
+            app.export_format = formats[next_idx];
+            app.export_path = format!("balebos_export.{}", app.export_format.extension());
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            // Cycle format forward
+            let formats = ExportFormat::all();
+            let current_idx = formats
+                .iter()
+                .position(|&f| f == app.export_format)
+                .unwrap_or(0);
+            let next_idx = if current_idx == formats.len() - 1 {
+                0
+            } else {
+                current_idx + 1
+            };
+            app.export_format = formats[next_idx];
+            app.export_path = format!("balebos_export.{}", app.export_format.extension());
+        }
+        KeyCode::Char(c) => {
+            app.export_path.push(c);
+        }
+        KeyCode::Backspace => {
+            app.export_path.pop();
+        }
+        KeyCode::Enter => {
+            // Execute export
+            match export_data(&app.storage, &app.export_path, app.export_format) {
+                Ok(count) => {
+                    app.set_status(format!(
+                        "✓ Exported {} records to {}",
+                        count, app.export_path
+                    ));
+                    app.input_mode = InputMode::Normal;
+                }
+                Err(e) => {
+                    app.set_status(format!("❌ Export failed: {}", e));
+                }
+            }
+        }
+        KeyCode::Esc => {
+            app.set_status("Export cancelled".to_string());
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_import_data_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    match code {
+        KeyCode::Char(c) => {
+            app.import_path.push(c);
+        }
+        KeyCode::Backspace => {
+            app.import_path.pop();
+        }
+        KeyCode::Enter => {
+            // Execute import
+            match import_data(&app.storage, &app.import_path) {
+                Ok(count) => {
+                    app.set_status(format!(
+                        "✓ Imported {} records from {}",
+                        count, app.import_path
+                    ));
+                    // Refresh data after import
+                    app.refresh()?;
+                    app.input_mode = InputMode::Normal;
+                }
+                Err(e) => {
+                    app.set_status(format!("❌ Import failed: {}", e));
+                }
+            }
+        }
+        KeyCode::Esc => {
+            app.set_status("Import cancelled".to_string());
+            app.input_mode = InputMode::Normal;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn export_data(
+    storage: &Arc<dyn StorageEngine>,
+    path: &str,
+    format: ExportFormat,
+) -> crate::error::Result<usize> {
+    storage.export_to_file(path, format)
+}
+
+fn import_data(storage: &Arc<dyn StorageEngine>, path: &str) -> crate::error::Result<usize> {
+    // Auto-detect format from file extension
+    let path_obj = std::path::Path::new(path);
+    let extension = path_obj
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let format = ExportFormat::from_extension(&extension).ok_or_else(|| {
+        crate::error::BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Unsupported file format: .{}", extension),
+        )))
+    })?;
+
+    storage.import_from_file(path, format)
 }

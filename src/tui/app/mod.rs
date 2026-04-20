@@ -13,9 +13,7 @@ use crate::error::BalebosError;
 
 use crate::storage::StorageEngine;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
-use crate::tui::state::{
-    FindingsState, FormState, InventoryState, OrgState, ProjectsState,
-};
+use crate::tui::state::{FindingsState, FormState, InventoryState, OrgState, ProjectsState};
 use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -119,7 +117,49 @@ pub enum InputMode {
     RoleAssigning(RoleAssignStep),
     ContractorAssigning(ContractorAssignStep),
     AssetDetails,
-    LifecycleEditing,     // Editing asset lifecycle state
+    LifecycleEditing, // Editing asset lifecycle state
+    ResetFilters,     // Confirmation modal for resetting all filters
+    ExportData,       // Export data modal
+    ImportData,       // Import data modal
+}
+
+/// Supported export formats
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Json,
+    Csv,
+    Parquet,
+}
+
+impl ExportFormat {
+    pub fn all() -> &'static [ExportFormat] {
+        &[ExportFormat::Json, ExportFormat::Csv, ExportFormat::Parquet]
+    }
+
+    pub fn title(&self) -> &'static str {
+        match self {
+            ExportFormat::Json => "JSON",
+            ExportFormat::Csv => "CSV",
+            ExportFormat::Parquet => "Parquet",
+        }
+    }
+
+    pub fn extension(&self) -> &'static str {
+        match self {
+            ExportFormat::Json => "json",
+            ExportFormat::Csv => "csv",
+            ExportFormat::Parquet => "parquet",
+        }
+    }
+
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "json" => Some(ExportFormat::Json),
+            "csv" => Some(ExportFormat::Csv),
+            "parquet" => Some(ExportFormat::Parquet),
+            _ => None,
+        }
+    }
 }
 
 // Re-export workflow step types for convenience
@@ -184,6 +224,11 @@ pub struct App {
 
     // Status message (for toasts/notifications)
     pub status_message: Option<(String, chrono::DateTime<chrono::Utc>)>,
+
+    // Export/import state
+    pub export_format: ExportFormat,
+    pub export_path: String,
+    pub import_path: String,
 }
 
 impl App {
@@ -232,6 +277,11 @@ impl App {
 
             // Status message
             status_message: None,
+
+            // Export/import state
+            export_format: ExportFormat::Json,
+            export_path: String::new(),
+            import_path: String::new(),
         };
 
         app.update_visible_items();

@@ -91,7 +91,7 @@
                         const parts = asset.name.split('.');
                         const tld = parts.length >= 2 ? parts.slice(-2).join('.') : asset.name;
                         if (!map.has(tld)) {
-                            map.set(tld, { tld, root: null, subs: [] });
+                            map.set(tld, { tld, root: null, subs: [], is_placeholder_root: false });
                         }
                         const g = map.get(tld);
                         if (asset.is_subdomain) {
@@ -104,7 +104,7 @@
                     for (const g of map.values()) {
                         if (!g.root && g.subs.length > 0) {
                             g.root = g.subs.shift();
-                            g.root.is_subdomain = false;
+                            g.is_placeholder_root = true;
                         }
                     }
                     return Array.from(map.values());

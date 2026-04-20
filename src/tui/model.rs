@@ -521,7 +521,9 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
             }
         });
         match &entry.latest_dns {
-            Some(existing) if dns.checked_at > existing.checked_at => entry.latest_dns = Some(dns.clone()),
+            Some(existing) if dns.checked_at > existing.checked_at => {
+                entry.latest_dns = Some(dns.clone())
+            }
             None => entry.latest_dns = Some(dns.clone()),
             _ => {}
         }

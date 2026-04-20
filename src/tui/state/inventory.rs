@@ -242,6 +242,52 @@ impl InventoryState {
             }
         }
     }
+
+    /// Returns a text summary of active filters for display in status bar
+    /// Uses Nerd Fonts icons for consistency with LazyVim style
+    pub fn active_filters_summary(&self) -> String {
+        let mut parts = Vec::new();
+
+        //  (nf-oct-tag) - tag filter
+        if let Some(ref tag) = self.filter_tag {
+            parts.push(format!("{}", tag));
+        }
+
+        //  (nf-oct-trashcan) - junk filter disabled (showing junk)
+        if !self.hide_junk {
+            parts.push("".to_string());
+        }
+
+        //  (nf-oct-link_external) - external filter disabled
+        if !self.hide_external_redirects {
+            parts.push("".to_string());
+        }
+
+        //  (nf-oct-alert) - risk sort active
+        if self.sort_by_risk {
+            parts.push("".to_string());
+        }
+
+        //  (nf-oct-bookmark) - marked assets with count
+        if !self.marked_assets.is_empty() {
+            parts.push(format!("{}", self.marked_assets.len()));
+        }
+
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("[Filtry: {}]", parts.join(" "))
+        }
+    }
+
+    /// Reset all filters to default values
+    pub fn reset_all_filters(&mut self) {
+        self.filter_tag = None;
+        self.hide_junk = true; // Default: hide junk
+        self.hide_external_redirects = false; // Default: show external redirects
+        self.sort_by_risk = false;
+        self.marked_assets.clear();
+    }
 }
 
 impl Default for InventoryState {
