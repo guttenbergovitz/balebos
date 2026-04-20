@@ -79,6 +79,10 @@ docker-dev:
 docker-ui:
 	docker run --rm -it -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) ui
 
+# Run TUI in production container (non-interactive)
+docker-ui-noninteractive:
+	docker run --rm -v "$(PWD)/data:/app/data" $(DOCKER_IMAGE) ui
+
 # Scan a domain in production container
 # Usage: make docker-scan domain=example.com
 docker-scan:
@@ -121,8 +125,8 @@ help:
 	@echo "  make build                 - Build release binary"
 	@echo "  make run-ui                - Run interactive TUI"
 	@echo "  make list                  - List assets"
-	@echo "  make scan domain=X         - Scan a single domain
-  make batch file=X          - Batch scan from domain list file"
+	@echo "  make scan domain=X         - Scan a single domain"
+	@echo "  make batch file=X          - Batch scan from domain list file"
 	@echo "  make clean                 - Remove build files"
 	@echo ""
 	@echo "Dev & Quality:"
