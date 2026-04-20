@@ -66,6 +66,7 @@ struct GroupPipelineResult {
     sub_items: Vec<crate::inventory::InventoryItem>,
     dns_obs: Vec<probe::DnsObservation>,
     http_obs: Vec<probe::HttpObservation>,
+    junk_candidates: Vec<String>,
 }
 
 /// Run full reconnaissance on a batch of domains with per-group pipelining
@@ -252,6 +253,9 @@ pub fn batch_process(
                 }
             };
 
+            // Detect junk candidates from this group's results
+            let junk_candidates = probe::detect_junk_candidates(&subdomains, &valid_domains);
+
             // Build targets: domains + subdomains
             let mut targets = valid_domains.clone();
             for sub in &subdomains {
@@ -303,6 +307,7 @@ pub fn batch_process(
                 sub_items,
                 dns_obs,
                 http_obs,
+                junk_candidates,
             })
         })
         .collect();
@@ -311,12 +316,14 @@ pub fn batch_process(
     let mut all_items = Vec::new();
     let mut all_dns_obs = Vec::new();
     let mut all_http_obs = Vec::new();
+    let mut all_junk_candidates: Vec<String> = Vec::new();
 
     for result in &pipeline_results {
         stats.subdomains_found += result.subdomains.len();
         stats.dns_checks_completed += result.dns_obs.len();
         all_items.extend(result.sub_items.clone());
         all_dns_obs.extend(result.dns_obs.clone());
+        all_junk_candidates.extend(result.junk_candidates.clone());
 
         for obs in &result.http_obs {
             if obs.status.is_some() {
@@ -326,6 +333,18 @@ pub fn batch_process(
             }
         }
         all_http_obs.extend(result.http_obs.clone());
+    }
+
+    // Report junk candidates
+    if !all_junk_candidates.is_empty() {
+        all_junk_candidates.sort();
+        all_junk_candidates.dedup();
+        println!("\n⚠️  {} auto-junk candidates detected:", all_junk_candidates.len());
+        for candidate in &all_junk_candidates {
+            println!("   • {}", candidate);
+        }
+        println!("\n   To review: balebos asset list-junk-candidates");
+        println!("   To mark all as junk: balebos asset junk <name>");
     }
 
     // Single bulk save to storage — eliminates N× save_batch calls
