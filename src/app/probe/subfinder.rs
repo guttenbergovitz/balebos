@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 fn run_subfinder(domain: &str) -> Result<String> {
@@ -115,7 +116,7 @@ fn run_subfinder_batch_inner(
 ) -> Result<(Vec<String>, Vec<InventoryItem>)> {
     let mut all_subdomains = Vec::new();
     let mut all_items = Vec::new();
-    let chunk_size = 100; // Larger chunks = less process spawn overhead
+    let chunk_size = 10; // Smaller chunks = faster completion, better timeout handling
 
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
         let total_chunks = (domains.len() as f32 / chunk_size as f32).ceil() as usize;
@@ -134,25 +135,78 @@ fn run_subfinder_batch_inner(
         fs::write(&temp_file, chunk.join("\n"))?;
 
         let temp_file_str = temp_file.to_string_lossy();
-        let mut child = Command::new("subfinder")
-            .arg("-dL")
-            .arg(temp_file_str.as_ref())
-            .arg("-silent")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+
+        // Try chaos first if API key is available, fallback to subfinder
+        let use_chaos = std::env::var("PDCP_API_KEY").is_ok();
+        let tool_name = if use_chaos { "chaos" } else { "subfinder" };
+
+        let mut cmd = if use_chaos {
+            let mut c = Command::new("chaos");
+            c.arg("-dL").arg(temp_file_str.as_ref()).arg("-silent");
+            c
+        } else {
+            let mut c = Command::new("subfinder");
+            c.arg("-dL")
+                .arg(temp_file_str.as_ref())
+                .arg("-silent")
+                .arg("-timeout") // Add timeout
+                .arg("30"); // 30 seconds max per domain
+            c
+        };
+
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+
+        // Add our own timeout in case subfinder ignores it
+        let start_time = std::time::Instant::now();
+        let timeout_duration = std::time::Duration::from_secs(25); // More aggressive timeout
+
+        // Log chunk start
+        if std::env::var("BALEBOS_STORAGE").is_err() {
+            println!(
+                "      🚀 Starting {} for {} domains...",
+                tool_name,
+                chunk.len()
+            );
+        }
 
         let stdout = match child.stdout.take() {
             Some(s) => s,
-            None => continue,
+            None => {
+                eprintln!("      ⚠ Failed to get subfinder stdout");
+                continue;
+            }
         };
         let reader = BufReader::new(stdout);
         let now = Utc::now();
         let mut chunk_items = Vec::new();
         let mut chunk_subdomains = Vec::new();
         let mut found_in_chunk = 0;
+        let mut last_log_time = start_time;
 
         for line in reader.lines() {
+            // Check if we've exceeded our timeout
+            let elapsed = start_time.elapsed();
+            if elapsed > timeout_duration {
+                let _ = child.kill(); // Kill tool if it's hanging
+                eprintln!(
+                    "      ⚠ {} timeout after {}s, moving to next chunk",
+                    tool_name,
+                    elapsed.as_secs()
+                );
+                break;
+            }
+
+            // Log progress every 5 seconds
+            if elapsed.as_secs() - last_log_time.elapsed().as_secs() > 5 {
+                println!(
+                    "      ⏱ {} still scanning... {}s elapsed, found {} subdomains",
+                    tool_name,
+                    elapsed.as_secs(),
+                    found_in_chunk
+                );
+                last_log_time = Instant::now();
+            }
+
             let subdomain = line?;
             let trimmed = subdomain.trim().to_string();
             if trimmed.is_empty() {
@@ -160,12 +214,15 @@ fn run_subfinder_batch_inner(
             }
 
             found_in_chunk += 1;
-            print!(
-                "\r      → Found {} subdomains in current chunk...",
-                found_in_chunk
-            );
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
+            // Log every 5th subdomain for better visibility without spam
+            if found_in_chunk % 5 == 0 {
+                print!(
+                    "\r      → Found {} subdomains in current chunk...",
+                    found_in_chunk
+                );
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            }
 
             // Find original apex domain for context
             let mut original_input = None;
@@ -181,7 +238,7 @@ fn run_subfinder_batch_inner(
                 id: format!("sub:{}", trimmed),
                 name: trimmed.clone(),
                 discovered_at: now,
-                source: "subfinder".to_string(),
+                source: tool_name.to_string(),
                 original_input,
             };
 
@@ -194,6 +251,23 @@ fn run_subfinder_batch_inner(
                     s.save_batch(&chunk_items)?;
                 }
                 chunk_items.clear();
+            }
+        }
+
+        // Log chunk completion
+        let total_elapsed = start_time.elapsed();
+        if std::env::var("BALEBOS_STORAGE").is_err() {
+            if found_in_chunk > 0 {
+                println!(
+                    "\r      ✅ Chunk completed: {} subdomains found in {}s",
+                    found_in_chunk,
+                    total_elapsed.as_secs()
+                );
+            } else {
+                println!(
+                    "      ℹ Chunk completed: no subdomains found in {}s",
+                    total_elapsed.as_secs()
+                );
             }
         }
 

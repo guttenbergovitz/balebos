@@ -46,11 +46,23 @@ fn lookup_asn_cymru(ip: &str) -> Option<AsnLookupResult> {
     let reversed = format!("{}.{}.{}.{}", parts[3], parts[2], parts[1], parts[0]);
     let query = format!("{}.origin.asn.cymru.com", reversed);
 
-    // Use dig for DNS TXT lookup
-    let output = Command::new("dig")
-        .args(["+short", "TXT", &query])
+    // Use dig for DNS TXT lookup with timeout
+    // Try gtimeout (macOS) first, then timeout (Linux)
+    let output = match Command::new("gtimeout")
+        .args(["5", "dig", "+short", "TXT", &query, "+time=3", "+tries=2"])
         .output()
-        .ok()?;
+    {
+        Ok(o) => Some(o),
+        Err(_) => Command::new("timeout")
+            .args(["5", "dig", "+short", "TXT", &query, "+time=3", "+tries=2"])
+            .output()
+            .ok(),
+    };
+
+    let output = match output {
+        Some(o) => o,
+        None => return None,
+    };
 
     if !output.status.success() {
         return None;

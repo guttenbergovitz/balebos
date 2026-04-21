@@ -230,6 +230,14 @@ pub fn batch_process(
         .filter_map(|(group_idx, group_domains)| {
             let group_num = group_idx + 1;
 
+            // Log group start
+            println!(
+                "  📊 Group {}/{} starting ({} domains)...",
+                group_num,
+                groups.len(),
+                group_domains.len()
+            );
+
             // Filter ignored and junk domains for this group
             let valid_domains: Vec<String> = group_domains
                 .iter()
@@ -241,13 +249,28 @@ pub fn batch_process(
                 .collect();
 
             if valid_domains.is_empty() {
+                println!("  ⏭ Group {} skipped (all domains ignored/junk)", group_num);
                 return None;
             }
 
             // --- Subfinder (no save) ---
+            println!(
+                "  🔍 Group {}/{}: Running subfinder on {} domains...",
+                group_num,
+                groups.len(),
+                valid_domains.len()
+            );
             let (subdomains, sub_items) =
                 match probe::probe_subdomains_batch_no_save(&valid_domains) {
-                    Ok((subs, items)) => (subs, items),
+                    Ok((subs, items)) => {
+                        println!(
+                            "  ✅ Group {}/{}: Found {} subdomains",
+                            group_num,
+                            groups.len(),
+                            subs.len()
+                        );
+                        (subs, items)
+                    }
                     Err(e) => {
                         eprintln!("  ✗ Group {} subfinder failed: {}", group_num, e);
                         (vec![], vec![])
@@ -683,30 +706,21 @@ pub fn run_single_recon_with_progress(
         on_result(&r);
         results.push(r);
     } else {
-        match probe::probe_asn_batch(&ip_to_host, storage) {
-            Ok(asn_obs) => {
-                let count = asn_obs.len();
-                for obs in asn_obs {
-                    asn_by_ip.insert(obs.target.clone(), obs);
-                }
-                let r = ReconStepResult {
-                    name: "asn",
-                    success: true,
-                    message: format!("ASN lookup completed for {} IPs", count),
-                };
-                on_result(&r);
-                results.push(r);
-            }
-            Err(e) => {
-                let r = ReconStepResult {
-                    name: "asn",
-                    success: false,
-                    message: format!("ASN lookup failed: {}", e),
-                };
-                on_result(&r);
-                results.push(r);
-            }
-        }
+        // Start ASN lookup in background (non-blocking)
+        let ip_count = ip_to_host.len();
+        let r = ReconStepResult {
+            name: "asn",
+            success: true,
+            message: format!(
+                "ASN lookup started for {} IPs (running in background)",
+                ip_count
+            ),
+        };
+        on_result(&r);
+        results.push(r);
+
+        // Note: ASN results won't be available for hosting detection in this run
+        // Run separately with: balebos asn-lookup
     }
 
     // 8. Hosting Detection
