@@ -153,13 +153,13 @@ pub fn get_active_tags(all_tags: &[AssetTag]) -> BTreeMap<String, BTreeSet<Strin
 
     for (asset, tag_groups) in tags_map {
         for (tag_name, tag_records) in tag_groups {
-            // Sort by timestamp to get latest state
+            // Sort by timestamp DESC to get latest state (newest first)
             let mut sorted = tag_records.clone();
-            sorted.sort_by_key(|t| t.tagged_at);
+            sorted.sort_by(|a, b| b.tagged_at.cmp(&a.tagged_at));
 
-            // Check if last record is removal
-            if let Some(last) = sorted.last() {
-                if last.removed_at.is_none() {
+            // Check if first (newest) record is removal
+            if let Some(latest) = sorted.first() {
+                if latest.removed_at.is_none() {
                     // Active tag
                     active.entry(asset.clone()).or_default().insert(tag_name);
                 }
