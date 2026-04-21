@@ -11,6 +11,11 @@ pub trait StorageEngine: Send + Sync {
     fn save_string_batch(&self, json_lines: &[String]) -> Result<()>;
     fn read_all_records(&self) -> Result<crate::storage::reader::Records>;
 
+    /// Flush any buffered records to persistent storage.
+    fn flush(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// Cleanup old records based on retention policy
     fn cleanup_old_records(&self, _max_age_days: u32) -> Result<()> {
         // Default implementation does nothing

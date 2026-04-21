@@ -40,6 +40,7 @@ pub(crate) fn cmd_finding(
                     println!("Use 'balebos finding list' to view all findings.");
                     println!("Use 'balebos finding acknowledge <id>' or 'balebos finding resolve <id>' to manage findings.");
 
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -227,6 +228,7 @@ pub(crate) fn cmd_finding(
                 match storage.save(&event) {
                     Ok(()) => {
                         println!("Finding {} acknowledged.", id);
+                        let _ = storage.flush();
                         process::exit(EXIT_SUCCESS);
                     }
                     Err(e) => {
@@ -252,6 +254,7 @@ pub(crate) fn cmd_finding(
                 match storage.save(&event) {
                     Ok(()) => {
                         println!("Finding {} resolved.", id);
+                        let _ = storage.flush();
                         process::exit(EXIT_SUCCESS);
                     }
                     Err(e) => {
@@ -378,6 +381,7 @@ pub(crate) fn cmd_finding(
             match storage.cleanup_old_records(max_age_days) {
                 Ok(()) => {
                     println!("Cleanup completed successfully.");
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {

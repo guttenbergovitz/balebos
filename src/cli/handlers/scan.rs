@@ -15,6 +15,7 @@ pub fn cmd_scan(domain_name: &str, storage: &Arc<dyn StorageEngine>) {
             if domain_name != domain.name {
                 println!("Normalized from: {}", domain_name);
             }
+            let _ = storage.flush();
             process::exit(EXIT_SUCCESS);
         }
         Err(e) => {
@@ -26,7 +27,10 @@ pub fn cmd_scan(domain_name: &str, storage: &Arc<dyn StorageEngine>) {
 
 pub fn cmd_batch(file: &str, storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
     match batch_process(file, storage, ignore_patterns) {
-        Ok(_) => process::exit(EXIT_SUCCESS),
+        Ok(_) => {
+            let _ = storage.flush();
+            process::exit(EXIT_SUCCESS);
+        }
         Err(e) => {
             eprintln!("Error during batch processing: {}", e);
             process::exit(EXIT_GENERAL_ERROR);

@@ -120,7 +120,7 @@ fn main() {
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
-        Command::Ui => handlers::ui::cmd_ui(storage),
+        Command::Ui => handlers::ui::cmd_ui(storage.clone()),
         Command::Web { output_dir } => handlers::web::cmd_web_export(&output_dir, &storage),
         Command::Org(org_cmd) => handlers::org::cmd_org(org_cmd, &storage),
         Command::Tag(tag_cmd) => handlers::tag::cmd_tag(tag_cmd, &storage),
@@ -130,4 +130,9 @@ fn main() {
         Command::Asset(asset_cmd) => handlers::asset::cmd_asset(asset_cmd, &storage),
         Command::Risk(risk_cmd) => handlers::risk::cmd_risk(risk_cmd, &storage),
     }
+
+    // Flush buffered records before exit.
+    // CLI handlers use process::exit() which skips Drop destructors,
+    // so any records saved but not yet flushed would be lost.
+    let _ = storage.flush();
 }

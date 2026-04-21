@@ -24,6 +24,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                         "Run 'balebos diff' to see changes or 'balebos check' to detect anomalies."
                     );
                 }
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
@@ -85,6 +86,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                     "Run 'balebos check' to detect anomalies or 'balebos report' for a status summary."
                 );
 
+                let _ = storage.flush();
                 if let Some(error_kind) = observation.error_kind {
                     match error_kind {
                         HttpErrorKind::DnsNotFound => process::exit(EXIT_DOMAIN_NOT_FOUND),
@@ -123,6 +125,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                 }
 
                 println!("\nObservation added to inventory.");
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
@@ -162,6 +165,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                                 );
                             }
 
+                            let _ = storage.flush();
                             process::exit(EXIT_SUCCESS);
                         }
                         Err(e) => {
@@ -248,6 +252,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                     }
 
                     println!("\nHosting observation added to inventory.");
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {

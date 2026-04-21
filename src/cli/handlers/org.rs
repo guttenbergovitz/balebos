@@ -21,6 +21,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                     rec.first_name, rec.last_name, rec.email
                 );
                 println!("ID: {}", rec.id);
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
@@ -82,6 +83,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                     } else if let Some(brand_id) = rec.brand {
                         println!("Brand ID: {}", brand_id);
                     }
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -124,6 +126,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
             Ok(rec) => {
                 println!("Brand added: {}", rec.name);
                 println!("ID: {}", rec.id);
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
@@ -161,6 +164,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                     println!("Project added: {}", rec.name);
                     println!("ID: {}", rec.id);
                     println!("Company ID: {}", rec.company);
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -197,6 +201,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
             match assign_asset(storage, &host, project) {
                 Ok(rec) => {
                     println!("Asset assigned: {} -> project {}", rec.host, rec.project);
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -242,6 +247,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                         "Person {} assigned to project {} as {}",
                         person, rec.project, rec.role
                     );
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -287,6 +293,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                         "Company {} assigned to project {} as {}",
                         company, rec.project, rec.role
                     );
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -303,6 +310,7 @@ pub(crate) fn cmd_org(org_cmd: OrgCommand, storage: &Arc<dyn StorageEngine>) {
                 } else {
                     println!("Asset {} was not assigned to any project.", host);
                 }
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {

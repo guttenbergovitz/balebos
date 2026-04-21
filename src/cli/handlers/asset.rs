@@ -46,6 +46,7 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
                     if let Some(ref r) = reason {
                         println!("Reason: {}", r);
                     }
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {
@@ -106,6 +107,7 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
         AssetCommand::Junk { asset_name } => match add_tag(storage, &asset_name, JUNK_TAG) {
             Ok(()) => {
                 println!("🗑  Marked '{}' as junk", asset_name);
+                let _ = storage.flush();
                 process::exit(EXIT_SUCCESS);
             }
             Err(e) => {
@@ -117,6 +119,7 @@ pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine
             match crate::app::tags::remove_tag(storage, &asset_name, JUNK_TAG) {
                 Ok(()) => {
                     println!("✓  Unmarked '{}' as junk", asset_name);
+                    let _ = storage.flush();
                     process::exit(EXIT_SUCCESS);
                 }
                 Err(e) => {

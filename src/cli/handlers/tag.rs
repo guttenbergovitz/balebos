@@ -10,7 +10,10 @@ use crate::storage::StorageEngine;
 pub(crate) fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
     match tag_cmd {
         TagCommand::Add { asset_name, tag } => match add_tag(storage, &asset_name, &tag) {
-            Ok(()) => process::exit(EXIT_SUCCESS),
+            Ok(()) => {
+                let _ = storage.flush();
+                process::exit(EXIT_SUCCESS);
+            }
             Err(e) => {
                 eprintln!("Error adding tag: {}", e);
                 process::exit(EXIT_GENERAL_ERROR);
@@ -39,6 +42,8 @@ pub(crate) fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
                 println!("  Failed:  {}", error_count);
             }
 
+            let _ = storage.flush();
+
             if error_count > 0 {
                 process::exit(EXIT_GENERAL_ERROR);
             } else {
@@ -46,7 +51,10 @@ pub(crate) fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
             }
         }
         TagCommand::Remove { asset_name, tag } => match remove_tag(storage, &asset_name, &tag) {
-            Ok(()) => process::exit(EXIT_SUCCESS),
+            Ok(()) => {
+                let _ = storage.flush();
+                process::exit(EXIT_SUCCESS);
+            }
             Err(e) => {
                 eprintln!("Error removing tag: {}", e);
                 process::exit(EXIT_GENERAL_ERROR);

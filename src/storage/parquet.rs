@@ -182,6 +182,10 @@ impl StorageEngine for ParquetStorage {
         "parquet".to_string()
     }
 
+    fn flush(&self) -> Result<()> {
+        ParquetStorage::flush(self)
+    }
+
     fn save_string(&self, json: &str) -> Result<()> {
         let value: serde_json::Value = serde_json::from_str(json)
             .map_err(|e| storage_io_err(format!("JSON parse error: {}", e)))?;
