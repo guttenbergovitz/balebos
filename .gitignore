@@ -39,3 +39,6 @@ evacuate/
 
 # Misc
 scratchpad/
+
+# macOS
+.DS_Store

@@ -388,13 +388,13 @@ All dependencies are bundled in the container:
 
 ```bash
 # Build the Docker image
-make docker-build
+task docker:build
 
 # Run the TUI
-make docker-ui
+task docker:ui
 
 # Scan a domain
-make docker-scan domain=example.com
+task docker:scan -- example.com
 
 # Or use docker-compose directly
 docker compose run --rm balebos ui
@@ -409,23 +409,25 @@ git clone https://github.com/guttenbergovitz/balebos.git
 cd balebos
 
 # Build the binary
-make build
+task build:release
 
 # Run Balebos
-make run-ui
+cargo run -- ui
 ```
 
 ### Development
 
-A `Makefile` is provided for common tasks:
-- `make dev-check` - Quick compilation check
-- `make dev-test` - Run all tests
-- `make dev-fix` - Auto-format and lint fix
-- `make clean` - Clean build artifacts
+`Taskfile.yml` is the canonical entry point:
+- `task check` - Full quality gate (format, clippy, rustdoc, tests)
+- `task fmt` / `task lint` / `task test` / `task doc` - Individual gate steps
+- `task smoke` - Offline smoke check
+- `task docker:build` etc. - Container workflows
+
+See `docs/operations.md` for the full list.
 
 ### Dependencies
 
-- Rust 1.94.1+ (for Polars 0.53 compatibility)
+- Rust (toolchain pinned in `rust-toolchain.toml`; installed automatically by rustup)
 - Apache Parquet (for columnar storage)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)

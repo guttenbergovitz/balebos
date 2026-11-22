@@ -57,3 +57,42 @@ tasks:
       - build
     cmds:
       - cargo run --locked -- --help >/dev/null
+
+  docker:build:
+    desc: Build the production Docker image
+    cmds:
+      - docker build -t balebos .
+
+  docker:ui:
+    desc: Run the TUI in the production container (interactive)
+    cmds:
+      - docker run --rm -it -v "$(pwd)/data:/app/data" balebos ui
+
+  docker:scan:
+    desc: Scan a domain in the production container
+    summary: |
+      Usage: task docker:scan -- <domain>
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" balebos scan {{.CLI_ARGS}}
+
+  docker:list:
+    desc: List assets in the production container
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" balebos list
+
+  docker:batch:
+    desc: Batch scan from a domain list file in the production container
+    summary: |
+      Usage: task docker:batch -- <file>
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" -v "$(pwd)/{{.CLI_ARGS}}:/app/{{.CLI_ARGS}}" balebos batch {{.CLI_ARGS}}
+
+  docker:shell:
+    desc: Enter a shell in the production container for debugging
+    cmds:
+      - docker run --rm -it -v "$(pwd)/data:/app/data" --entrypoint bash balebos
+
+  docker:clean:
+    desc: Remove Balebos Docker images
+    cmds:
+      - docker rmi balebos || true
