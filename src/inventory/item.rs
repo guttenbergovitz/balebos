@@ -45,6 +45,8 @@ pub enum ItemType {
     FindingEvent,
     #[serde(rename = "lifecycle_event")]
     LifecycleEvent,
+    #[serde(rename = "scan_report")]
+    ScanReport,
 }
 
 impl ItemType {
@@ -69,6 +71,7 @@ impl ItemType {
             ItemType::Finding => "finding",
             ItemType::FindingEvent => "finding_event",
             ItemType::LifecycleEvent => "lifecycle_event",
+            ItemType::ScanReport => "scan_report",
         }
     }
 
@@ -97,6 +100,7 @@ impl ItemType {
             "finding" => Some(ItemType::Finding),
             "finding_event" => Some(ItemType::FindingEvent),
             "lifecycle_event" => Some(ItemType::LifecycleEvent),
+            "scan_report" => Some(ItemType::ScanReport),
             _ => None,
         }
     }

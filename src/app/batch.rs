@@ -75,6 +75,7 @@ pub fn batch_process(
     ignore_patterns: &[String],
 ) -> Result<BatchStats> {
     let start = Instant::now();
+    let started_at = chrono::Utc::now();
 
     // Load domains from file
     println!("📂 Loading domains from: {}", filepath);
@@ -152,8 +153,10 @@ pub fn batch_process(
     let mut new_items = Vec::new();
     let mut new_rdaps = Vec::new();
     let mut skipped_rdap_count = 0;
+    // Per-target coverage for the persisted ScanReport (ADR 0005).
+    let mut coverage_outcomes: Vec<crate::domain::coverage::TargetCoverageRecord> = Vec::new();
 
-    for (idx, domain, item_opt, rdap_opt, err_opt, skipped) in results {
+    for (idx, domain, item_opt, rdap_opt, err_opt, _skip_rdap) in results {
         if let Some(err) = err_opt {
             println!(
                 "  ✗ [{}/{}] {} (error: {})",
@@ -163,8 +166,12 @@ pub fn batch_process(
                 err
             );
             stats.domains_failed += 1;
+            coverage_outcomes.push(crate::domain::coverage::TargetCoverageRecord {
+                target: domain.clone(),
+                coverage: crate::domain::coverage::TargetCoverage::Failed { error: err },
+            });
         } else if let Some(item) = item_opt {
-            let status = if skipped {
+            let status = if _skip_rdap {
                 skipped_rdap_count += 1;
                 "(RDAP fresh, skipped)"
             } else if rdap_opt.is_some() {
@@ -174,10 +181,20 @@ pub fn batch_process(
             };
             println!("  ✓ [{}/{}] {} {}", idx + 1, domains.len(), domain, status);
             stats.domains_added += 1;
+            coverage_outcomes.push(crate::domain::coverage::TargetCoverageRecord {
+                target: domain.clone(),
+                coverage: crate::domain::coverage::TargetCoverage::Observed,
+            });
             new_items.push(item);
             if let Some(rdap) = rdap_opt {
                 new_rdaps.push(rdap);
             }
+        } else {
+            // Deliberately not inspected: ignore pattern or junk asset.
+            coverage_outcomes.push(crate::domain::coverage::TargetCoverageRecord {
+                target: domain.clone(),
+                coverage: crate::domain::coverage::TargetCoverage::Skipped,
+            });
         }
     }
 
@@ -484,7 +501,48 @@ pub fn batch_process(
     // Print summary
     print_summary(&stats, &domains);
 
+    // Persist scan coverage (ADR 0005): what was planned, what happened.
+    // Failed coverage is recorded as failed — it never implies disappearance.
+    let report = crate::domain::coverage::ScanReport::start(started_at).finish(
+        domains.clone(),
+        coverage_outcomes,
+        chrono::Utc::now(),
+    );
+    let observed = report.count_coverage(&crate::domain::coverage::TargetCoverage::Observed);
+    let failed = report.count_coverage(&crate::domain::coverage::TargetCoverage::Failed {
+        error: String::new(),
+    });
+    let skipped = report.count_coverage(&crate::domain::coverage::TargetCoverage::Skipped);
+
+    let record = ScanReportRecord {
+        item_type: crate::inventory::ItemType::ScanReport,
+        report: report.clone(),
+    };
+    if let Err(e) = storage.save(&record) {
+        eprintln!(
+            "Warning: failed to persist scan report {}: {}",
+            report.scan_id, e
+        );
+    }
+    println!(
+        "🧭 Scan report {}: {} planned, {} observed, {} failed, {} skipped",
+        report.scan_id,
+        report.planned_targets.len(),
+        observed,
+        failed,
+        skipped
+    );
+
     Ok(stats)
+}
+
+/// Persisted form of a scan report: the storage discriminator is an
+/// application-layer wrapper (ADR 0004) so the domain type stays pure.
+#[derive(serde::Serialize)]
+struct ScanReportRecord {
+    item_type: crate::inventory::ItemType,
+    #[serde(flatten)]
+    report: crate::domain::coverage::ScanReport,
 }
 
 /// Result of a single recon step

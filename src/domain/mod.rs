@@ -1,3 +1,4 @@
+pub mod coverage;
 pub mod identity;
 pub mod model;
 pub mod normalize;

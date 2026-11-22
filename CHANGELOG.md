@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed, skipped, unsupported, incomplete, unverified, confirmed absent —
   ADR 0005) and validated identity newtypes `AssetId`, `ScanId`,
   `ObservationId` (ADR 0004), serde-stable for persistence.
+- Scan coverage: every `batch` run persists an identifiable `ScanReport`
+  (scan id, timestamps, planned targets, per-target outcome — observed,
+  failed, skipped, not attempted) so partial and failed scans stay
+  distinguishable from verified change (ADR 0005).
 
 ### Changed
 
