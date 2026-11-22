@@ -26,7 +26,11 @@ fn polars_err(e: impl std::fmt::Display) -> BalebosError {
     storage_io_err(format!("Polars error: {}", e))
 }
 
-/// Polars-based Parquet storage with in-memory buffering
+/// Polars-based Parquet storage with in-memory buffering.
+///
+/// Concurrency model: a single process owns the data directory. The buffer
+/// mutex serialises writers in-process only; there is no inter-process
+/// locking, so two Balebos processes must not share one data directory.
 pub struct ParquetStorage {
     base_dir: PathBuf,
     buffer: Mutex<Vec<serde_json::Value>>,
@@ -124,9 +128,11 @@ impl ParquetStorage {
         let temp_path = file_path.with_extension("parquet.tmp");
         let write_result = (|| -> Result<()> {
             let file = File::create(&temp_path)?;
-            ParquetWriter::new(file)
+            ParquetWriter::new(&file)
                 .finish(&mut df)
                 .map_err(polars_err)?;
+            // Persist file contents before the rename becomes visible.
+            file.sync_all()?;
             std::fs::rename(&temp_path, file_path)?;
             Ok(())
         })();
@@ -143,6 +149,10 @@ impl ParquetStorage {
     /// Commits buffered records per record type and returns errors to the
     /// caller. Records with an unknown `item_type` are preserved verbatim in
     /// the quarantine file, never reclassified onto an unrelated type.
+    ///
+    /// On a write failure the records that were not yet committed are
+    /// restored to the buffer, so a later retry does not lose them; the
+    /// error is returned to the caller either way.
     pub fn flush(&self) -> Result<()> {
         let mut buf = self
             .buffer
@@ -168,10 +178,39 @@ impl ParquetStorage {
 
         drop(buf);
 
-        for (item_type, values) in by_type {
-            self.write_type_batch(&self.type_file_path(item_type), &values)?;
+        // Write sequentially so a failure leaves the remaining buckets
+        // restorable; `written` tracks what may be dropped from the retry set.
+        let mut pending: Vec<(PathBuf, Vec<serde_json::Value>)> = by_type
+            .into_iter()
+            .map(|(t, values)| (self.type_file_path(t), values))
+            .collect();
+        pending.push((self.quarantine_file_path(), quarantined));
+
+        let mut uncommitted: Vec<(PathBuf, Vec<serde_json::Value>)> = Vec::new();
+        let mut first_error: Option<String> = None;
+        for (path, values) in pending {
+            if let Err(e) = self.write_type_batch(&path, &values) {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}: {}", path.display(), e));
+                }
+                uncommitted.push((path, values));
+            }
         }
-        self.write_type_batch(&self.quarantine_file_path(), &quarantined)?;
+
+        if !uncommitted.is_empty() {
+            // Restore uncommitted records to the buffer for a later retry.
+            let mut buf = self
+                .buffer
+                .lock()
+                .map_err(|e| storage_io_err(format!("Mutex poison: {}", e)))?;
+            for (_, values) in uncommitted {
+                buf.extend(values);
+            }
+            return Err(storage_io_err(format!(
+                "flush failed ({}); uncommitted records retained in buffer",
+                first_error.unwrap_or_default()
+            )));
+        }
 
         Ok(())
     }
@@ -623,6 +662,51 @@ mod tests {
             })
             .count();
         assert_eq!(leftovers, 0);
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_failure_retains_uncommitted_records_for_retry() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let first = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "first.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+        let second = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "second.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+
+        storage.save(&first).unwrap();
+        storage.flush().unwrap();
+
+        // Block the commit path by making the data directory read-only:
+        // creating the temp file fails, flush must error.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        storage.save(&second).unwrap();
+        assert!(storage.flush().is_err());
+
+        // Repair and retry: both the committed and the uncommitted records
+        // are present afterwards.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        storage.flush().unwrap();
+
+        let records = storage.read_all_records().unwrap();
+        let names: Vec<&str> = records.items.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"first.example.com"));
+        assert!(names.contains(&"second.example.com"));
 
         std::fs::remove_dir_all(dir).unwrap();
     }
