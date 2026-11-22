@@ -15,18 +15,17 @@ Balebos is designed so that system state does not depend on constant human atten
 
 ## What it does
 
-- discovers assets (domains, subdomains, repos)
+- discovers assets (domains, subdomains) via subfinder
 - resolves DNS records (A, AAAA, CNAME) via dnsx
 - performs deep HTTP probing (tech stack, title, web server) via httpx
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in columnar format (Apache Parquet) with Polars query engine
-- tracks changes over time
-- exposes system state via API / queries
-- highlights drift and unknowns
+- stores state locally in Apache Parquet files with Polars query engine — no server or database required
+- records scan coverage: every batch run persists an identifiable report of what was planned and what happened to each target (observed, failed, skipped, not attempted)
+- tracks changes over time and highlights drift and unknowns
 - persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
-- exports interactive web dashboard for business stakeholders
+- exports an interactive static web dashboard for stakeholders
 
 ## Quick Start
 
@@ -74,15 +73,19 @@ balebos risk report
 
 ## Documentation
 
-- **Guides**
+- **Current (Balebos 2.0)**
+  - [Product definition](docs/product.md) - Identity, scope and explicit non-goals
+  - [Architecture](docs/architecture.md) - Module boundaries and dependency direction
+  - [Conventions](docs/conventions.md) - Rust standards, testing, Git discipline
+  - [Operations](docs/operations.md) - Quality gate, tasks, release procedure
+  - [Migration to 2.0](docs/migration-v2.md) - Data, CLI and feature disposition
+  - [Architecture Decision Records](docs/adr/) - Recorded decisions (0001–0011)
+- **Guides (1.x era, historical)**
   - [Getting Started](documentation/guides/getting-started.md) - Installation and first steps
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
   - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
   - [Tag Management](documentation/guides/tag-management.md) - Asset tagging and organization
   - [Findings Management](documentation/guides/findings.md) - Persisted issues and lifecycle tracking
-- **Technical Specs**
-  - [Architecture Overview](documentation/architecture.md) - Design principles and layers
-  - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
 
 ## Why
 
@@ -105,7 +108,10 @@ Balebos exists to make that visible and controlled.
 
 ## Status
 
-Beta stage with high-performance storage and container support.
+Beta. The Balebos 2.0 realignment is in progress (product scope, engineering
+foundation and storage evidence integrity landed; see `docs/adr/` and
+`CHANGELOG.md`). CI runs the full quality gate on every push to `develop`
+and `main`.
 
 ## Usage
 
@@ -133,14 +139,21 @@ balebos tree                                # Hierarchical view
 balebos status                              # Health report by status code
 ```
 
+**Batch scanning (with coverage):**
+```bash
+balebos batch domains.txt                   # Full recon; persists a scan report
+                                            # (planned vs observed/failed/skipped per target)
+```
+
 **Ownership and context:**
 ```bash
-balebos org brand add "Acme Corp"           # Create brand
-balebos org company add "Acme Corp DE" DE --brand <id>  # Create company under brand
-balebos org project add "Website" --company <id>  # Create project
-balebos org assign asset api.example.com --project <id>  # Link asset to team
+balebos tag add api.example.com production  # Tag assets for local grouping
 balebos asset lifecycle set api.example.com active  # Mark lifecycle state
 ```
+
+> The `org` command family (Brand → Company → Project governance) still works
+> but is slated for retirement in 2.0 — see ADR 0008. Prefer tags, lifecycle
+> states and lightweight owner references for new workflows.
 
 For comprehensive command reference, advanced filters, batch processing, and export options, see the [Usage Guide](documentation/guides/usage.md).
 
