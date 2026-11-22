@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of being coerced to `Domain`; unreadable records are reported in
   `Records::skipped` with reasons; atomic batch writes (temp file + fsync +
   rename); uncommitted records survive flush failures for retry.
+- Domain vocabulary for the 2.0 model: `ObservationOutcome` (success,
+  failed, skipped, unsupported, incomplete, unverified, confirmed absent —
+  ADR 0005) and validated identity newtypes `AssetId`, `ScanId`,
+  `ObservationId` (ADR 0004), serde-stable for persistence.
 
 ### Changed
 
