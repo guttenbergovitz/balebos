@@ -21,6 +21,7 @@ fn print_usage() {
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
@@ -114,6 +115,12 @@ fn main() {
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
+        Command::Migrate { from } => {
+            if let Err(e) = handlers::migrate::cmd_migrate(from) {
+                eprintln!("Migration failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::Ui => handlers::ui::cmd_ui(storage.clone()),
         Command::Web { output_dir } => handlers::web::cmd_web_export(&output_dir, &storage),
         Command::Org(org_cmd) => handlers::org::cmd_org(org_cmd, &storage),

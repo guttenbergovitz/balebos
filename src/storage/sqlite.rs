@@ -80,6 +80,71 @@ impl SqliteStorage {
         .map_err(sqlite_err)?;
         Ok(())
     }
+
+    /// Quarantine a raw record with an explicit reason.
+    ///
+    /// Used by legacy migration for rows that are not valid JSON or whose
+    /// type is unknown; the body is preserved verbatim.
+    pub fn quarantine_raw(&self, reason: &str, body: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        conn.execute(
+            "INSERT INTO quarantine (reason, body) VALUES (?1, ?2)",
+            params![reason, body],
+        )
+        .map_err(sqlite_err)?;
+        Ok(())
+    }
+
+    /// Snapshot of every stored record key, for idempotent migration
+    /// dedup. Bounded by the store's size; acceptable at Balebos volumes.
+    pub fn existing_keys(&self) -> Result<std::collections::HashSet<(String, String, String)>> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut stmt = conn
+            .prepare("SELECT record_type, record_id, body FROM records")
+            .map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(sqlite_err)?;
+        rows.collect::<std::result::Result<std::collections::HashSet<_>, _>>()
+            .map_err(sqlite_err)
+    }
+
+    /// Current per-type record counts and quarantine count, for
+    /// post-migration verification.
+    pub fn table_counts(&self) -> Result<(std::collections::BTreeMap<String, usize>, usize)> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut by_type = std::collections::BTreeMap::new();
+        let mut stmt = conn
+            .prepare("SELECT record_type, COUNT(*) FROM records GROUP BY record_type")
+            .map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(sqlite_err)?;
+        for row in rows
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(sqlite_err)?
+        {
+            by_type.insert(row.0, row.1 as usize);
+        }
+        let quarantined: i64 = conn
+            .query_row("SELECT COUNT(*) FROM quarantine", [], |row| row.get(0))
+            .map_err(sqlite_err)?;
+        Ok((by_type, quarantined as usize))
+    }
 }
 
 /// Classify a raw JSON record: known type, unknown type (quarantine), or

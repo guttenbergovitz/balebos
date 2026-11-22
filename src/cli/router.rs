@@ -10,6 +10,7 @@ pub enum Command {
     Check,
     Report,
     Probe { kind: ProbeKind, target: String },
+    Migrate { from: Option<String> },
     Ui,
     Web { output_dir: String },
     Org(OrgCommand),
@@ -218,6 +219,10 @@ pub fn parse_command() -> Option<Command> {
         "diff" => Some(Command::Diff),
         "check" => Some(Command::Check),
         "report" => Some(Command::Report),
+        "migrate" => {
+            let from = args.get(2).cloned();
+            Some(Command::Migrate { from })
+        }
         "ui" => Some(Command::Ui),
         "probe" => {
             let kind_str = args.get(2)?;

@@ -1,3 +1,4 @@
+pub mod migration;
 pub mod parquet;
 pub mod reader;
 pub mod sqlite;
