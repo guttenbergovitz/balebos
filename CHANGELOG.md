@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (scan id, timestamps, planned targets, per-target outcome — observed,
   failed, skipped, not attempted) so partial and failed scans stay
   distinguishable from verified change (ADR 0005).
+- SQLite operational storage behind `BALEBOS_STORAGE=sqlite` (ADR 0012):
+  append-only records, transactional all-or-nothing batches, per-write
+  commits, quarantine table with reader-visible reporting.
+- `balebos migrate [dir]`: verified, idempotent migration of legacy
+  Parquet data into SQLite — per-row classification, verbatim quarantine
+  of unknown/malformed rows, count verification, rename-not-delete
+  rollback (ADR 0018).
 
 ### Changed
 
