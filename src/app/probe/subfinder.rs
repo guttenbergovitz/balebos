@@ -63,11 +63,7 @@ fn is_likely_junk(subdomain: &str, parent_domains: &[String]) -> bool {
     let is_subdomain_of_parent = parent_domains
         .iter()
         .any(|parent| subdomain == parent || subdomain.ends_with(&format!(".{}", parent)));
-    if !is_subdomain_of_parent {
-        return true;
-    }
-
-    false
+    !is_subdomain_of_parent
 }
 
 pub fn probe_subdomains(domain: &str, storage: &Arc<dyn StorageEngine>) -> Result<Vec<String>> {
