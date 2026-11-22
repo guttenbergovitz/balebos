@@ -59,10 +59,7 @@ fn lookup_asn_cymru(ip: &str) -> Option<AsnLookupResult> {
             .ok(),
     };
 
-    let output = match output {
-        Some(o) => o,
-        None => return None,
-    };
+    let output = output?;
 
     if !output.status.success() {
         return None;

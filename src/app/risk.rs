@@ -208,7 +208,7 @@ pub fn calculate_all_risks(
         .collect();
 
     // Sort by score descending
-    scores.sort_by(|a, b| b.total_score.cmp(&a.total_score));
+    scores.sort_by_key(|s| std::cmp::Reverse(s.total_score));
     scores
 }
 

@@ -85,7 +85,7 @@ impl ParquetStorage {
         // Serialize each JSON object to a string (one row per JSON record)
         let json_strings: Vec<String> = values
             .iter()
-            .map(|v| serde_json::to_string(v))
+            .map(serde_json::to_string)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
 
@@ -264,10 +264,8 @@ impl StorageEngine for ParquetStorage {
                 .str()
                 .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-            for opt_val in s.into_iter() {
-                if let Some(val) = opt_val {
-                    all_lines.push(val.to_string());
-                }
+            for val in s.into_iter().flatten() {
+                all_lines.push(val.to_string());
             }
         }
 
@@ -314,10 +312,8 @@ impl StorageEngine for ParquetStorage {
                 .str()
                 .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-            for opt_val in s.into_iter() {
-                if let Some(val) = opt_val {
-                    all_lines.push(val.to_string());
-                }
+            for val in s.into_iter().flatten() {
+                all_lines.push(val.to_string());
             }
         }
 
@@ -339,7 +335,7 @@ impl StorageEngine for ParquetStorage {
                     .map_err(|e| storage_io_err(format!("CSV writer error: {}", e)))?;
 
                 // Write header
-                wtr.write_record(&[
+                wtr.write_record([
                     "item_type",
                     "id",
                     "name",
@@ -367,7 +363,7 @@ impl StorageEngine for ParquetStorage {
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
 
-                        wtr.write_record(&[
+                        wtr.write_record([
                             item_type,
                             id,
                             name,
@@ -484,11 +480,9 @@ impl StorageEngine for ParquetStorage {
                     .str()
                     .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-                for opt_val in s.into_iter() {
-                    if let Some(val) = opt_val {
-                        self.save_string(val)?;
-                        imported_count += 1;
-                    }
+                for val in s.into_iter().flatten() {
+                    self.save_string(val)?;
+                    imported_count += 1;
                 }
             }
         }
@@ -539,7 +533,7 @@ mod tests {
         storage.save(&http_obs).unwrap();
 
         let records = storage.read_all_records().unwrap();
-        assert!(records.items.len() >= 1);
+        assert!(!records.items.is_empty());
 
         let found = records.items.iter().any(|i| i.name == "example.com");
         assert!(found);

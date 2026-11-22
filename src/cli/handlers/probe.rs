@@ -8,7 +8,7 @@ use crate::exit_codes::*;
 use crate::storage::StorageEngine;
 
 #[allow(dead_code)]
-pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
     match kind {
         ProbeKind::Subdomains => match probe_subdomains(target, storage) {
             Ok(subdomains) => {
@@ -143,7 +143,8 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
                     }
 
                     // Build IP to host map
-                    let ip_map = crate::app::probe::asn::build_ip_host_map(&[dns_obs.clone()]);
+                    let ip_map =
+                        crate::app::probe::asn::build_ip_host_map(std::slice::from_ref(&dns_obs));
 
                     match crate::app::probe::probe_asn_batch(&ip_map, storage) {
                         Ok(observations) => {
@@ -205,7 +206,7 @@ pub(crate) fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn Storage
             // Run ASN probe if we have IPs
             let mut asn_by_ip: HashMap<String, crate::app::probe::AsnObservation> = HashMap::new();
             if let Some(ref dns) = dns_obs {
-                let ip_map = crate::app::probe::asn::build_ip_host_map(&[dns.clone()]);
+                let ip_map = crate::app::probe::asn::build_ip_host_map(std::slice::from_ref(dns));
                 if !ip_map.is_empty() {
                     if let Ok(asn_obs) = crate::app::probe::probe_asn_batch(&ip_map, storage) {
                         for obs in asn_obs {

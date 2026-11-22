@@ -53,7 +53,7 @@ pub fn get_domain_stats(storage: &Arc<dyn StorageEngine>) -> Result<DomainStats>
         .collect();
 
     // Sort by count (descending)
-    top_domains.sort_by(|a, b| b.1.cmp(&a.1));
+    top_domains.sort_by_key(|d| std::cmp::Reverse(d.1));
 
     // Limit to top 5 for display
     if top_domains.len() > 5 {
