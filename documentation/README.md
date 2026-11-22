@@ -1,5 +1,10 @@
 # Balebos Documentation
 
+> **Historical (1.x era).** This tree documents the pre-2.0 product. The current
+> sources of truth are `docs/` (product, architecture, conventions, migration) and
+> `docs/adr/` (decisions). Content here is retained for reference; where it
+> disagrees with `docs/`, `docs/` wins.
+
 Welcome to the Balebos documentation. This is your central index for understanding the system, using it effectively, and contributing to its development.
 
 ## Getting Started
