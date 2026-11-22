@@ -89,7 +89,7 @@ fn collect_status_report(storage: &Arc<dyn StorageEngine>) -> Result<StatusRepor
     let mut network_errors = Vec::new();
     let mut unchecked = Vec::new();
 
-    for (_, check) in status_map.iter() {
+    for check in status_map.values() {
         match check.status {
             Some(200) => alive.push(check.clone()),
             Some(code) if (300..400).contains(&code) => client_errors.push(check.clone()),

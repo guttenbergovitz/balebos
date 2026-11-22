@@ -9,7 +9,7 @@ use crate::exit_codes::*;
 use crate::storage::{StorageEngine, StorageEngineExt};
 
 #[allow(dead_code)]
-pub(crate) fn cmd_finding(
+pub fn cmd_finding(
     finding_cmd: FindingCommand,
     storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],

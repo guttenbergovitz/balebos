@@ -9,7 +9,7 @@ use crate::storage::StorageEngine;
 use chrono::Utc;
 
 #[allow(dead_code)]
-pub(crate) fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_risk(risk_cmd: RiskCommand, storage: &Arc<dyn StorageEngine>) {
     let records = match storage.read_all_records() {
         Ok(r) => r,
         Err(e) => {

@@ -44,8 +44,8 @@ impl std::fmt::Display for AssetLifecycle {
 }
 
 impl AssetLifecycle {
-    /// Parse lifecycle state from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse lifecycle state from a string.
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "active" => Some(AssetLifecycle::Active),
             "under_review" | "under-review" | "underreview" | "review" => {
@@ -162,30 +162,30 @@ mod tests {
     #[test]
     fn test_asset_lifecycle_from_str() {
         assert_eq!(
-            AssetLifecycle::from_str("active"),
+            AssetLifecycle::parse("active"),
             Some(AssetLifecycle::Active)
         );
         assert_eq!(
-            AssetLifecycle::from_str("under_review"),
+            AssetLifecycle::parse("under_review"),
             Some(AssetLifecycle::UnderReview)
         );
         assert_eq!(
-            AssetLifecycle::from_str("under-review"),
+            AssetLifecycle::parse("under-review"),
             Some(AssetLifecycle::UnderReview)
         );
         assert_eq!(
-            AssetLifecycle::from_str("deprecated"),
+            AssetLifecycle::parse("deprecated"),
             Some(AssetLifecycle::Deprecated)
         );
         assert_eq!(
-            AssetLifecycle::from_str("decommissioned"),
+            AssetLifecycle::parse("decommissioned"),
             Some(AssetLifecycle::Decommissioned)
         );
         assert_eq!(
-            AssetLifecycle::from_str("abandoned"),
+            AssetLifecycle::parse("abandoned"),
             Some(AssetLifecycle::Abandoned)
         );
-        assert_eq!(AssetLifecycle::from_str("invalid"), None);
+        assert_eq!(AssetLifecycle::parse("invalid"), None);
     }
 
     #[test]

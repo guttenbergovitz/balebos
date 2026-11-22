@@ -3,7 +3,7 @@
 //! These tests verify that workflow transitions work correctly in various scenarios,
 //! ensuring proper state management during user interactions.
 
-use balebos::org::{CompanyId, ContractorRole, ProjectId, Role};
+use balebos::org::{ContractorRole, ProjectId, Role};
 use balebos::tui::workflows::{
     ContractorAssignStep, ContractorAssignWorkflow, RoleAssignStep, RoleAssignWorkflow,
 };

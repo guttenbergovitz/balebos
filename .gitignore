@@ -5,9 +5,6 @@
 .idea/
 .vscode/
 
-# Dependency files
-Cargo.lock
-
 # Backup files
 **/*.rs.bk
 
@@ -25,17 +22,21 @@ Cargo.lock
 /web/data/
 /web/static/data/
 
-
 # Application data
 /data/
 balebos.ignore
 
-# LLM
-AGENTS.md
+# Temporary working specifications — never commit
+.specs/
+
+# Local agent/editor state
 CLAUDE.md
 .claude/
 GEMINI.md
 
-# Taskfile
-Taskfile.yml
-evacuate/
+
+# Misc
+scratchpad/
+
+# macOS
+.DS_Store

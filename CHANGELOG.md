@@ -5,6 +5,41 @@ All notable changes to Balebos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Engineering foundation for Balebos 2.0: `docs/` durable documentation
+  (product, architecture, conventions, operations, migration-v2), ADR
+  framework with ADRs 0001–0010, and repository-local agent skills
+  (`balebos-feature-slice`, `architecture-review`, `security-audit`,
+  `storage-review`, `release-check`).
+- `Taskfile.yml` as the canonical developer entry point; GitHub Actions CI
+  (format, clippy `-D warnings`, rustdoc, tests, release build);
+  `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`.
+- Storage evidence integrity: unknown record types are quarantined verbatim
+  instead of being coerced to `Domain`; unreadable records are reported in
+  `Records::skipped` with reasons; atomic batch writes (temp file + fsync +
+  rename); uncommitted records survive flush failures for retry.
+
+### Changed
+
+- `AGENTS.md` rewritten as the authoritative agent guide (product identity,
+  non-goals, invariants, boundaries).
+- CLI handler entry points are `pub` (lib + thin bin convention); strict
+  Clippy adopted across the codebase.
+- `documentation/` marked historical; `docs/` is the source of truth.
+
+### Removed
+
+- `Makefile`, `Dockerfile.dev` (docker workflows moved to Taskfile),
+  `GEMINI.md`, stale merged feature branches, `evacuate/` migration
+  artefacts, accidental `Users/` directory tree.
+
+### Fixed
+
+- Build on current stable Rust (ethnum 1.5.2 → 1.5.3).
+
 ## [1.5.0] - 2026-04-14
 
 ### Changed

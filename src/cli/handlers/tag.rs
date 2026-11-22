@@ -7,7 +7,7 @@ use crate::exit_codes::*;
 use crate::storage::StorageEngine;
 
 #[allow(dead_code)]
-pub(crate) fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_tag(tag_cmd: TagCommand, storage: &Arc<dyn StorageEngine>) {
     match tag_cmd {
         TagCommand::Add { asset_name, tag } => match add_tag(storage, &asset_name, &tag) {
             Ok(()) => {

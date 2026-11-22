@@ -803,111 +803,6 @@ fn check_subdomain_patterns(items: &[InventoryItem]) -> Vec<Issue> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::Duration;
-
-    fn make_item(name: &str, item_type: ItemType, source: &str, age_days: i64) -> InventoryItem {
-        InventoryItem {
-            item_type,
-            id: format!("test-{}", name),
-            name: name.to_string(),
-            discovered_at: Utc::now() - Duration::days(age_days),
-            source: source.to_string(),
-            original_input: None,
-        }
-    }
-
-    fn make_domain(name: &str, age_days: i64) -> InventoryItem {
-        make_item(name, ItemType::Domain, "cli", age_days)
-    }
-
-    #[test]
-    fn test_staleness_fresh_domain() {
-        let items = vec![make_domain("example.com", 1)];
-        let issues = check_staleness(&items, 14);
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn test_staleness_stale_domain() {
-        let items = vec![make_domain("example.com", 20)];
-        let issues = check_staleness(&items, 14);
-        assert_eq!(issues.len(), 1);
-        assert!(issues[0].message.contains("last seen"));
-    }
-
-    #[test]
-    fn test_low_confidence_single_observation() {
-        let items = vec![make_domain("example.com", 1)];
-        let issues = check_low_confidence(&items);
-        assert_eq!(issues.len(), 1);
-        assert!(issues[0].message.contains("seen only once"));
-    }
-
-    #[test]
-    fn test_low_confidence_multiple_observations() {
-        let items = vec![make_domain("example.com", 1), make_domain("example.com", 5)];
-        let issues = check_low_confidence(&items);
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn test_unknown_source_cli_is_known() {
-        let items = vec![make_domain("example.com", 1)];
-        let issues = check_unknown_sources(&items);
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn test_unknown_source_detected() {
-        let items = vec![make_item("example.com", ItemType::Domain, "mystery", 1)];
-        let issues = check_unknown_sources(&items);
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].severity, Severity::Critical);
-    }
-
-    #[test]
-    fn test_invalid_data_uppercase() {
-        let items = vec![make_item("Example.COM", ItemType::Domain, "cli", 1)];
-        let issues = check_invalid_data(&items);
-        assert!(issues.iter().any(|i| i.message.contains("uppercase")));
-    }
-
-    #[test]
-    fn test_invalid_data_normalized() {
-        let items = vec![make_domain("example.com", 1)];
-        let issues = check_invalid_data(&items);
-        assert!(issues.is_empty());
-    }
-
-    #[test]
-    fn test_suspicious_subdomain() {
-        let items = vec![make_item(
-            "xyzrandom.example.com",
-            ItemType::Subdomain,
-            "subfinder",
-            1,
-        )];
-        let issues = check_subdomain_patterns(&items);
-        assert_eq!(issues.len(), 1);
-        assert!(issues[0].message.contains("Suspicious"));
-    }
-
-    #[test]
-    fn test_allowed_subdomain_pattern() {
-        let items = vec![make_item(
-            "api.example.com",
-            ItemType::Subdomain,
-            "subfinder",
-            1,
-        )];
-        let issues = check_subdomain_patterns(&items);
-        assert!(issues.is_empty());
-    }
-}
-
 // --- Lifecycle checks ---
 
 /// Check for abandoned assets (stale + no observations + no owner)
@@ -1036,4 +931,109 @@ fn check_decommissioned_still_present(
     }
 
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn make_item(name: &str, item_type: ItemType, source: &str, age_days: i64) -> InventoryItem {
+        InventoryItem {
+            item_type,
+            id: format!("test-{}", name),
+            name: name.to_string(),
+            discovered_at: Utc::now() - Duration::days(age_days),
+            source: source.to_string(),
+            original_input: None,
+        }
+    }
+
+    fn make_domain(name: &str, age_days: i64) -> InventoryItem {
+        make_item(name, ItemType::Domain, "cli", age_days)
+    }
+
+    #[test]
+    fn test_staleness_fresh_domain() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_staleness(&items, 14);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_staleness_stale_domain() {
+        let items = vec![make_domain("example.com", 20)];
+        let issues = check_staleness(&items, 14);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("last seen"));
+    }
+
+    #[test]
+    fn test_low_confidence_single_observation() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_low_confidence(&items);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("seen only once"));
+    }
+
+    #[test]
+    fn test_low_confidence_multiple_observations() {
+        let items = vec![make_domain("example.com", 1), make_domain("example.com", 5)];
+        let issues = check_low_confidence(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_source_cli_is_known() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_unknown_sources(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_source_detected() {
+        let items = vec![make_item("example.com", ItemType::Domain, "mystery", 1)];
+        let issues = check_unknown_sources(&items);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_invalid_data_uppercase() {
+        let items = vec![make_item("Example.COM", ItemType::Domain, "cli", 1)];
+        let issues = check_invalid_data(&items);
+        assert!(issues.iter().any(|i| i.message.contains("uppercase")));
+    }
+
+    #[test]
+    fn test_invalid_data_normalized() {
+        let items = vec![make_domain("example.com", 1)];
+        let issues = check_invalid_data(&items);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_suspicious_subdomain() {
+        let items = vec![make_item(
+            "xyzrandom.example.com",
+            ItemType::Subdomain,
+            "subfinder",
+            1,
+        )];
+        let issues = check_subdomain_patterns(&items);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].message.contains("Suspicious"));
+    }
+
+    #[test]
+    fn test_allowed_subdomain_pattern() {
+        let items = vec![make_item(
+            "api.example.com",
+            ItemType::Subdomain,
+            "subfinder",
+            1,
+        )];
+        let issues = check_subdomain_patterns(&items);
+        assert!(issues.is_empty());
+    }
 }

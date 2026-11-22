@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use uuid::Uuid;
 
 fn run_subfinder(domain: &str) -> Result<String> {
@@ -100,13 +100,6 @@ pub fn probe_subdomains(domain: &str, storage: &Arc<dyn StorageEngine>) -> Resul
 
     storage.save_batch(&items)?;
     Ok(subdomains)
-}
-
-/// Result of subdomain discovery without saving to storage
-#[derive(Debug, Clone)]
-pub struct SubdomainDiscovery {
-    pub subdomain: String,
-    pub original_input: Option<String>,
 }
 
 fn run_subfinder_batch_inner(
@@ -290,14 +283,6 @@ fn run_subfinder_batch_inner(
     Ok((all_subdomains, all_items))
 }
 
-fn run_subfinder_batch(
-    domains: &[String],
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<Vec<String>> {
-    let (subdomains, _) = run_subfinder_batch_inner(domains, true, Some(storage))?;
-    Ok(subdomains)
-}
-
 /// Discover subdomains without saving to storage.
 /// Returns (subdomains, inventory_items) for batch buffering.
 pub fn probe_subdomains_batch_no_save(
@@ -307,14 +292,4 @@ pub fn probe_subdomains_batch_no_save(
         return Ok((Vec::new(), Vec::new()));
     }
     run_subfinder_batch_inner(domains, false, None)
-}
-
-pub fn probe_subdomains_batch(
-    domains: &[String],
-    storage: &Arc<dyn StorageEngine>,
-) -> Result<Vec<String>> {
-    if domains.is_empty() {
-        return Ok(Vec::new());
-    }
-    run_subfinder_batch(domains, storage)
 }
