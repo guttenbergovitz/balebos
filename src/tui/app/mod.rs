@@ -173,13 +173,19 @@ pub struct ScanState {
     pub steps: Vec<crate::app::batch::ReconStepResult>,
 }
 
-impl ScanState {
-    pub fn new() -> Self {
+impl Default for ScanState {
+    fn default() -> Self {
         Self {
             message: String::new(),
             timestamp: chrono::Utc::now(),
             steps: Vec::new(),
         }
+    }
+}
+
+impl ScanState {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

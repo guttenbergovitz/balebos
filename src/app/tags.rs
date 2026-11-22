@@ -155,7 +155,7 @@ pub fn get_active_tags(all_tags: &[AssetTag]) -> BTreeMap<String, BTreeSet<Strin
         for (tag_name, tag_records) in tag_groups {
             // Sort by timestamp DESC to get latest state (newest first)
             let mut sorted = tag_records.clone();
-            sorted.sort_by(|a, b| b.tagged_at.cmp(&a.tagged_at));
+            sorted.sort_by_key(|r| std::cmp::Reverse(r.tagged_at));
 
             // Check if first (newest) record is removal
             if let Some(latest) = sorted.first() {

@@ -88,7 +88,7 @@ pub struct ExportedMetadata {
     pub high_risk_assets: usize,
 }
 
-pub(crate) fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_web_export(output_dir: &str, storage: &Arc<dyn StorageEngine>) {
     let output_path = Path::new(output_dir);
 
     // Create output directory
@@ -221,7 +221,7 @@ fn build_asset_index(
     let mut assets = Vec::new();
 
     // Second pass: decide is_subdomain based on available types
-    for (name, (domain_item, subdomain_item)) in by_name {
+    for (_name, (domain_item, subdomain_item)) in by_name {
         // Prefer domain over subdomain if both exist
         let item = if let Some(domain) = domain_item {
             domain

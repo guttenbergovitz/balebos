@@ -11,14 +11,14 @@ use crate::inventory::AssetLifecycle;
 use crate::storage::StorageEngine;
 
 #[allow(dead_code)]
-pub(crate) fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_asset(asset_cmd: AssetCommand, storage: &Arc<dyn StorageEngine>) {
     match asset_cmd {
         AssetCommand::LifecycleSet {
             asset_name,
             state,
             reason,
         } => {
-            let lifecycle_state = match AssetLifecycle::from_str(&state) {
+            let lifecycle_state = match AssetLifecycle::parse(&state) {
                 Some(s) => s,
                 None => {
                     eprintln!("Invalid lifecycle state: {}", state);

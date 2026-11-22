@@ -3,49 +3,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-/// Configurable ignore system with built-in defaults and user overrides.
-pub struct IgnoreConfig {
-    /// User-defined patterns from balebos.ignore
-    pub patterns: Vec<String>,
-    /// Built-in defaults for known German/Polish hosting and CDN providers
-    pub defaults: Vec<String>,
-}
-
-impl IgnoreConfig {
-    /// Create a new IgnoreConfig by loading user patterns from file and
-    /// merging with compiled-in defaults.
-    pub fn load(filepath: &str) -> Self {
-        let patterns = load_ignore_patterns(filepath);
-        let defaults = Self::built_in_defaults();
-        Self { patterns, defaults }
-    }
-
-    /// All patterns combined (defaults first, then user overrides).
-    pub fn all_patterns(&self) -> Vec<String> {
-        let mut all = self.defaults.clone();
-        all.extend(self.patterns.clone());
-        all
-    }
-
-    /// Built-in ignore patterns for known German/Polish hosting/CDN providers.
-    fn built_in_defaults() -> Vec<String> {
-        vec![
-            // Shared hosting redirects (German)
-            "*.maxcluster.net".to_string(),
-            "*.azurewebsites.net".to_string(),
-            // CDN / SaaS wildcards
-            "*.cloudfront.net".to_string(),
-            "*.convertexperiments.com".to_string(),
-            "*.usercentrics.eu".to_string(),
-            // Common wildcard patterns from subdomain discovery
-            "*.metrics.*".to_string(),
-            "*.cdn.*".to_string(),
-            // Deep nesting (5+ levels) — pattern matches any subdomain with 5+ dots
-            "*.*.*.*.*.*".to_string(),
-        ]
-    }
-}
-
 /// Loads ignore patterns from the given file path
 /// Returns a Vec of patterns, or an empty Vec if the file doesn't exist
 pub fn load_ignore_patterns(filepath: &str) -> Vec<String> {

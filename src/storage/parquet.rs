@@ -26,7 +26,11 @@ fn polars_err(e: impl std::fmt::Display) -> BalebosError {
     storage_io_err(format!("Polars error: {}", e))
 }
 
-/// Polars-based Parquet storage with in-memory buffering
+/// Polars-based Parquet storage with in-memory buffering.
+///
+/// Concurrency model: a single process owns the data directory. The buffer
+/// mutex serialises writers in-process only; there is no inter-process
+/// locking, so two Balebos processes must not share one data directory.
 pub struct ParquetStorage {
     base_dir: PathBuf,
     buffer: Mutex<Vec<serde_json::Value>>,
@@ -77,7 +81,15 @@ impl ParquetStorage {
             .join(format!("{}.parquet", item_type.as_str()))
     }
 
-    fn write_type_batch(&self, item_type: ItemType, values: &[serde_json::Value]) -> Result<()> {
+    /// Quarantine file for records whose `item_type` is not a known variant.
+    ///
+    /// Raw JSON is preserved verbatim (including the original type string);
+    /// nothing is reclassified onto an unrelated type.
+    fn quarantine_file_path(&self) -> PathBuf {
+        self.base_dir.join("quarantine.parquet")
+    }
+
+    fn write_type_batch(&self, file_path: &PathBuf, values: &[serde_json::Value]) -> Result<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -85,7 +97,7 @@ impl ParquetStorage {
         // Serialize each JSON object to a string (one row per JSON record)
         let json_strings: Vec<String> = values
             .iter()
-            .map(|v| serde_json::to_string(v))
+            .map(serde_json::to_string)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| storage_io_err(format!("JSON serialize error: {}", e)))?;
 
@@ -93,8 +105,6 @@ impl ParquetStorage {
         let height = json_strings.len();
         let s = Series::new("raw_json".into(), json_strings);
         let new_df = DataFrame::new(height, vec![s.into()]).map_err(polars_err)?;
-
-        let file_path = self.type_file_path(item_type);
 
         let mut df = if file_path.exists() {
             let existing = LazyFrame::scan_parquet(
@@ -105,7 +115,7 @@ impl ParquetStorage {
             .collect()
             .map_err(polars_err)?;
 
-            // Vertical stack - both DataFrames now share the same schema (single "raw_json" column)
+            // Vertical stack - both DataFrames share the same schema (single "raw_json" column)
             let mut combined = existing;
             combined.vstack_mut(&new_df).map_err(polars_err)?;
             combined
@@ -113,15 +123,36 @@ impl ParquetStorage {
             new_df
         };
 
-        let file = File::create(&file_path)?;
-        ParquetWriter::new(file)
-            .finish(&mut df)
-            .map_err(polars_err)?;
+        // Write atomically: commit to a temporary file and rename into place,
+        // so a crash mid-write cannot leave a partially written live file.
+        let temp_path = file_path.with_extension("parquet.tmp");
+        let write_result = (|| -> Result<()> {
+            let file = File::create(&temp_path)?;
+            ParquetWriter::new(&file)
+                .finish(&mut df)
+                .map_err(polars_err)?;
+            // Persist file contents before the rename becomes visible.
+            file.sync_all()?;
+            std::fs::rename(&temp_path, file_path)?;
+            Ok(())
+        })();
 
-        Ok(())
+        if write_result.is_err() {
+            let _ = std::fs::remove_file(&temp_path);
+        }
+
+        write_result
     }
 
-    /// Flush buffered records to Parquet
+    /// Flush buffered records to Parquet.
+    ///
+    /// Commits buffered records per record type and returns errors to the
+    /// caller. Records with an unknown `item_type` are preserved verbatim in
+    /// the quarantine file, never reclassified onto an unrelated type.
+    ///
+    /// On a write failure the records that were not yet committed are
+    /// restored to the buffer, so a later retry does not lose them; the
+    /// error is returned to the caller either way.
     pub fn flush(&self) -> Result<()> {
         let mut buf = self
             .buffer
@@ -133,47 +164,55 @@ impl ParquetStorage {
         }
 
         let mut by_type: HashMap<ItemType, Vec<serde_json::Value>> = HashMap::new();
+        let mut quarantined: Vec<serde_json::Value> = Vec::new();
         for value in buf.drain(..) {
             let item_type = value
                 .get("item_type")
                 .and_then(|v| v.as_str())
-                .map(parse_item_type)
-                .unwrap_or(ItemType::Domain);
-            by_type.entry(item_type).or_default().push(value);
+                .and_then(ItemType::from_type_str);
+            match item_type {
+                Some(t) => by_type.entry(t).or_default().push(value),
+                None => quarantined.push(value),
+            }
         }
 
         drop(buf);
 
-        for (item_type, values) in by_type {
-            self.write_type_batch(item_type, &values)?;
+        // Write sequentially so a failure leaves the remaining buckets
+        // restorable; `written` tracks what may be dropped from the retry set.
+        let mut pending: Vec<(PathBuf, Vec<serde_json::Value>)> = by_type
+            .into_iter()
+            .map(|(t, values)| (self.type_file_path(t), values))
+            .collect();
+        pending.push((self.quarantine_file_path(), quarantined));
+
+        let mut uncommitted: Vec<(PathBuf, Vec<serde_json::Value>)> = Vec::new();
+        let mut first_error: Option<String> = None;
+        for (path, values) in pending {
+            if let Err(e) = self.write_type_batch(&path, &values) {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}: {}", path.display(), e));
+                }
+                uncommitted.push((path, values));
+            }
+        }
+
+        if !uncommitted.is_empty() {
+            // Restore uncommitted records to the buffer for a later retry.
+            let mut buf = self
+                .buffer
+                .lock()
+                .map_err(|e| storage_io_err(format!("Mutex poison: {}", e)))?;
+            for (_, values) in uncommitted {
+                buf.extend(values);
+            }
+            return Err(storage_io_err(format!(
+                "flush failed ({}); uncommitted records retained in buffer",
+                first_error.unwrap_or_default()
+            )));
         }
 
         Ok(())
-    }
-}
-
-fn parse_item_type(s: &str) -> ItemType {
-    match s {
-        "domain" => ItemType::Domain,
-        "subdomain" => ItemType::Subdomain,
-        "http_check" => ItemType::HttpCheck,
-        "dns_record" => ItemType::DnsRecord,
-        "asn_record" => ItemType::AsnRecord,
-        "hosting_detection" => ItemType::HostingDetection,
-        "org_person" => ItemType::OrgPerson,
-        "org_company" => ItemType::OrgCompany,
-        "org_brand" => ItemType::OrgBrand,
-        "org_project" => ItemType::OrgProject,
-        "asset_tag" => ItemType::AssetTag,
-        "finding" => ItemType::Finding,
-        "finding_event" => ItemType::FindingEvent,
-        "org_asset_assignment" => ItemType::OrgAssetAssignment,
-        "org_role_assignment" => ItemType::OrgRoleAssignment,
-        "org_contractor_assignment" => ItemType::OrgContractorAssignment,
-        "org_asset_importance" => ItemType::OrgAssetImportance,
-        "org_domain_registration" => ItemType::OrgDomainRegistration,
-        "lifecycle_event" => ItemType::LifecycleEvent,
-        _ => ItemType::Domain,
     }
 }
 
@@ -264,10 +303,8 @@ impl StorageEngine for ParquetStorage {
                 .str()
                 .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-            for opt_val in s.into_iter() {
-                if let Some(val) = opt_val {
-                    all_lines.push(val.to_string());
-                }
+            for val in s.into_iter().flatten() {
+                all_lines.push(val.to_string());
             }
         }
 
@@ -314,10 +351,8 @@ impl StorageEngine for ParquetStorage {
                 .str()
                 .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-            for opt_val in s.into_iter() {
-                if let Some(val) = opt_val {
-                    all_lines.push(val.to_string());
-                }
+            for val in s.into_iter().flatten() {
+                all_lines.push(val.to_string());
             }
         }
 
@@ -339,7 +374,7 @@ impl StorageEngine for ParquetStorage {
                     .map_err(|e| storage_io_err(format!("CSV writer error: {}", e)))?;
 
                 // Write header
-                wtr.write_record(&[
+                wtr.write_record([
                     "item_type",
                     "id",
                     "name",
@@ -367,7 +402,7 @@ impl StorageEngine for ParquetStorage {
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
 
-                        wtr.write_record(&[
+                        wtr.write_record([
                             item_type,
                             id,
                             name,
@@ -484,11 +519,9 @@ impl StorageEngine for ParquetStorage {
                     .str()
                     .map_err(|_| storage_io_err("'raw_json' column is not a string type"))?;
 
-                for opt_val in s.into_iter() {
-                    if let Some(val) = opt_val {
-                        self.save_string(val)?;
-                        imported_count += 1;
-                    }
+                for val in s.into_iter().flatten() {
+                    self.save_string(val)?;
+                    imported_count += 1;
                 }
             }
         }
@@ -539,7 +572,7 @@ mod tests {
         storage.save(&http_obs).unwrap();
 
         let records = storage.read_all_records().unwrap();
-        assert!(records.items.len() >= 1);
+        assert!(!records.items.is_empty());
 
         let found = records.items.iter().any(|i| i.name == "example.com");
         assert!(found);
@@ -568,5 +601,130 @@ mod tests {
         assert_eq!(records.items.len(), 2);
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_quarantines_unknown_item_type() {
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let domain = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+        let unknown = serde_json::json!({
+            "item_type": "mystery_type",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "no-type.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+
+        storage.save(&domain).unwrap();
+        storage.save(&unknown).unwrap();
+        storage.flush().unwrap();
+
+        // The unknown record is never reclassified as a domain.
+        let records = storage.read_all_records().unwrap();
+        assert_eq!(records.items.len(), 1);
+        assert_eq!(records.items[0].name, "example.com");
+        assert!(records.skipped.iter().any(|s| s.reason
+            == crate::storage::reader::SkipReason::UnknownItemType("mystery_type".to_string())));
+
+        // It is preserved verbatim in the quarantine file.
+        let quarantine = std::path::Path::new(&dir).join("quarantine.parquet");
+        assert!(quarantine.exists());
+        let df = LazyFrame::scan_parquet(
+            quarantine.to_string_lossy().as_ref().into(),
+            ScanArgsParquet::default(),
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        let raw = df.column("raw_json").unwrap().str().unwrap();
+        let rows: Vec<String> = raw.into_iter().flatten().map(|s| s.to_string()).collect();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].contains("mystery_type"));
+        assert!(rows[0].contains("no-type.example.com"));
+
+        // The commit leaves no temporary files behind.
+        let leftovers = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "tmp")
+            })
+            .count();
+        assert_eq!(leftovers, 0);
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_failure_retains_uncommitted_records_for_retry() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let first = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "first.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+        let second = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "second.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+
+        storage.save(&first).unwrap();
+        storage.flush().unwrap();
+
+        // Block the commit path by making the data directory read-only:
+        // creating the temp file fails, flush must error.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        storage.save(&second).unwrap();
+        assert!(storage.flush().is_err());
+
+        // Repair and retry: both the committed and the uncommitted records
+        // are present afterwards.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        storage.flush().unwrap();
+
+        let records = storage.read_all_records().unwrap();
+        let names: Vec<&str> = records.items.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"first.example.com"));
+        assert!(names.contains(&"second.example.com"));
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_reports_reader_errors_instead_of_panicking_on_unwritable_dir() {
+        // ParquetStorage::new propagates directory creation failures.
+        let blocked = std::env::temp_dir().join(format!(
+            "balebos_test_blocked_{}/child",
+            uuid::Uuid::new_v4()
+        ));
+        let file_at_parent = blocked.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&file_at_parent).unwrap();
+        std::fs::write(&blocked, b"not a directory").unwrap();
+
+        let result = ParquetStorage::new(blocked.to_str().unwrap());
+        assert!(result.is_err());
+
+        std::fs::remove_dir_all(file_at_parent).unwrap();
     }
 }

@@ -594,7 +594,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     let mut groups: BTreeMap<String, DomainGroup> = BTreeMap::new();
 
     let mut all_assets: Vec<AssetState> = assets_map.into_values().collect();
-    all_assets.sort_by(|a, b| a.name.len().cmp(&b.name.len()));
+    all_assets.sort_by_key(|a| a.name.len());
 
     for asset in all_assets {
         let mut found_parent = false;

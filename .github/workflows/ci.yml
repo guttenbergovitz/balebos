@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality-gate:
+    name: Format, lint, document, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+
+      - name: Cache Cargo artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Verify formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --locked
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked

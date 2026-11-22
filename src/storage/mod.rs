@@ -23,7 +23,7 @@ pub trait StorageEngine: Send + Sync {
     }
 
     /// Export all data to a file in specified format
-    fn export_to_file(&self, path: &str, format: crate::tui::app::ExportFormat) -> Result<usize> {
+    fn export_to_file(&self, _path: &str, _format: crate::tui::app::ExportFormat) -> Result<usize> {
         // Default implementation - override in concrete storage
         Err(crate::error::BalebosError::Storage(
             crate::error::StorageError::Io(std::io::Error::new(
@@ -34,7 +34,11 @@ pub trait StorageEngine: Send + Sync {
     }
 
     /// Import data from a file
-    fn import_from_file(&self, path: &str, format: crate::tui::app::ExportFormat) -> Result<usize> {
+    fn import_from_file(
+        &self,
+        _path: &str,
+        _format: crate::tui::app::ExportFormat,
+    ) -> Result<usize> {
         // Default implementation - override in concrete storage
         Err(crate::error::BalebosError::Storage(
             crate::error::StorageError::Io(std::io::Error::new(

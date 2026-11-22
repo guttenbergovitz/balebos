@@ -61,7 +61,6 @@ fn load_domains_from_file(filepath: &str) -> Result<Vec<String>> {
 /// Pipeline result for a single domain group
 #[derive(Debug, Clone)]
 struct GroupPipelineResult {
-    domain: String,
     subdomains: Vec<String>,
     sub_items: Vec<crate::inventory::InventoryItem>,
     dns_obs: Vec<probe::DnsObservation>,
@@ -328,7 +327,6 @@ pub fn batch_process(
 
             // Collect results for this group
             Some(GroupPipelineResult {
-                domain: valid_domains.first().cloned().unwrap_or_default(),
                 subdomains,
                 sub_items,
                 dns_obs,
@@ -407,24 +405,20 @@ pub fn batch_process(
     if ip_to_host.is_empty() {
         println!("  → No IPs to look up");
     } else {
-        print!(
-            "  {} Looking up {} unique IPs ",
-            '\u{27F3}',
-            ip_to_host.len()
-        );
+        print!("  \u{27F3} Looking up {} unique IPs ", ip_to_host.len());
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
         match probe::probe_asn_batch(&ip_to_host, storage) {
             Ok(observations) => {
-                println!(" {}", '\u{2713}');
+                println!(" \u{2713}");
                 println!("  → Recorded {} ASN records", observations.len());
                 for obs in observations {
                     asn_by_ip.insert(obs.target.clone(), obs);
                 }
             }
             Err(e) => {
-                println!(" {}", '\u{2717}');
+                println!(" \u{2717}");
                 println!("  → ASN lookup failed: {} (is asnmap installed?)", e);
             }
         }
@@ -455,13 +449,13 @@ pub fn batch_process(
     if all_assets.is_empty() {
         println!("  → No targets to analyze");
     } else {
-        print!("  {} Analyzing {} targets ", '\u{27F3}', all_assets.len());
+        print!("  \u{27F3} Analyzing {} targets ", all_assets.len());
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
         match hosting::detect_hosting_batch(&all_assets, &dns_map, &http_map, &asn_by_ip, storage) {
             Ok(observations) => {
-                println!(" {}", '\u{2713}');
+                println!(" \u{2713}");
 
                 let detected_count = observations
                     .iter()
@@ -477,7 +471,7 @@ pub fn batch_process(
                 );
             }
             Err(e) => {
-                println!(" {}", '\u{2717}');
+                println!(" \u{2717}");
                 println!("  → Hosting detection failed: {}", e);
             }
         }
@@ -696,7 +690,7 @@ pub fn run_single_recon_with_progress(
     // 7. ASN Probe
     on_step("Looking up ASN information...");
     let ip_to_host = probe::asn::build_ip_host_map(&dns_observations);
-    let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
+    let asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
     if ip_to_host.is_empty() {
         let r = ReconStepResult {
             name: "asn",

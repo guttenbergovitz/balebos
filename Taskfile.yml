@@ -1,0 +1,98 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  fmt:
+    desc: Format all Rust source files
+    cmds:
+      - cargo fmt --all
+
+  fmt:check:
+    desc: Verify formatting matches rustfmt
+    cmds:
+      - cargo fmt --all -- --check
+
+  lint:
+    desc: Run Clippy with strict lints
+    cmds:
+      - cargo clippy --all-targets --locked -- -D warnings
+
+  test:
+    desc: Run the full test suite
+    cmds:
+      - cargo test --locked
+
+  doc:
+    desc: Build documentation, failing on broken links and warnings
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    cmds:
+      - cargo doc --no-deps --locked
+
+  check:
+    desc: Full local quality gate (format, clippy, rustdoc, tests)
+    deps:
+      - fmt:check
+      - lint
+      - doc
+      - test
+
+  build:
+    desc: Build the binary
+    cmds:
+      - cargo build --locked
+
+  build:release:
+    desc: Build an optimised release binary
+    cmds:
+      - cargo build --release --locked
+
+  smoke:
+    desc: Fixture-free smoke check — binary builds and shows help (no network)
+    deps:
+      - build
+    cmds:
+      - cargo run --locked -- --help >/dev/null
+
+  docker:build:
+    desc: Build the production Docker image
+    cmds:
+      - docker build -t balebos .
+
+  docker:ui:
+    desc: Run the TUI in the production container (interactive)
+    cmds:
+      - docker run --rm -it -v "$(pwd)/data:/app/data" balebos ui
+
+  docker:scan:
+    desc: Scan a domain in the production container
+    summary: |
+      Usage: task docker:scan -- <domain>
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" balebos scan {{.CLI_ARGS}}
+
+  docker:list:
+    desc: List assets in the production container
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" balebos list
+
+  docker:batch:
+    desc: Batch scan from a domain list file in the production container
+    summary: |
+      Usage: task docker:batch -- <file>
+    cmds:
+      - docker run --rm -v "$(pwd)/data:/app/data" -v "$(pwd)/{{.CLI_ARGS}}:/app/{{.CLI_ARGS}}" balebos batch {{.CLI_ARGS}}
+
+  docker:shell:
+    desc: Enter a shell in the production container for debugging
+    cmds:
+      - docker run --rm -it -v "$(pwd)/data:/app/data" --entrypoint bash balebos
+
+  docker:clean:
+    desc: Remove Balebos Docker images
+    cmds:
+      - docker rmi balebos || true
