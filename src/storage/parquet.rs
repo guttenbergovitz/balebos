@@ -77,7 +77,15 @@ impl ParquetStorage {
             .join(format!("{}.parquet", item_type.as_str()))
     }
 
-    fn write_type_batch(&self, item_type: ItemType, values: &[serde_json::Value]) -> Result<()> {
+    /// Quarantine file for records whose `item_type` is not a known variant.
+    ///
+    /// Raw JSON is preserved verbatim (including the original type string);
+    /// nothing is reclassified onto an unrelated type.
+    fn quarantine_file_path(&self) -> PathBuf {
+        self.base_dir.join("quarantine.parquet")
+    }
+
+    fn write_type_batch(&self, file_path: &PathBuf, values: &[serde_json::Value]) -> Result<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -94,8 +102,6 @@ impl ParquetStorage {
         let s = Series::new("raw_json".into(), json_strings);
         let new_df = DataFrame::new(height, vec![s.into()]).map_err(polars_err)?;
 
-        let file_path = self.type_file_path(item_type);
-
         let mut df = if file_path.exists() {
             let existing = LazyFrame::scan_parquet(
                 file_path.to_string_lossy().as_ref().into(),
@@ -105,7 +111,7 @@ impl ParquetStorage {
             .collect()
             .map_err(polars_err)?;
 
-            // Vertical stack - both DataFrames now share the same schema (single "raw_json" column)
+            // Vertical stack - both DataFrames share the same schema (single "raw_json" column)
             let mut combined = existing;
             combined.vstack_mut(&new_df).map_err(polars_err)?;
             combined
@@ -113,15 +119,30 @@ impl ParquetStorage {
             new_df
         };
 
-        let file = File::create(&file_path)?;
-        ParquetWriter::new(file)
-            .finish(&mut df)
-            .map_err(polars_err)?;
+        // Write atomically: commit to a temporary file and rename into place,
+        // so a crash mid-write cannot leave a partially written live file.
+        let temp_path = file_path.with_extension("parquet.tmp");
+        let write_result = (|| -> Result<()> {
+            let file = File::create(&temp_path)?;
+            ParquetWriter::new(file)
+                .finish(&mut df)
+                .map_err(polars_err)?;
+            std::fs::rename(&temp_path, file_path)?;
+            Ok(())
+        })();
 
-        Ok(())
+        if write_result.is_err() {
+            let _ = std::fs::remove_file(&temp_path);
+        }
+
+        write_result
     }
 
-    /// Flush buffered records to Parquet
+    /// Flush buffered records to Parquet.
+    ///
+    /// Commits buffered records per record type and returns errors to the
+    /// caller. Records with an unknown `item_type` are preserved verbatim in
+    /// the quarantine file, never reclassified onto an unrelated type.
     pub fn flush(&self) -> Result<()> {
         let mut buf = self
             .buffer
@@ -133,47 +154,26 @@ impl ParquetStorage {
         }
 
         let mut by_type: HashMap<ItemType, Vec<serde_json::Value>> = HashMap::new();
+        let mut quarantined: Vec<serde_json::Value> = Vec::new();
         for value in buf.drain(..) {
             let item_type = value
                 .get("item_type")
                 .and_then(|v| v.as_str())
-                .map(parse_item_type)
-                .unwrap_or(ItemType::Domain);
-            by_type.entry(item_type).or_default().push(value);
+                .and_then(ItemType::from_type_str);
+            match item_type {
+                Some(t) => by_type.entry(t).or_default().push(value),
+                None => quarantined.push(value),
+            }
         }
 
         drop(buf);
 
         for (item_type, values) in by_type {
-            self.write_type_batch(item_type, &values)?;
+            self.write_type_batch(&self.type_file_path(item_type), &values)?;
         }
+        self.write_type_batch(&self.quarantine_file_path(), &quarantined)?;
 
         Ok(())
-    }
-}
-
-fn parse_item_type(s: &str) -> ItemType {
-    match s {
-        "domain" => ItemType::Domain,
-        "subdomain" => ItemType::Subdomain,
-        "http_check" => ItemType::HttpCheck,
-        "dns_record" => ItemType::DnsRecord,
-        "asn_record" => ItemType::AsnRecord,
-        "hosting_detection" => ItemType::HostingDetection,
-        "org_person" => ItemType::OrgPerson,
-        "org_company" => ItemType::OrgCompany,
-        "org_brand" => ItemType::OrgBrand,
-        "org_project" => ItemType::OrgProject,
-        "asset_tag" => ItemType::AssetTag,
-        "finding" => ItemType::Finding,
-        "finding_event" => ItemType::FindingEvent,
-        "org_asset_assignment" => ItemType::OrgAssetAssignment,
-        "org_role_assignment" => ItemType::OrgRoleAssignment,
-        "org_contractor_assignment" => ItemType::OrgContractorAssignment,
-        "org_asset_importance" => ItemType::OrgAssetImportance,
-        "org_domain_registration" => ItemType::OrgDomainRegistration,
-        "lifecycle_event" => ItemType::LifecycleEvent,
-        _ => ItemType::Domain,
     }
 }
 
@@ -562,5 +562,85 @@ mod tests {
         assert_eq!(records.items.len(), 2);
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_quarantines_unknown_item_type() {
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let domain = serde_json::json!({
+            "item_type": "domain",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+        let unknown = serde_json::json!({
+            "item_type": "mystery_type",
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": "no-type.example.com",
+            "discovered_at": chrono::Utc::now(),
+            "source": "test"
+        });
+
+        storage.save(&domain).unwrap();
+        storage.save(&unknown).unwrap();
+        storage.flush().unwrap();
+
+        // The unknown record is never reclassified as a domain.
+        let records = storage.read_all_records().unwrap();
+        assert_eq!(records.items.len(), 1);
+        assert_eq!(records.items[0].name, "example.com");
+        assert!(records.skipped.iter().any(|s| s.reason
+            == crate::storage::reader::SkipReason::UnknownItemType("mystery_type".to_string())));
+
+        // It is preserved verbatim in the quarantine file.
+        let quarantine = std::path::Path::new(&dir).join("quarantine.parquet");
+        assert!(quarantine.exists());
+        let df = LazyFrame::scan_parquet(
+            quarantine.to_string_lossy().as_ref().into(),
+            ScanArgsParquet::default(),
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        let raw = df.column("raw_json").unwrap().str().unwrap();
+        let rows: Vec<String> = raw.into_iter().flatten().map(|s| s.to_string()).collect();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].contains("mystery_type"));
+        assert!(rows[0].contains("no-type.example.com"));
+
+        // The commit leaves no temporary files behind.
+        let leftovers = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "tmp")
+            })
+            .count();
+        assert_eq!(leftovers, 0);
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flush_reports_reader_errors_instead_of_panicking_on_unwritable_dir() {
+        // ParquetStorage::new propagates directory creation failures.
+        let blocked = std::env::temp_dir().join(format!(
+            "balebos_test_blocked_{}/child",
+            uuid::Uuid::new_v4()
+        ));
+        let file_at_parent = blocked.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&file_at_parent).unwrap();
+        std::fs::write(&blocked, b"not a directory").unwrap();
+
+        let result = ParquetStorage::new(blocked.to_str().unwrap());
+        assert!(result.is_err());
+
+        std::fs::remove_dir_all(file_at_parent).unwrap();
     }
 }

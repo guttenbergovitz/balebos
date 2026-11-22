@@ -71,6 +71,35 @@ impl ItemType {
             ItemType::LifecycleEvent => "lifecycle_event",
         }
     }
+
+    /// Parse a record type discriminator from its stored string form.
+    ///
+    /// Returns `None` for unknown values; callers must never coerce an
+    /// unknown type onto an unrelated variant (evidence integrity).
+    pub fn from_type_str(s: &str) -> Option<Self> {
+        match s {
+            "domain" => Some(ItemType::Domain),
+            "subdomain" => Some(ItemType::Subdomain),
+            "http_check" => Some(ItemType::HttpCheck),
+            "dns_record" => Some(ItemType::DnsRecord),
+            "asn_record" => Some(ItemType::AsnRecord),
+            "hosting_detection" => Some(ItemType::HostingDetection),
+            "org_person" => Some(ItemType::OrgPerson),
+            "org_company" => Some(ItemType::OrgCompany),
+            "org_brand" => Some(ItemType::OrgBrand),
+            "org_project" => Some(ItemType::OrgProject),
+            "org_asset_assignment" => Some(ItemType::OrgAssetAssignment),
+            "org_role_assignment" => Some(ItemType::OrgRoleAssignment),
+            "org_contractor_assignment" => Some(ItemType::OrgContractorAssignment),
+            "org_asset_importance" => Some(ItemType::OrgAssetImportance),
+            "org_domain_registration" => Some(ItemType::OrgDomainRegistration),
+            "asset_tag" => Some(ItemType::AssetTag),
+            "finding" => Some(ItemType::Finding),
+            "finding_event" => Some(ItemType::FindingEvent),
+            "lifecycle_event" => Some(ItemType::LifecycleEvent),
+            _ => None,
+        }
+    }
 }
 
 // This struct represents an item in our inventory storage
