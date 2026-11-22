@@ -23,6 +23,7 @@ stakeholders, approval boards or rollout theatre.
 | [0008](0008-organisational-subsystem-disposition.md) | Organisational subsystem disposition | Accepted |
 | [0009](0009-drift-detection-and-snapshot-semantics.md) | Drift detection and snapshot semantics | Proposed |
 | [0010](0010-versioned-integration-contracts.md) | Versioned machine-readable integration contracts | Proposed |
+| [0011](0011-infrastructure-relationship-graph.md) | Infrastructure relationship graph (future phase) | Proposed |
 
 The legacy ADR `documentation/adr/001-persisted-findings.md` is retained as
 historical; it remains valid background for the findings subsystem.
