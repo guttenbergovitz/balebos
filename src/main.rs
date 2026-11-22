@@ -82,9 +82,16 @@ fn print_usage() {
 }
 
 fn main() {
-    // Initialize Parquet storage
-    let storage: Arc<dyn StorageEngine> =
-        Arc::new(ParquetStorage::new("data/parquet").expect("Failed to initialize storage"));
+    // Engine selection: SQLite (ADR 0012) is the target default; the legacy
+    // Parquet engine remains the default until the migration path (ADR 0018)
+    // is verified. BALEBOS_STORAGE=sqlite opts in early.
+    let storage: Arc<dyn StorageEngine> = match std::env::var("BALEBOS_STORAGE").as_deref() {
+        Ok("sqlite") => Arc::new(
+            balebos::storage::SqliteStorage::new("data/balebos.db")
+                .expect("Failed to initialise SQLite storage"),
+        ),
+        _ => Arc::new(ParquetStorage::new("data/parquet").expect("Failed to initialize storage")),
+    };
 
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 

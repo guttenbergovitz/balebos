@@ -1,7 +1,9 @@
 pub mod parquet;
 pub mod reader;
+pub mod sqlite;
 
 pub use self::parquet::ParquetStorage;
+pub use self::sqlite::SqliteStorage;
 use crate::error::Result;
 use serde::Serialize;
 
