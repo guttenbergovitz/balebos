@@ -1,22 +1,10 @@
-mod app;
-pub mod cli;
-mod domain;
-mod error;
-pub mod exit_codes;
-mod hosting;
-mod ignore;
-mod inventory;
-mod org;
-mod storage;
-mod tui;
-
-use exit_codes::*;
-use ignore::load_ignore_patterns;
 use std::process;
 use std::sync::Arc;
 
-use crate::cli::{handlers, parse_command, Command};
-use crate::storage::StorageEngine;
+use balebos::cli::{handlers, parse_command, Command};
+use balebos::exit_codes::*;
+use balebos::ignore::load_ignore_patterns;
+use balebos::storage::{ParquetStorage, StorageEngine};
 
 fn print_usage() {
     eprintln!("Usage:");
@@ -95,9 +83,8 @@ fn print_usage() {
 
 fn main() {
     // Initialize Parquet storage
-    let storage: Arc<dyn StorageEngine> = Arc::new(
-        crate::storage::ParquetStorage::new("data/parquet").expect("Failed to initialize storage"),
-    );
+    let storage: Arc<dyn StorageEngine> =
+        Arc::new(ParquetStorage::new("data/parquet").expect("Failed to initialize storage"));
 
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
