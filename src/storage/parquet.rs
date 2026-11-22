@@ -667,6 +667,59 @@ mod tests {
     }
 
     #[test]
+    fn scan_report_round_trips_through_storage() {
+        use crate::domain::coverage::{ScanReport, TargetCoverage, TargetCoverageRecord};
+        use crate::inventory::ItemType;
+
+        #[derive(serde::Serialize)]
+        struct Wrapper {
+            item_type: ItemType,
+            #[serde(flatten)]
+            report: ScanReport,
+        }
+
+        let dir = setup_test_dir();
+        let storage = Arc::new(ParquetStorage::new(&dir).unwrap());
+
+        let report = ScanReport::start(chrono::Utc::now()).finish(
+            vec!["a.example.com".to_string(), "b.example.com".to_string()],
+            vec![
+                TargetCoverageRecord {
+                    target: "a.example.com".to_string(),
+                    coverage: TargetCoverage::Observed,
+                },
+                TargetCoverageRecord {
+                    target: "b.example.com".to_string(),
+                    coverage: TargetCoverage::Failed {
+                        error: "nxdomain".to_string(),
+                    },
+                },
+            ],
+            chrono::Utc::now(),
+        );
+        let expected = report.clone();
+
+        storage
+            .save(&Wrapper {
+                item_type: ItemType::ScanReport,
+                report,
+            })
+            .unwrap();
+        storage.flush().unwrap();
+
+        let records = storage.read_all_records().unwrap();
+        assert_eq!(records.scan_reports.len(), 1);
+        assert_eq!(records.scan_reports[0], expected);
+        assert_eq!(records.skipped.len(), 0);
+        assert_eq!(
+            records.scan_reports[0].count_coverage(&TargetCoverage::Observed),
+            1
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn flush_failure_retains_uncommitted_records_for_retry() {
         use std::os::unix::fs::PermissionsExt;
 
