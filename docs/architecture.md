@@ -50,15 +50,26 @@ cli, tui  →  app  →  domain, drift, assessment  →  storage
   identity, version, exit status and execution errors.
 - CLI and TUI invoke the same application services and therefore agree on results.
 
-## Persistence (target, pending ADR 0007)
+## Persistence
 
-Requirements: crash-consistent persistence, explicit flush/commit, reliable
-recovery, bounded memory, versioned schemas, migration support, deterministic
-export, explicit corruption detection, no silent data loss. Candidates under
-evaluation: SQLite (operational store), append-only JSONL with framing/recovery,
-genuinely columnar Parquet for analytical exports. The current Parquet engine
-stores JSON strings in a single column and rewrites whole files on append; it is
-a placeholder, not the target.
+SQLite is the authoritative operational store (ADR 0012): append-only
+observations, transactional batches, indexed queries, reliable recovery,
+single-process ownership. Current state is a query-time projection; history
+is never edited.
+
+Parquet survives as the sealed evidence archive only (ADR 0013): immutable
+segments produced by an explicit archive step from committed observations,
+with SHA-256 manifests and repeatable verification (ADR 0014). Sealed
+segments are never rewritten. Hash chaining and remote WORM destinations
+are recorded future options (ADR 0015, ADR 0016). The `parquet` crate is
+used directly behind an optional feature; no DataFrame engine ships in the
+default build (ADR 0017). Migration from legacy per-type Parquet files is
+verify-don't-trust with rollback (ADR 0018).
+
+Durability, integrity and immutability are distinct properties: SQLite
+transactions give durability and consistency; SHA-256 manifests give
+integrity against a trusted digest; only an external WORM policy can
+approach immutability, under an explicit threat model.
 
 ## Subprocess execution
 

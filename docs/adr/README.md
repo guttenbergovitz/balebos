@@ -19,11 +19,21 @@ stakeholders, approval boards or rollout theatre.
 | [0004](0004-asset-observation-assessment-separation.md) | Asset, observation and assessment separation | Accepted |
 | [0005](0005-scan-completeness-and-uncertainty-semantics.md) | Scan completeness and uncertainty semantics | Accepted |
 | [0006](0006-cli-tui-shared-application-services.md) | CLI/TUI shared application services | Accepted |
-| [0007](0007-local-persistence.md) | Local persistence and migration | Proposed |
+| [0007](0007-local-persistence.md) | Local persistence and migration | Superseded by 0012 + 0013 |
 | [0008](0008-organisational-subsystem-disposition.md) | Organisational subsystem disposition | Accepted |
 | [0009](0009-drift-detection-and-snapshot-semantics.md) | Drift detection and snapshot semantics | Proposed |
 | [0010](0010-versioned-integration-contracts.md) | Versioned machine-readable integration contracts | Proposed |
 | [0011](0011-infrastructure-relationship-graph.md) | Infrastructure relationship graph (future phase) | Proposed |
+| [0012](0012-sqlite-operational-storage.md) | SQLite as authoritative operational storage | Accepted |
+| [0013](0013-parquet-evidence-archive.md) | Parquet as immutable evidence archive (optional) | Accepted |
+| [0014](0014-evidence-segment-sealing.md) | Evidence segment sealing and verification | Accepted |
+| [0015](0015-hash-chain-and-anchoring.md) | Hash chain and external anchoring (future) | Proposed |
+| [0016](0016-remote-worm-archival.md) | Optional remote WORM archival (contract only) | Proposed |
+| [0017](0017-dependency-and-build-time-policy.md) | Dependency and build-time policy | Accepted |
+| [0018](0018-legacy-parquet-migration.md) | Legacy Parquet migration | Accepted |
+
+ADR 0007 (local persistence) was superseded by 0012 and 0013 and is
+retained as historical record of the interim engine's verified defects.
 
 The legacy ADR `documentation/adr/001-persisted-findings.md` is retained as
 historical; it remains valid background for the findings subsystem.
