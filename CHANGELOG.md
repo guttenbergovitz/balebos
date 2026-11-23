@@ -24,6 +24,16 @@ same machine, rustc 1.100.0)
 | Unique packages | 424 | 135 | **3.1× fewer** |
 | Cold target dir | 1.1 GiB | 272 MiB | 4× smaller |
 
+### Added
+
+- Drift classification engine (ADR 0009): the fixed taxonomy
+  (newly discovered, not observed, verified disappearance, DNS/HTTP/TLS/
+  redirect/attribution/fingerprint change, inspection failure, insufficient
+  evidence) as a pure, deterministic classifier over per-asset fact sets
+  with explicit coverage. Absence is interpreted strictly through
+  completeness; unobserved aspects report insufficient evidence without
+  blocking comparable aspects.
+
 ## [2.0.0-alpha.1] - 2026-11-23
 
 Pre-release of the 2.0 realignment: product scope, engineering foundation,
