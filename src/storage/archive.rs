@@ -10,6 +10,7 @@
 //! Archival never deletes or marks source rows in SQLite.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -84,6 +85,56 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
 }
+
+/// Deterministic segment identity (review P0): derived from the
+/// selection boundary, never random. Records are append-only and never
+/// deleted, so a rowid range identifies its content; re-running a failed
+/// attempt addresses the same files, which makes publish-then-crash
+/// recovery work instead of orphaning segments. One archive directory
+/// belongs to one database.
+fn deterministic_segment_id(boundary: &RecordBoundary) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"balebos-segment-v1|");
+    hasher.update(boundary.from_rowid.to_string().as_bytes());
+    hasher.update(b"|");
+    hasher.update(boundary.to_rowid.to_string().as_bytes());
+    format!("{:x}", hasher.finalize())[..32].to_string()
+}
+
+/// Write-through SHA-256: hashes exactly the bytes handed to the writer
+/// so the segment digest is known without re-reading the file.
+struct HashingWriter<W: Write> {
+    inner: W,
+    hasher: Sha256,
+}
+
+impl<W: Write> HashingWriter<W> {
+    fn new(inner: W) -> Self {
+        Self {
+            inner,
+            hasher: Sha256::new(),
+        }
+    }
+
+    fn finish(self) -> String {
+        format!("{:x}", self.hasher.finalize())
+    }
+}
+
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.hasher.update(buf);
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// Chunk size for streaming segment writes: bounded memory regardless of
+/// selection size.
+const SEGMENT_CHUNK: usize = 8192;
 
 fn segment_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -182,19 +233,68 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
     }
 
     let last_sealed = storage.archive_last_sealed_rowid()?;
-    let rows = storage.rows_after(last_sealed)?;
-    if rows.is_empty() {
+    let max_rowid = storage.max_rowid()?;
+    if max_rowid <= last_sealed {
         return Ok(SealReport::default());
     }
 
+    // The boundary is known before reading a single row: records are
+    // append-only and never deleted, so the range identifies the content.
     let boundary = RecordBoundary {
-        from_rowid: rows.first().map(|r| r.0).unwrap_or(0),
-        to_rowid: rows.last().map(|r| r.0).unwrap_or(0),
+        from_rowid: last_sealed + 1,
+        to_rowid: max_rowid,
     };
 
-    let mut record_types: BTreeMap<String, usize> = BTreeMap::new();
-    for (_, record_type, _, _) in &rows {
-        *record_types.entry(record_type.clone()).or_insert(0) += 1;
+    // Deterministic identity (review P0): the same selection always
+    // addresses the same files. A crash after publication but before the
+    // SQLite state update is recovered by the adoption path below —
+    // nothing is orphaned by a fresh random id.
+    let segment_id = deterministic_segment_id(&boundary);
+    let final_segment_path = segment_path(base, &segment_id);
+    let final_manifest_path = manifest_path(base, &segment_id);
+
+    // Crash-after-rename recovery: both files exist but SQLite state was
+    // never recorded. Verify the on-disk manifest against the bytes and
+    // adopt it; never write a second segment for the same selection.
+    if final_segment_path.exists() && final_manifest_path.exists() {
+        let manifest_json = std::fs::read_to_string(&final_manifest_path).map_err(|e| {
+            storage_err(format!(
+                "cannot read manifest {}: {e}",
+                final_manifest_path.display()
+            ))
+        })?;
+        let on_disk: ArchiveManifest =
+            serde_json::from_str(&manifest_json).map_err(crate::error::StorageError::from)?;
+        let bytes = std::fs::read(&final_segment_path).map_err(|e| {
+            storage_err(format!(
+                "cannot read segment {}: {e}",
+                final_segment_path.display()
+            ))
+        })?;
+        if sha256_hex(&bytes) != on_disk.sha256 {
+            return Err(storage_err(format!(
+                "adoption failed: segment {} hash does not match its manifest",
+                on_disk.segment_id
+            )));
+        }
+        if count_segment_rows(&final_segment_path)? != on_disk.record_count {
+            return Err(storage_err(format!(
+                "adoption failed: segment {} row count does not match its manifest",
+                on_disk.segment_id
+            )));
+        }
+        storage.archive_record_segment(
+            &on_disk.segment_id,
+            &on_disk.sha256,
+            &manifest_json,
+            on_disk.boundary.to_rowid,
+        )?;
+        return Ok(SealReport {
+            segment_id: Some(on_disk.segment_id),
+            record_count: on_disk.record_count,
+            boundary: Some(on_disk.boundary),
+            adopted_existing: true,
+        });
     }
 
     let previous = storage
@@ -202,9 +302,99 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
         .last()
         .map(|(_, sha256, _)| sha256.clone());
 
-    // Stable segment id: the manifest binds identity to content and
-    // boundary, so rebuilds of the same selection reuse the same segment.
-    let segment_id = uuid::Uuid::new_v4().to_string();
+    // Write the segment streaming in fixed-size chunks: memory stays
+    // bounded regardless of the selection size (review P1). The SHA-256
+    // is computed by the write-through hasher, so the file is never
+    // re-read for hashing.
+    let segment_tmp = incoming_dir(base).join(format!("{segment_id}.parquet.tmp"));
+    let schema = segment_schema();
+    let mut record_count = 0usize;
+    let mut record_types: BTreeMap<String, usize> = BTreeMap::new();
+    let segment_hash: String = {
+        let file = std::fs::File::create(&segment_tmp)?;
+        let mut hash_writer = HashingWriter::new(&file);
+        {
+            let mut writer = ArrowWriter::try_new(&mut hash_writer, schema.clone(), None)
+                .map_err(|e| storage_err(e.to_string()))?;
+
+            let mut chunk_rowids: Vec<i64> = Vec::with_capacity(SEGMENT_CHUNK);
+            let mut chunk_types: Vec<String> = Vec::with_capacity(SEGMENT_CHUNK);
+            let mut chunk_ids: Vec<String> = Vec::with_capacity(SEGMENT_CHUNK);
+            let mut chunk_bodies: Vec<String> = Vec::with_capacity(SEGMENT_CHUNK);
+
+            let flush_chunk = |writer: &mut ArrowWriter<&mut HashingWriter<&std::fs::File>>,
+                               chunk_rowids: &mut Vec<i64>,
+                               chunk_types: &mut Vec<String>,
+                               chunk_ids: &mut Vec<String>,
+                               chunk_bodies: &mut Vec<String>|
+             -> Result<()> {
+                if chunk_rowids.is_empty() {
+                    return Ok(());
+                }
+                let batch = RecordBatch::try_new(
+                    schema.clone(),
+                    vec![
+                        Arc::new(Int64Array::from(std::mem::take(chunk_rowids))),
+                        Arc::new(StringArray::from(std::mem::take(chunk_types))),
+                        Arc::new(StringArray::from(std::mem::take(chunk_ids))),
+                        Arc::new(StringArray::from(std::mem::take(chunk_bodies))),
+                    ],
+                )
+                .map_err(|e| storage_err(format!("building segment batch: {e}")))?;
+                writer
+                    .write(&batch)
+                    .map_err(|e| storage_err(format!("writing segment: {e}")))?;
+                Ok(())
+            };
+
+            let mut stream_error: Option<BalebosError> = None;
+            storage.each_row_after(last_sealed, |rowid, record_type, record_id, body| {
+                if stream_error.is_some() {
+                    return;
+                }
+                chunk_rowids.push(rowid);
+                chunk_types.push(record_type.clone());
+                chunk_ids.push(record_id);
+                chunk_bodies.push(body);
+                *record_types.entry(record_type).or_insert(0) += 1;
+                record_count += 1;
+                if chunk_rowids.len() >= SEGMENT_CHUNK {
+                    if let Err(e) = flush_chunk(
+                        &mut writer,
+                        &mut chunk_rowids,
+                        &mut chunk_types,
+                        &mut chunk_ids,
+                        &mut chunk_bodies,
+                    ) {
+                        stream_error = Some(e);
+                    }
+                }
+            })?;
+            if let Some(e) = stream_error {
+                return Err(e);
+            }
+            flush_chunk(
+                &mut writer,
+                &mut chunk_rowids,
+                &mut chunk_types,
+                &mut chunk_ids,
+                &mut chunk_bodies,
+            )?;
+            writer
+                .close()
+                .map_err(|e| storage_err(format!("finalising segment: {e}")))?;
+        }
+        // Durability before publication (review P1): fsync the segment
+        // file itself; the directory fsync after rename remains
+        // best-effort below.
+        file.sync_all()?;
+        hash_writer.finish()
+    };
+
+    if record_count == 0 {
+        let _ = std::fs::remove_file(&segment_tmp);
+        return Ok(SealReport::default());
+    }
 
     let manifest = ArchiveManifest {
         archive_id: uuid::Uuid::new_v4().to_string(),
@@ -212,73 +402,11 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
         segment_id: segment_id.clone(),
         created_at: Utc::now(),
         boundary: boundary.clone(),
-        record_count: rows.len(),
+        record_count,
         record_types,
-        sha256: String::new(), // filled after the segment bytes exist
+        sha256: segment_hash.clone(),
         previous_segment_sha256: previous,
         source: "balebos-sqlite".to_string(),
-    };
-
-    let final_segment_path = segment_path(base, &segment_id);
-    let final_manifest_path = manifest_path(base, &segment_id);
-
-    // Crash-after-rename recovery: the files exist but state was never
-    // recorded. Verify and adopt instead of writing a second copy.
-    if final_segment_path.exists() && final_manifest_path.exists() {
-        verify_segment_files(&manifest, &final_segment_path, &final_manifest_path)?;
-        storage.archive_record_segment(
-            &segment_id,
-            &manifest.sha256,
-            &serde_json::to_string(&manifest).map_err(crate::error::StorageError::from)?,
-            boundary.to_rowid,
-        )?;
-        return Ok(SealReport {
-            segment_id: Some(segment_id),
-            record_count: rows.len(),
-            boundary: Some(boundary),
-            adopted_existing: true,
-        });
-    }
-
-    let schema = segment_schema();
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![
-            Arc::new(Int64Array::from(
-                rows.iter().map(|r| r.0).collect::<Vec<_>>(),
-            )),
-            Arc::new(StringArray::from(
-                rows.iter().map(|r| r.1.clone()).collect::<Vec<_>>(),
-            )),
-            Arc::new(StringArray::from(
-                rows.iter().map(|r| r.2.clone()).collect::<Vec<_>>(),
-            )),
-            Arc::new(StringArray::from(
-                rows.iter().map(|r| r.3.clone()).collect::<Vec<_>>(),
-            )),
-        ],
-    )
-    .map_err(|e| storage_err(format!("building segment batch: {e}")))?;
-
-    let segment_tmp = {
-        let tmp = incoming_dir(base).join(format!("{segment_id}.parquet.tmp"));
-        let file = std::fs::File::create(&tmp)?;
-        let mut writer =
-            ArrowWriter::try_new(file, schema, None).map_err(|e| storage_err(e.to_string()))?;
-        writer
-            .write(&batch)
-            .map_err(|e| storage_err(format!("writing segment: {e}")))?;
-        writer
-            .close()
-            .map_err(|e| storage_err(format!("finalising segment: {e}")))?;
-        tmp
-    };
-    let segment_bytes = std::fs::read(&segment_tmp)?;
-    let segment_hash = sha256_hex(&segment_bytes);
-
-    let manifest = ArchiveManifest {
-        sha256: segment_hash.clone(),
-        ..manifest
     };
     let manifest_json =
         serde_json::to_string_pretty(&manifest).map_err(crate::error::StorageError::from)?;
@@ -288,16 +416,9 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
         manifest_json.as_bytes(),
     )?;
 
-    // Verify before publishing: re-read what we wrote.
-    let reread = std::fs::read(&segment_tmp)?;
-    if sha256_hex(&reread) != segment_hash {
-        let _ = std::fs::remove_file(&segment_tmp);
-        let _ = std::fs::remove_file(&manifest_tmp);
-        return Err(storage_err(
-            "segment verification failed before publication",
-        ));
-    }
-    if read_segment(&segment_tmp)?.len() != rows.len() {
+    // Verify before publishing: the file must decode and contain exactly
+    // the rows we streamed.
+    if count_segment_rows(&segment_tmp)? != record_count {
         let _ = std::fs::remove_file(&segment_tmp);
         let _ = std::fs::remove_file(&manifest_tmp);
         return Err(storage_err("segment row count mismatch before publication"));
@@ -308,6 +429,7 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
     std::fs::rename(&manifest_tmp, &final_manifest_path)?;
     if let Some(parent) = final_segment_path.parent().and_then(|p| p.parent()) {
         if let Ok(dir) = std::fs::File::open(parent) {
+            // Best effort: not all filesystems support directory fsync.
             let _ = dir.sync_all();
         }
     }
@@ -321,10 +443,27 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
 
     Ok(SealReport {
         segment_id: Some(segment_id),
-        record_count: rows.len(),
+        record_count,
         boundary: Some(boundary),
         adopted_existing: false,
     })
+}
+
+/// Count rows of a segment by streaming, without materialising them.
+fn count_segment_rows(path: &Path) -> Result<usize> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| storage_err(format!("cannot open segment {}: {e}", path.display())))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| storage_err(format!("cannot read segment {}: {e}", path.display())))?;
+    let mut total = 0usize;
+    for batch in builder
+        .build()
+        .map_err(|e| storage_err(format!("cannot read segment {}: {e}", path.display())))?
+    {
+        let batch = batch.map_err(|e| storage_err(e.to_string()))?;
+        total += batch.num_rows();
+    }
+    Ok(total)
 }
 
 /// Verify one segment file pair against its manifest.
@@ -352,7 +491,7 @@ fn verify_segment_files(
             manifest.segment_id
         )));
     }
-    if read_segment(segment)?.len() != manifest.record_count {
+    if count_segment_rows(segment)? != manifest.record_count {
         return Err(storage_err(format!(
             "segment {} row count does not match manifest",
             manifest.segment_id
@@ -615,6 +754,71 @@ mod tests {
         assert!(manifest.sha256.len() == 64);
         assert!(manifest.previous_segment_sha256.is_none());
 
+        cleanup(&base);
+    }
+
+    #[test]
+    fn segment_id_is_deterministic_for_the_same_selection() {
+        let boundary = RecordBoundary {
+            from_rowid: 1,
+            to_rowid: 42,
+        };
+        let a = deterministic_segment_id(&boundary);
+        let b = deterministic_segment_id(&boundary);
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 32);
+
+        let other = deterministic_segment_id(&RecordBoundary {
+            from_rowid: 1,
+            to_rowid: 43,
+        });
+        assert_ne!(a, other);
+    }
+
+    /// Review P0: a crash after publication but before the SQLite state
+    /// update must be recovered by verify-and-adopt, never by writing a
+    /// second segment. Simulated with an equivalent store whose archive
+    /// directory already holds the published files.
+    #[test]
+    fn crash_after_publish_is_recovered_by_adoption() {
+        let (base, db, archive) = setup();
+        let storage = SqliteStorage::new(&db).unwrap();
+        save_domain(&storage, "a.example.com");
+        save_domain(&storage, "b.example.com");
+        let first = seal_pending(&storage, &archive).unwrap();
+        assert!(!first.adopted_existing);
+        let segment_id = first.segment_id.clone().unwrap();
+
+        // Disaster: a second store with the same content (same rowids)
+        // whose archive directory already holds the published files but
+        // has no SQLite state for them — exactly the crash window.
+        let db2 = format!("{db}.recovered");
+        let recovered = SqliteStorage::new(&db2).unwrap();
+        save_domain(&recovered, "a.example.com");
+        save_domain(&recovered, "b.example.com");
+
+        let second = seal_pending(&recovered, &archive).unwrap();
+        assert!(
+            second.adopted_existing,
+            "published files must be adopted, not resealed"
+        );
+        assert_eq!(second.segment_id.as_deref(), Some(segment_id.as_str()));
+        assert_eq!(second.record_count, 2);
+
+        // No duplicate files were produced.
+        let segments: Vec<_> = std::fs::read_dir(segments_dir(Path::new(&archive)))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "parquet"))
+            .collect();
+        assert_eq!(segments.len(), 1, "exactly one segment on disk");
+
+        // Both stores now verify green and agree on state.
+        let report = verify_archive(&recovered, &archive).unwrap();
+        assert!(report.is_ok(), "problems: {:?}", report.problems);
+        assert_eq!(recovered.archive_last_sealed_rowid().unwrap(), 2);
+
+        let _ = std::fs::remove_file(db2);
         cleanup(&base);
     }
 }
