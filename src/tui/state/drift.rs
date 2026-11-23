@@ -2,6 +2,7 @@
 
 use ratatui::widgets::TableState;
 
+use crate::app::drift::DriftEvidence;
 use crate::drift::DriftFinding;
 
 /// Default comparison window in hours.
@@ -14,6 +15,7 @@ pub const DEFAULT_WINDOW_HOURS: u64 = 24;
 pub struct DriftState {
     pub table_state: TableState,
     pub findings: Vec<DriftFinding>,
+    pub evidence: Vec<DriftEvidence>,
     /// True when the latest scan report proves full coverage.
     pub coverage_complete: bool,
     pub window_hours: u64,
@@ -27,6 +29,7 @@ impl Default for DriftState {
         Self {
             table_state: TableState::default(),
             findings: Vec::new(),
+            evidence: Vec::new(),
             coverage_complete: false,
             window_hours: DEFAULT_WINDOW_HOURS,
             loaded: false,
@@ -35,6 +38,11 @@ impl Default for DriftState {
 }
 
 impl DriftState {
+    pub fn selected_finding(&self) -> Option<(&DriftFinding, Option<&DriftEvidence>)> {
+        let idx = self.table_state.selected()?;
+        let finding = self.findings.get(idx)?;
+        Some((finding, self.evidence.get(idx)))
+    }
     pub fn next(&mut self) {
         let len = self.findings.len();
         if len == 0 {

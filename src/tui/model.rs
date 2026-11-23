@@ -122,60 +122,39 @@ fn extract_domain_from_url(url: &str) -> String {
 }
 
 /// Checks whether two domain names share the same root domain.
-///
-/// Handles common two-part TLDs (e.g. co.uk, com.au) as well as standard TLDs.
-/// For example:
-/// - `shop.josera.de` and `template.josera.de` → true (root: josera.de)
-/// - `josera.de` and `maxcluster.net` → false
-/// - `foo.co.uk` and `bar.co.uk` → true (root: co.uk level, need 3 labels)
-fn is_same_root_domain(a: &str, b: &str) -> bool {
-    let a_parts: Vec<&str> = a.split('.').collect();
-    let b_parts: Vec<&str> = b.split('.').collect();
+const TWO_PART_TLDS: &[&str] = &[
+    "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il", "com.au", "com.br", "com.cn",
+    "com.mx", "com.pl", "com.tr", "com.ua", "org.uk", "org.au", "org.pl", "net.au", "net.uk",
+    "net.pl", "ac.uk", "gov.uk", "edu.au",
+];
 
-    // Known two-part TLDs where the root domain requires 3 labels
-    const TWO_PART_TLDS: &[&str] = &[
-        "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il", "com.au", "com.br",
-        "com.cn", "com.mx", "com.tr", "com.ua", "org.uk", "org.au", "net.au", "net.uk", "ac.uk",
-        "gov.uk", "edu.au",
-    ];
-
-    let needed = if a_parts.len() >= 3 || b_parts.len() >= 3 {
-        let a_suffix = if a_parts.len() >= 2 {
-            format!(
-                "{}.{}",
-                a_parts[a_parts.len() - 2],
-                a_parts[a_parts.len() - 1]
-            )
-        } else {
-            String::new()
-        };
-        let b_suffix = if b_parts.len() >= 2 {
-            format!(
-                "{}.{}",
-                b_parts[b_parts.len() - 2],
-                b_parts[b_parts.len() - 1]
-            )
-        } else {
-            String::new()
-        };
-
-        if TWO_PART_TLDS.contains(&a_suffix.as_str()) || TWO_PART_TLDS.contains(&b_suffix.as_str())
-        {
-            3
-        } else {
-            2
-        }
+/// Return the apex (registrable) domain for `domain`, accounting for known
+/// two-part public suffixes (e.g. `www.example.co.uk` → `example.co.uk`).
+fn apex_domain(domain: &str) -> Option<String> {
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let two_part = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
+    let needed = if TWO_PART_TLDS.contains(&two_part.as_str()) {
+        3
     } else {
         2
     };
-
-    if a_parts.len() < needed || b_parts.len() < needed {
-        return false;
+    if parts.len() < needed {
+        return None;
     }
+    Some(parts[parts.len() - needed..].join("."))
+}
 
-    let root_a = &a_parts[a_parts.len() - needed..];
-    let root_b = &b_parts[b_parts.len() - needed..];
-    root_a == root_b
+/// Check if two domains belong to the same root domain.
+///
+/// Handles common two-part TLDs (e.g. co.uk, com.au) as well as standard TLDs.
+fn is_same_root_domain(a: &str, b: &str) -> bool {
+    match (apex_domain(a), apex_domain(b)) {
+        (Some(ra), Some(rb)) => ra == rb,
+        _ => false,
+    }
 }
 
 /// A group of subdomains under a root domain
@@ -243,7 +222,10 @@ pub struct OrgModel {
 impl OrgModel {
     pub fn load(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<Self> {
         let records = storage.read_all_records()?;
+        Ok(Self::load_from_records(&records))
+    }
 
+    pub fn load_from_records(records: &crate::storage::reader::Records) -> Self {
         let persons_by_id: HashMap<_, _> =
             records.persons.iter().map(|p| (p.id, p.clone())).collect();
         let companies_by_id: HashMap<_, _> = records
@@ -343,24 +325,27 @@ impl OrgModel {
             });
         }
 
-        Ok(OrgModel {
-            persons: records.persons,
-            companies: records.companies,
-            brands: records.brands,
-            projects: records.projects,
+        OrgModel {
+            persons: records.persons.clone(),
+            companies: records.companies.clone(),
+            brands: records.brands.clone(),
+            projects: records.projects.clone(),
             project_views,
             assets_by_project,
             persons_by_id,
             companies_by_id,
             brands_by_id,
             projects_by_id,
-        })
+        }
     }
 }
 
 pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<TuiModel> {
     let records = storage.read_all_records()?;
+    Ok(load_tui_model_from_records(&records))
+}
 
+pub fn load_tui_model_from_records(records: &crate::storage::reader::Records) -> TuiModel {
     // Build lookup maps for org data
     let persons_map: HashMap<_, _> = records.persons.iter().map(|p| (p.id, p.clone())).collect();
     let companies_map: HashMap<_, _> = records
@@ -433,20 +418,20 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     };
 
     let mut domain_registrations: HashMap<String, DomainRegistration> = HashMap::new();
-    for reg in records.domain_registrations {
+    for reg in &records.domain_registrations {
         domain_registrations.insert(
             reg.domain.clone(),
             DomainRegistration {
-                domain: reg.domain,
-                registrar: reg.registrar,
+                domain: reg.domain.clone(),
+                registrar: reg.registrar.clone(),
                 registered_at: reg.registered_at,
                 expires_at: reg.expires_at,
                 updated_at: reg.updated_at,
-                status: reg.status,
-                registrant: reg.registrant,
-                admin: reg.admin,
-                tech: reg.tech,
-                source: reg.source,
+                status: reg.status.clone(),
+                registrant: reg.registrant.clone(),
+                admin: reg.admin.clone(),
+                tech: reg.tech.clone(),
+                source: reg.source.clone(),
             },
         );
     }
@@ -457,10 +442,8 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         if let Some(reg) = domain_registrations.get(name) {
             return Some(reg.clone());
         }
-        // Try apex domain (e.g., www.example.com -> example.com)
-        let parts: Vec<&str> = name.split('.').collect();
-        if parts.len() > 2 {
-            let apex = parts[parts.len() - 2..].join(".");
+        // Try apex domain (e.g., www.example.co.uk -> example.co.uk)
+        if let Some(apex) = apex_domain(name) {
             if let Some(reg) = domain_registrations.get(&apex) {
                 return Some(reg.clone());
             }
@@ -468,25 +451,28 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         None
     };
 
-    // Build hosting info map (keep latest per target)
-    let mut hosting_map: HashMap<String, HostingInfo> = HashMap::new();
-    for obs in records.hosting_observations {
+    // Build hosting info map (keep latest per target by checked_at)
+    let mut hosting_map: HashMap<String, (chrono::DateTime<chrono::Utc>, HostingInfo)> =
+        HashMap::new();
+    for obs in &records.hosting_observations {
         let info = HostingInfo {
-            provider_name: obs.provider_name,
-            provider_category: obs.provider_category,
+            provider_name: obs.provider_name.clone(),
+            provider_category: obs.provider_category.clone(),
             cdn_detected: obs.cdn_detected,
-            cdn_name: obs.cdn_name,
+            cdn_name: obs.cdn_name.clone(),
             confidence: obs.confidence,
             detection_method: obs.detection_method,
-            evidence: obs.evidence,
+            evidence: obs.evidence.clone(),
         };
         hosting_map
             .entry(obs.target.clone())
-            .and_modify(|existing| {
-                // Keep the latest one (we could compare checked_at but simpler to just replace)
-                *existing = info.clone();
+            .and_modify(|(existing_ts, existing_info)| {
+                if obs.checked_at > *existing_ts {
+                    *existing_ts = obs.checked_at;
+                    *existing_info = info.clone();
+                }
             })
-            .or_insert(info);
+            .or_insert((obs.checked_at, info));
     }
 
     let mut assets_map: HashMap<String, AssetState> = HashMap::new();
@@ -495,7 +481,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     for item in &records.items {
         let project = build_project_context(&item.name);
         let registration = get_registration(&item.name);
-        let hosting = hosting_map.get(&item.name).cloned();
+        let hosting = hosting_map.get(&item.name).map(|(_, h)| h.clone());
         assets_map.entry(item.name.clone()).or_insert(AssetState {
             name: item.name.clone(),
             latest_dns: None,
@@ -510,7 +496,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         let entry = assets_map.entry(dns.target.clone()).or_insert_with(|| {
             let project = build_project_context(&dns.target);
             let registration = get_registration(&dns.target);
-            let hosting = hosting_map.get(&dns.target).cloned();
+            let hosting = hosting_map.get(&dns.target).map(|(_, h)| h.clone());
             AssetState {
                 name: dns.target.clone(),
                 latest_dns: None,
@@ -533,7 +519,7 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
         let entry = assets_map.entry(http.target.clone()).or_insert_with(|| {
             let project = build_project_context(&http.target);
             let registration = get_registration(&http.target);
-            let hosting = hosting_map.get(&http.target).cloned();
+            let hosting = hosting_map.get(&http.target).map(|(_, h)| h.clone());
             AssetState {
                 name: http.target.clone(),
                 latest_dns: None,
@@ -565,14 +551,8 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
     }
     let mut asset_to_staleness: HashMap<String, u64> = HashMap::new();
     let now = chrono::Utc::now();
-    for name in &asset_names {
-        let latest_check = records
-            .http_observations
-            .iter()
-            .filter(|o| o.target == *name)
-            .map(|o| o.checked_at)
-            .max();
-        if let Some(latest) = latest_check {
+    for (name, state) in &assets_map {
+        if let Some(latest) = state.latest_http.as_ref().map(|h| h.checked_at) {
             let days = now.signed_duration_since(latest).num_days().max(0) as u64;
             asset_to_staleness.insert(name.clone(), days);
         }
@@ -642,13 +622,13 @@ pub fn load_tui_model(storage: &Arc<dyn StorageEngine>) -> crate::error::Result<
 
     let asset_tags = crate::app::tags::get_active_tags(&records.asset_tags);
 
-    Ok(TuiModel {
+    TuiModel {
         groups: final_groups,
         stats,
         asset_tags,
-        lifecycle_events: records.lifecycle_events,
+        lifecycle_events: records.lifecycle_events.clone(),
         risk_scores,
-    })
+    }
 }
 
 fn update_stats(stats: &mut GlobalStats, asset: &AssetState) {
@@ -691,6 +671,60 @@ mod tests {
     #[test]
     fn test_same_domain_exact() {
         assert!(is_same_root_domain("josera.de", "josera.de"));
+    }
+
+    #[test]
+    fn test_hosting_map_prefers_latest_checked_at() {
+        let mut records = crate::storage::reader::Records::default();
+        let older = chrono::Utc::now() - chrono::Duration::hours(2);
+        let newer = chrono::Utc::now() - chrono::Duration::minutes(5);
+        records.items.push(crate::inventory::InventoryItem {
+            item_type: ItemType::Domain,
+            id: "1".to_string(),
+            name: "app.example.com".to_string(),
+            discovered_at: older,
+            source: "test".to_string(),
+            original_input: None,
+        });
+        // Newer record appears first in storage order; older appears second.
+        records
+            .hosting_observations
+            .push(crate::app::probe::HostingObservation {
+                item_type: ItemType::HostingDetection,
+                id: "h1".to_string(),
+                target: "app.example.com".to_string(),
+                provider_id: None,
+                provider_name: Some("NewProvider".to_string()),
+                provider_category: Some("cloud".to_string()),
+                cdn_detected: false,
+                cdn_name: None,
+                confidence: crate::app::probe::Confidence::High,
+                detection_method: crate::app::probe::DetectionMethod::Asn,
+                evidence: vec!["new".to_string()],
+                checked_at: newer,
+                source: "test".to_string(),
+            });
+        records
+            .hosting_observations
+            .push(crate::app::probe::HostingObservation {
+                item_type: ItemType::HostingDetection,
+                id: "h2".to_string(),
+                target: "app.example.com".to_string(),
+                provider_id: None,
+                provider_name: Some("OldProvider".to_string()),
+                provider_category: Some("cloud".to_string()),
+                cdn_detected: false,
+                cdn_name: None,
+                confidence: crate::app::probe::Confidence::Low,
+                detection_method: crate::app::probe::DetectionMethod::Asn,
+                evidence: vec!["old".to_string()],
+                checked_at: older,
+                source: "test".to_string(),
+            });
+
+        let model = load_tui_model_from_records(&records);
+        let hosting = model.groups[0].root.hosting.as_ref().unwrap();
+        assert_eq!(hosting.provider_name.as_deref(), Some("NewProvider"));
     }
 
     #[test]

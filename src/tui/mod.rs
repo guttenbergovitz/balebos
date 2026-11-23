@@ -7,8 +7,7 @@ pub mod ui;
 pub mod workflows;
 
 use crate::storage::StorageEngine;
-use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
-use crate::tui::state::OrgPane;
+use crate::tui::app::{App, ExportFormat, InputMode, Tab};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -41,11 +40,7 @@ pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err);
-    }
-
-    Ok(())
+    res
 }
 
 fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
@@ -93,7 +88,9 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
         let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
         if last_scan_state && !is_scanning {
             // Scan just finished, auto-refresh
-            let _ = app.refresh();
+            if let Err(e) = app.refresh() {
+                app.set_status(format!("❌ Refresh failed: {e}"));
+            }
         }
         last_scan_state = is_scanning;
 
@@ -139,24 +136,36 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         }
 
         // Tab navigation
-        KeyCode::Char('1') => app.set_tab(Tab::Inventory),
-        KeyCode::Char('2') => app.set_tab(Tab::Organization),
-        KeyCode::Char('3') => app.set_tab(Tab::Projects),
+        KeyCode::Char('1') => app.set_tab(Tab::Overview),
+        KeyCode::Char('2') => app.set_tab(Tab::Inventory),
+        KeyCode::Char('3') => app.set_tab(Tab::Drift),
         KeyCode::Char('4') => app.set_tab(Tab::Findings),
-        KeyCode::Char('5') => app.set_tab(Tab::Drift),
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
         // Tab-specific keys
         _ => match app.active_tab {
+            Tab::Overview => handle_overview_keys(app, code),
             Tab::Inventory => handle_inventory_keys(app, code),
-            Tab::Organization => handle_organization_keys(app, code),
-            Tab::Projects => handle_projects_keys(app, code),
-            Tab::Findings => handle_findings_keys(app, code),
             Tab::Drift => handle_drift_keys(app, code),
+            Tab::Findings => handle_findings_keys(app, code),
         },
     }
     Ok(())
+}
+
+fn handle_overview_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Char('R') => {
+            if let Err(e) = app.refresh() {
+                app.set_status(format!("❌ Refresh failed: {e}"));
+            }
+        }
+        KeyCode::Char('s') => {
+            app.run_findings_scan();
+        }
+        _ => {}
+    }
 }
 
 fn handle_inventory_keys(app: &mut App, code: KeyCode) {
@@ -226,108 +235,6 @@ fn handle_inventory_keys(app: &mut App, code: KeyCode) {
     }
 }
 
-fn handle_organization_keys(app: &mut App, code: KeyCode) {
-    match code {
-        // Pane switching within Organization tab
-        KeyCode::Left | KeyCode::Char('h') => {
-            app.prev_org_pane();
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            app.next_org_pane();
-        }
-        // Add entity based on current pane
-        KeyCode::Char('a') => {
-            let add_type = match app.organization.pane {
-                OrgPane::Persons => OrgAddType::Person,
-                OrgPane::Companies => OrgAddType::Company,
-                OrgPane::Brands => OrgAddType::Brand,
-            };
-            app.start_org_add(add_type);
-        }
-        // Edit entity
-        KeyCode::Char('e') => {
-            if let Some(idx) = app.organization.table_state.selected() {
-                let add_type = match app.organization.pane {
-                    OrgPane::Persons => OrgAddType::Person,
-                    OrgPane::Companies => OrgAddType::Company,
-                    OrgPane::Brands => OrgAddType::Brand,
-                };
-                app.start_org_edit(add_type, idx);
-            }
-        }
-        // Navigation
-        KeyCode::Down | KeyCode::Char('j') => {
-            let count = app.org_item_count();
-            if count > 0 {
-                let i = app.organization.table_state.selected().unwrap_or(0);
-                let next = if i >= count - 1 { 0 } else { i + 1 };
-                app.organization.table_state.select(Some(next));
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            let count = app.org_item_count();
-            if count > 0 {
-                let i = app.organization.table_state.selected().unwrap_or(0);
-                let prev = if i == 0 { count - 1 } else { i - 1 };
-                app.organization.table_state.select(Some(prev));
-            }
-        }
-        _ => {}
-    }
-}
-
-fn handle_projects_keys(app: &mut App, code: KeyCode) {
-    match code {
-        KeyCode::Char('a') => {
-            app.start_org_add(OrgAddType::Project);
-        }
-        KeyCode::Char('e') => {
-            // Edit project (must resolve actual project index from selected row)
-            if let Some(idx) = app.projects.table_state.selected() {
-                let mut current_idx = 0;
-                let mut project_idx = None;
-                for (i, project) in app.org_model.project_views.iter().enumerate() {
-                    if current_idx == idx {
-                        project_idx = Some(i);
-                        break;
-                    }
-                    current_idx += 1;
-                    if app
-                        .projects
-                        .expanded_projects
-                        .contains(&project.id.to_string())
-                    {
-                        if let Some(assets) = app.org_model.assets_by_project.get(&project.id) {
-                            current_idx += assets.len();
-                        } else {
-                            current_idx += 1;
-                        }
-                    }
-                }
-                if let Some(p_idx) = project_idx {
-                    app.start_org_edit(OrgAddType::Project, p_idx);
-                }
-            }
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.projects_next();
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.projects_previous();
-        }
-        KeyCode::Char(' ') | KeyCode::Enter => {
-            app.toggle_project_expand();
-        }
-        KeyCode::Char('r') => {
-            app.start_role_assign();
-        }
-        KeyCode::Char('c') => {
-            app.start_contractor_assign();
-        }
-        _ => {}
-    }
-}
-
 fn handle_drift_keys(app: &mut App, code: KeyCode) {
     match code {
         KeyCode::Down | KeyCode::Char('j') => {
@@ -337,7 +244,20 @@ fn handle_drift_keys(app: &mut App, code: KeyCode) {
             app.drift_previous();
         }
         KeyCode::Char('R') => {
-            let _ = app.load_drift();
+            if let Err(e) = app.load_drift() {
+                app.set_status(format!("❌ Failed to load drift: {e}"));
+            }
+        }
+        KeyCode::Char('i') | KeyCode::Enter => {
+            if let Some((finding, _)) = app.drift.selected_finding() {
+                let target = finding.asset.clone();
+                if app.select_asset_by_name(&target) {
+                    app.asset_details_scroll = 0;
+                    app.input_mode = InputMode::AssetDetails;
+                } else {
+                    app.set_status(format!("No inventory details cached for {target}"));
+                }
+            }
         }
         _ => {}
     }
