@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
+    crate::app::probe::set_quiet(true);
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();

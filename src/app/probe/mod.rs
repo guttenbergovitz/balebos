@@ -18,3 +18,17 @@ pub use types::{
     AsnObservation, Confidence, DetectionMethod, DnsObservation, HostingObservation, HttpErrorKind,
     HttpObservation, RedirectHop,
 };
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Suppress probe stdout progress messages (used by TUI mode).
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+/// Returns `true` when probe stdout progress messages are suppressed.
+pub(crate) fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}

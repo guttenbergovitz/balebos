@@ -8,8 +8,5 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      # Persist JSONL inventory and Parquet analytics locally
+      # Persist SQLite operational store and optional archive data locally
       - ./data:/app/data
-    environment:
-      # Keeps probe tools from printing to stdout inside TUI
-      - BALEBOS_STORAGE=hybrid

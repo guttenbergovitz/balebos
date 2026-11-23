@@ -1,7 +1,7 @@
 # ==========================================
-# Stage 1: Builder
+# Stage 1: Builder (runs on TARGETPLATFORM so binary matches target arch)
 # ==========================================
-FROM --platform=$BUILDPLATFORM rust:1.100-bookworm AS builder
+FROM rust:1.100-bookworm AS builder
 
 WORKDIR /app
 
@@ -98,8 +98,6 @@ COPY --from=builder /app/target/release/balebos /usr/local/bin/
 # Create data directory
 RUN mkdir -p /app/data
 
-# BALEBOS_STORAGE is kept to suppress probe stdout spam in TUI mode
-ENV BALEBOS_STORAGE=hybrid
 ENV TERM=xterm-256color
 
 ENTRYPOINT ["balebos"]

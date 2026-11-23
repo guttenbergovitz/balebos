@@ -113,7 +113,7 @@ fn run_subfinder_batch_inner(
     for (chunk_idx, chunk) in domains.chunks(chunk_size).enumerate() {
         let total_chunks = (domains.len() as f32 / chunk_size as f32).ceil() as usize;
         // Skip printing in TUI - status is handled by the caller
-        if std::env::var("BALEBOS_STORAGE").is_err() {
+        if !super::is_quiet() {
             println!(
                 "    ⟳ Processing chunk {}/{} ({} domains)...",
                 chunk_idx + 1,
@@ -153,7 +153,7 @@ fn run_subfinder_batch_inner(
         let timeout_duration = std::time::Duration::from_secs(25); // More aggressive timeout
 
         // Log chunk start
-        if std::env::var("BALEBOS_STORAGE").is_err() {
+        if !super::is_quiet() {
             println!(
                 "      🚀 Starting {} for {} domains...",
                 tool_name,
@@ -248,7 +248,7 @@ fn run_subfinder_batch_inner(
 
         // Log chunk completion
         let total_elapsed = start_time.elapsed();
-        if std::env::var("BALEBOS_STORAGE").is_err() {
+        if !super::is_quiet() {
             if found_in_chunk > 0 {
                 println!(
                     "\r      ✅ Chunk completed: {} subdomains found in {}s",

@@ -63,7 +63,7 @@ fn probe_dns_batch_inner(
     for (chunk_idx, chunk) in targets.chunks(chunk_size).enumerate() {
         let total_chunks = (targets.len() as f32 / chunk_size as f32).ceil() as usize;
         // Skip printing in TUI - status is handled by the caller
-        if std::env::var("BALEBOS_STORAGE").is_err() {
+        if !super::is_quiet() {
             println!(
                 "    ⟳ DNS: Processing chunk {}/{} ({} targets)...",
                 chunk_idx + 1,
