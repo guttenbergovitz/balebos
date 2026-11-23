@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::app::discovery::run_autonomous_discovery;
 use crate::app::external_services::{
     correlate_service_observations, parse_censys_host_json, parse_shodan_host_json,
 };
@@ -200,12 +201,14 @@ pub fn cmd_discover_references(
         "dns" => {
             let records = storage.read_all_records()?;
             let mut txts = Vec::new();
+            let mut srvs = Vec::new();
             for dns in &records.dns_observations {
                 if normalize_fqdn(&dns.target) == norm {
                     txts.extend(dns.txt.clone());
+                    srvs.extend(dns.srv.clone());
                 }
             }
-            extract_dns_srv_txt_references(&norm, &[], &txts, scope_domains, now)
+            extract_dns_srv_txt_references(&norm, &srvs, &txts, scope_domains, now)
         }
         "js" => {
             let path = input_file.ok_or_else(|| {
@@ -343,6 +346,31 @@ pub fn cmd_candidates_explain(
     }
     if services.is_empty() && refs.is_empty() && rels.direct.is_empty() {
         println!("No evidence found for candidate '{}'.", candidate);
+    }
+    Ok(())
+}
+
+/// Run the autonomous bounded discovery pipeline (`balebos discover run <domain>`).
+pub fn cmd_discover_run(
+    domain: &str,
+    scope_domains: &[String],
+    save: bool,
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<()> {
+    let summary = run_autonomous_discovery(domain, scope_domains, save, storage)?;
+    println!("Autonomous discovery for '{}':", summary.domain);
+    println!("  CT candidates:      {}", summary.ct_candidates);
+    println!("  DNS SRV/TXT refs:   {}", summary.dns_references);
+    println!(
+        "  JS assets / refs:   {} / {}",
+        summary.js_assets_fetched, summary.js_references
+    );
+    println!("  OpenAPI refs:       {}", summary.openapi_references);
+    if !summary.errors.is_empty() {
+        println!("  Partial errors ({}):", summary.errors.len());
+        for err in &summary.errors {
+            println!("    - {}", err);
+        }
     }
     Ok(())
 }

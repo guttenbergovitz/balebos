@@ -24,6 +24,22 @@ use crate::inventory::ItemType;
 const MAX_STATIC_SCAN_BYTES: usize = 512 * 1024;
 const MAX_MATCHES_PER_ASSET: usize = 200;
 
+fn floor_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn ceil_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 fn is_in_scope(host: &str, approved_scope: &[String]) -> bool {
     if approved_scope.is_empty() {
         return false;
@@ -145,7 +161,7 @@ pub fn extract_js_references(
     ingested_at: DateTime<Utc>,
 ) -> Vec<ApplicationReferenceObservation> {
     let bounded = if js_content.len() > MAX_STATIC_SCAN_BYTES {
-        &js_content[..MAX_STATIC_SCAN_BYTES]
+        &js_content[..floor_char_boundary(js_content, MAX_STATIC_SCAN_BYTES)]
     } else {
         js_content
     };
@@ -163,9 +179,9 @@ pub fn extract_js_references(
             continue;
         };
 
-        // Context window around match to detect deprecation/dev hints.
-        let start = m.start().saturating_sub(48);
-        let end = (m.end() + 48).min(bounded.len());
+        // Context window around match to detect deprecation/dev hints (UTF-8 safe).
+        let start = floor_char_boundary(bounded, m.start().saturating_sub(48));
+        let end = ceil_char_boundary(bounded, (m.end() + 48).min(bounded.len()));
         let ctx = &bounded[start..end];
         let deprecated = has_deprecated_hint(ctx);
         let dev_hint = has_dev_or_placeholder_hint(&safe_url) || has_dev_or_placeholder_hint(ctx);
@@ -652,7 +668,7 @@ pub fn parse_public_repo_references(
     ingested_at: DateTime<Utc>,
 ) -> Vec<ApplicationReferenceObservation> {
     let bounded = if content.len() > MAX_STATIC_SCAN_BYTES {
-        &content[..MAX_STATIC_SCAN_BYTES]
+        &content[..floor_char_boundary(content, MAX_STATIC_SCAN_BYTES)]
     } else {
         content
     };

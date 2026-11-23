@@ -979,6 +979,7 @@ mod tests {
             ns: vec![],
             txt: vec![],
             soa: vec![],
+            srv: vec![],
             checked_at: at,
             source: "dnsx".to_string(),
         }

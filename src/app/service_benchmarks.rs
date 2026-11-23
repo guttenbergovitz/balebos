@@ -55,6 +55,7 @@ fn dns_obs(id: &str, host: &str, ips: &[&str], day: u32) -> DnsObservation {
         ns: Vec::new(),
         txt: Vec::new(),
         soa: Vec::new(),
+        srv: Vec::new(),
         checked_at: ts(day),
         source: "dnsx".to_string(),
     }
@@ -452,4 +453,85 @@ fn benchmark_scenarios_20_to_22_persistence_disappearance_and_diminishing_yield(
         1
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn utf8_multibyte_boundaries_do_not_panic_in_reference_extraction() {
+    let prefix = "ąęółżźćń🔐".repeat(6);
+    let js = format!(
+        "{} const api = \"https://utf8-api.example.com/v1\"; {}",
+        prefix, prefix
+    );
+    let refs = extract_js_references(
+        "www.example.com",
+        "https://www.example.com/app.js",
+        &js,
+        &["example.com".to_string()],
+        None,
+        ts(23),
+    );
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].referenced_target, "utf8-api.example.com");
+
+    let large_prefix = "ą".repeat(600 * 1024);
+    let large_js = format!("{} https://after-limit.example.com", large_prefix);
+    let bounded_refs = extract_js_references(
+        "www.example.com",
+        "https://www.example.com/big.js",
+        &large_js,
+        &[],
+        None,
+        ts(23),
+    );
+    assert!(bounded_refs.is_empty());
+}
+
+#[test]
+fn service_correlation_keeps_latest_observation_state_and_protocol() {
+    let older = parse_censys_host_json(
+        r#"{"result":{"ip":"203.0.113.80","services":[{"port":5432,"transport_protocol":"TCP","service_name":"POSTGRES","observed_at":"2026-11-10T00:00:00Z"}]}}"#,
+        &[],
+        ts(11),
+    )
+    .unwrap();
+    let mut older_hist = older[0].clone();
+    older_hist.state = ServiceObservationState::HistoricalOnly;
+
+    let newer = parse_shodan_host_json(
+        r#"{"ip_str":"203.0.113.80","data":[{"port":5432,"transport":"tcp","product":"PostgreSQL","timestamp":"2026-11-22T00:00:00Z"}]}"#,
+        &[],
+        ts(23),
+    )
+    .unwrap();
+
+    // Pass older first, newer second: latest state (`Open`) must win!
+    let correlated = correlate_service_observations(&[older_hist, newer[0].clone()]);
+    assert_eq!(correlated.len(), 1);
+    assert_eq!(correlated[0].state, ServiceObservationState::Open);
+    assert_eq!(
+        correlated[0]
+            .source_recorded_at
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string(),
+        "2026-11-22"
+    );
+}
+
+#[test]
+fn novelty_metrics_exclude_references_already_in_inventory() {
+    let mut records = Records::default();
+    records.items.push(seed_item("i1", "api.example.com"));
+    let refs = extract_js_references(
+        "www.example.com",
+        "https://www.example.com/app.js",
+        "fetch('https://api.example.com/v1'); fetch('https://new-svc.example.com/v1');",
+        &["example.com".to_string()],
+        None,
+        ts(23),
+    );
+    records.application_references.extend(refs);
+    let report = compute_discovery_metrics(&records, &[], &[], &BTreeMap::new());
+    // `api.example.com` is already in `records.items`, so only `new-svc.example.com` is novel.
+    assert_eq!(report.total_unique_candidates, 1);
 }

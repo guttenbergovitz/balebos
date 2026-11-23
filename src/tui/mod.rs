@@ -80,6 +80,14 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
                     InputMode::ResetFilters => handle_reset_filters_mode(app, key.code)?,
                     InputMode::ExportData => handle_export_data_mode(app, key.code)?,
                     InputMode::ImportData => handle_import_data_mode(app, key.code)?,
+                    InputMode::Help => {
+                        if matches!(
+                            key.code,
+                            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?') | KeyCode::Char('q')
+                        ) {
+                            app.input_mode = InputMode::Normal;
+                        }
+                    }
                 }
             }
         }
@@ -135,17 +143,20 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
             app.import_path.clear();
         }
 
-        // Tab navigation
+        // Tab navigation (5-tab Investigation Workbench)
         KeyCode::Char('1') => app.set_tab(Tab::Overview),
-        KeyCode::Char('2') => app.set_tab(Tab::Inventory),
-        KeyCode::Char('3') => app.set_tab(Tab::Drift),
-        KeyCode::Char('4') => app.set_tab(Tab::Findings),
+        KeyCode::Char('2') => app.set_tab(Tab::Runs),
+        KeyCode::Char('3') => app.set_tab(Tab::Inventory),
+        KeyCode::Char('4') => app.set_tab(Tab::Drift),
+        KeyCode::Char('5') => app.set_tab(Tab::Findings),
+        KeyCode::Char('?') => app.input_mode = InputMode::Help,
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
         // Tab-specific keys
         _ => match app.active_tab {
             Tab::Overview => handle_overview_keys(app, code),
+            Tab::Runs => handle_runs_keys(app, code),
             Tab::Inventory => handle_inventory_keys(app, code),
             Tab::Drift => handle_drift_keys(app, code),
             Tab::Findings => handle_findings_keys(app, code),
@@ -162,7 +173,24 @@ fn handle_overview_keys(app: &mut App, code: KeyCode) {
             }
         }
         KeyCode::Char('s') => {
+            app.input_mode = InputMode::Editing;
+        }
+        KeyCode::Char('C') => {
             app.run_findings_scan();
+        }
+        _ => {}
+    }
+}
+
+fn handle_runs_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Char('s') => {
+            app.input_mode = InputMode::Editing;
+        }
+        KeyCode::Char('R') => {
+            if let Err(e) = app.refresh() {
+                app.set_status(format!("❌ Refresh failed: {e}"));
+            }
         }
         _ => {}
     }

@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_drift, draw_findings, draw_inventory, draw_overview};
+use crate::tui::tabs::{draw_drift, draw_findings, draw_inventory, draw_overview, draw_runs};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -108,6 +108,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     if app.input_mode == InputMode::ImportData {
         draw_import_data_modal(f, app);
+    }
+    if app.input_mode == InputMode::Help {
+        draw_help_modal(f);
     }
 }
 
@@ -208,9 +211,10 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let selected = match app.active_tab {
         Tab::Overview => 0,
-        Tab::Inventory => 1,
-        Tab::Drift => 2,
-        Tab::Findings => 3,
+        Tab::Runs => 1,
+        Tab::Inventory => 2,
+        Tab::Drift => 3,
+        Tab::Findings => 4,
     };
 
     let tabs = Tabs::new(titles)
@@ -274,6 +278,7 @@ fn draw_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
     match app.active_tab {
         Tab::Overview => draw_overview(f, app, area),
+        Tab::Runs => draw_runs(f, app, area),
         Tab::Inventory => draw_inventory(f, app, area),
         Tab::Drift => draw_drift(f, app, area),
         Tab::Findings => draw_findings(f, app, area),
@@ -357,16 +362,19 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
         Tab::Overview => {
-            " q: Quit | R: Refresh | 1-4: Tabs | s: Scan | Tab/BackTab: Switch View "
+            " 1-5: Tabs | s: Scan | C: Run Checks | R: Refresh | ?: Help | q: Quit "
+        }
+        Tab::Runs => {
+            " 1-5: Tabs | s: New Scan | c: Cancel Active | R: Refresh | ?: Help | q: Quit "
         }
         Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | L: Lifecycle | v: Risk | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
+            " 1-5: Tabs | /: Filter | t: Tag | T/d: Edit Tag | L: Lifecycle | s: Scan | i/Enter: Inspect | ?: Help | q: Quit "
         }
         Tab::Drift => {
-            " q: Quit | R: Refresh | 1-4: Tabs | j/k: Nav | Enter/i: Inspect Asset — yellow classes are uncertainty, not incidents "
+            " 1-5: Tabs | j/k: Nav | Enter/i: Inspect — yellow classes are uncertainty, not incidents | ?: Help | q: Quit "
         }
         Tab::Findings => {
-            " q: Quit | R: Refresh | 1-4: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
+            " 1-5: Tabs | a: Ack | r: Resolve | f: Filter | Space: Toggle | j/k: Nav | ?: Help | q: Quit "
         }
     };
 
@@ -1507,4 +1515,73 @@ fn draw_import_data_modal(f: &mut Frame, app: &App) {
 
     let paragraph = Paragraph::new(text).block(block);
     f.render_widget(paragraph, area);
+}
+
+fn draw_help_modal(f: &mut Frame) {
+    let area = centered_rect(70, 65, f.area());
+    let block = Block::default()
+        .title(" Balebos Workbench Help (Esc/? to close) ")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(Clear, area);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "Navigation & Global Keys",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  1..5        Switch tabs (Overview, Runs, Explore, Changes, Findings)"),
+        Line::from("  Tab/BackTab Cycle tabs"),
+        Line::from("  s           Start scan (or rescan selected asset in Explore)"),
+        Line::from("  c           Cancel running scan"),
+        Line::from("  R           Refresh from SQLite"),
+        Line::from("  E / I       Export / Import data"),
+        Line::from("  ? / Esc     Toggle / close help"),
+        Line::from("  q           Quit"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Explore & Findings",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  / or f      Filter assets or findings"),
+        Line::from("  j / k       Move selection"),
+        Line::from("  i / Enter   Inspect full asset, network services & application references"),
+        Line::from("  a / r       Acknowledge / Resolve finding"),
+    ];
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::SqliteStorage;
+    use ratatui::{backend::TestBackend, Terminal};
+    use std::sync::Arc;
+
+    #[test]
+    fn renders_all_five_workbench_tabs_and_help_on_standard_and_small_terminals() {
+        let dir = std::env::temp_dir().join(format!("balebos_tui_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("balebos.db");
+        let storage: Arc<dyn crate::storage::StorageEngine> =
+            Arc::new(SqliteStorage::new(db.to_str().unwrap()).unwrap());
+        let mut app = App::new(storage).unwrap();
+
+        for (w, h) in [(120u16, 36u16), (80u16, 24u16)] {
+            let backend = TestBackend::new(w, h);
+            let mut terminal = Terminal::new(backend).unwrap();
+            for tab in Tab::all() {
+                app.set_tab(*tab);
+                terminal.draw(|f| draw(f, &mut app)).unwrap();
+            }
+            app.input_mode = InputMode::Help;
+            terminal.draw(|f| draw(f, &mut app)).unwrap();
+            app.input_mode = InputMode::Normal;
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -632,6 +632,7 @@ mod tests {
             ns: vec![],
             txt: vec![],
             soa: vec![],
+            srv: vec![],
             checked_at: Utc::now(),
             source: "test".to_string(),
         }

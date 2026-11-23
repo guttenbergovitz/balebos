@@ -2,6 +2,7 @@ pub mod asset;
 pub mod batch;
 pub mod check;
 pub mod diff;
+pub mod discovery;
 pub mod drift;
 pub mod external_services;
 pub mod finding;
