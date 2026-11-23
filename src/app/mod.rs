@@ -7,6 +7,7 @@ pub mod finding;
 pub mod list;
 pub mod org;
 pub mod probe;
+pub mod relationships;
 pub mod report;
 pub mod risk;
 pub mod scan;

@@ -44,6 +44,16 @@ pub enum Command {
     Finding(FindingCommand),
     Asset(AssetCommand),
     Risk(RiskCommand),
+    Related {
+        target: String,
+    },
+    Explain {
+        entity_a: String,
+        entity_b: String,
+    },
+    History {
+        target: String,
+    },
 }
 
 pub enum ProbeKind {
@@ -254,6 +264,19 @@ pub fn parse_command() -> Option<Command> {
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(24);
             Some(Command::Drift { within_hours })
+        }
+        "related" => {
+            let target = args.get(2)?.clone();
+            Some(Command::Related { target })
+        }
+        "explain" => {
+            let entity_a = args.get(2)?.clone();
+            let entity_b = args.get(3)?.clone();
+            Some(Command::Explain { entity_a, entity_b })
+        }
+        "history" => {
+            let target = args.get(2)?.clone();
+            Some(Command::History { target })
         }
         "migrate" => {
             let from = args.get(2).cloned();
