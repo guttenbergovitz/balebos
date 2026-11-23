@@ -107,6 +107,8 @@ pub struct DnsObservation {
     pub txt: Vec<String>,
     #[serde(default)]
     pub soa: Vec<String>,
+    #[serde(default)]
+    pub srv: Vec<String>,
 
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,

@@ -101,6 +101,11 @@ pub enum Command {
         scope_domains: Vec<String>,
         save: bool,
     },
+    DiscoverRun {
+        domain: String,
+        scope_domains: Vec<String>,
+        save: bool,
+    },
     DataInfo,
     DataBackup {
         dest: Option<String>,
@@ -432,6 +437,18 @@ pub fn parse_command() -> Option<Command> {
             let dry_run = args.iter().any(|a| a == "--dry-run");
             let backup = args.iter().any(|a| a == "--backup");
             Some(Command::DataReset { dry_run, backup })
+        }
+        "discover" if args.get(2).is_some_and(|a| a == "run") => {
+            let domain = args.get(3)?.clone();
+            let scope_domains = find_flag_value(args.as_slice(), "--scope")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
+            let save = args.iter().any(|a| a == "--save");
+            Some(Command::DiscoverRun {
+                domain,
+                scope_domains,
+                save,
+            })
         }
         "discover" => {
             let source = find_flag_value(args.as_slice(), "--source")?;

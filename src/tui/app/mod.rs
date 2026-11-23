@@ -23,6 +23,7 @@ use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 pub enum Tab {
     #[default]
     Overview,
+    Runs,
     Inventory,
     Drift,
     Findings,
@@ -30,13 +31,20 @@ pub enum Tab {
 
 impl Tab {
     pub fn all() -> &'static [Tab] {
-        &[Tab::Overview, Tab::Inventory, Tab::Drift, Tab::Findings]
+        &[
+            Tab::Overview,
+            Tab::Runs,
+            Tab::Inventory,
+            Tab::Drift,
+            Tab::Findings,
+        ]
     }
 
     pub fn title(&self) -> &'static str {
         match self {
             Tab::Overview => "Overview",
-            Tab::Inventory => "Assets",
+            Tab::Runs => "Runs",
+            Tab::Inventory => "Explore",
             Tab::Drift => "Changes",
             Tab::Findings => "Findings",
         }
@@ -128,6 +136,7 @@ pub enum InputMode {
     ResetFilters,     // Confirmation modal for resetting all filters
     ExportData,       // Export data modal
     ImportData,       // Import data modal
+    Help,             // Contextual help modal (?)
 }
 
 /// Supported export formats
@@ -172,12 +181,22 @@ impl ExportFormat {
 // Re-export workflow step types for convenience
 pub use crate::tui::workflows::{ContractorAssignStep, RoleAssignStep};
 
-/// Detailed scan state for TUI status bar
+/// Detailed scan state for TUI status bar and Runs view.
 #[derive(Clone)]
 pub struct ScanState {
     pub message: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub steps: Vec<crate::app::batch::ReconStepResult>,
+    pub run_id: Option<String>,
+    pub target: Option<String>,
+    pub current_stage: Option<String>,
+    pub total_targets: Option<usize>,
+    pub processed_targets: usize,
+    pub new_discoveries: usize,
+    pub services_discovered: usize,
+    pub error_count: usize,
+    pub live_discoveries: Vec<String>,
+    pub event_log: Vec<crate::domain::scan_event::ScanEvent>,
 }
 
 impl Default for ScanState {
@@ -186,6 +205,16 @@ impl Default for ScanState {
             message: String::new(),
             timestamp: chrono::Utc::now(),
             steps: Vec::new(),
+            run_id: None,
+            target: None,
+            current_stage: None,
+            total_targets: None,
+            processed_targets: 0,
+            new_discoveries: 0,
+            services_discovered: 0,
+            error_count: 0,
+            live_discoveries: Vec::new(),
+            event_log: Vec::new(),
         }
     }
 }
@@ -193,6 +222,141 @@ impl Default for ScanState {
 impl ScanState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Apply a typed [`crate::domain::scan_event::ScanEvent`] to the live run state.
+    pub fn apply_event(&mut self, ev: crate::domain::scan_event::ScanEvent) {
+        use crate::domain::scan_event::ScanEvent::*;
+        match &ev {
+            RunStarted {
+                run_id,
+                target,
+                started_at,
+            } => {
+                self.run_id = Some(run_id.clone());
+                self.target = Some(target.clone());
+                self.current_stage = Some("starting".to_string());
+                self.total_targets = None;
+                self.processed_targets = 0;
+                self.new_discoveries = 0;
+                self.services_discovered = 0;
+                self.error_count = 0;
+                self.live_discoveries.clear();
+                self.timestamp = *started_at;
+            }
+            StageStarted {
+                stage,
+                total_targets,
+                at,
+                ..
+            } => {
+                self.current_stage = Some(stage.clone());
+                self.total_targets = *total_targets;
+                self.message = stage.clone();
+                self.timestamp = *at;
+            }
+            TargetStarted {
+                stage, target, at, ..
+            } => {
+                self.current_stage = Some(stage.clone());
+                self.message = format!("{}: {}", stage, target);
+                self.timestamp = *at;
+            }
+            TargetCompleted {
+                stage,
+                target,
+                ok,
+                detail,
+                at,
+                ..
+            } => {
+                self.processed_targets += 1;
+                if !*ok {
+                    self.error_count += 1;
+                }
+                let summary = format!(
+                    "{} [{}] {}{}",
+                    if *ok { "✓" } else { "✗" },
+                    stage,
+                    target,
+                    detail
+                        .as_deref()
+                        .map(|d| format!(" — {}", d))
+                        .unwrap_or_default()
+                );
+                self.live_discoveries.push(summary);
+                if self.live_discoveries.len() > 50 {
+                    self.live_discoveries.remove(0);
+                }
+                self.timestamp = *at;
+            }
+            ObservationSaved {
+                kind, target, at, ..
+            } => {
+                if kind == "service" {
+                    self.services_discovered += 1;
+                }
+                self.live_discoveries
+                    .push(format!("+ saved {} ({})", kind, target));
+                if self.live_discoveries.len() > 50 {
+                    self.live_discoveries.remove(0);
+                }
+                self.timestamp = *at;
+            }
+            CandidateDiscovered {
+                kind,
+                entity,
+                source,
+                at,
+                ..
+            } => {
+                self.new_discoveries += 1;
+                self.live_discoveries
+                    .push(format!("★ {} {} (via {})", kind, entity, source));
+                if self.live_discoveries.len() > 50 {
+                    self.live_discoveries.remove(0);
+                }
+                self.timestamp = *at;
+            }
+            FindingRaised {
+                title,
+                severity,
+                at,
+                ..
+            } => {
+                self.live_discoveries
+                    .push(format!("! [{}] {}", severity, title));
+                self.timestamp = *at;
+            }
+            StageFailed {
+                stage, error, at, ..
+            } => {
+                self.error_count += 1;
+                self.live_discoveries
+                    .push(format!("✗ stage {} failed: {}", stage, error));
+                self.timestamp = *at;
+            }
+            RunCompleted {
+                finished_at,
+                errors,
+                ..
+            } => {
+                self.current_stage = Some(if *errors == 0 {
+                    "completed".to_string()
+                } else {
+                    "completed_with_errors".to_string()
+                });
+                self.timestamp = *finished_at;
+            }
+            RunCancelled { finished_at, .. } => {
+                self.current_stage = Some("cancelled".to_string());
+                self.timestamp = *finished_at;
+            }
+        }
+        self.event_log.push(ev);
+        if self.event_log.len() > 200 {
+            self.event_log.remove(0);
+        }
     }
 }
 

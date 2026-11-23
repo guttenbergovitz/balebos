@@ -722,7 +722,13 @@ pub fn correlate_service_observations(
     }
 
     let mut result = Vec::new();
-    for (_key, group) in grouped {
+    for (_key, mut group) in grouped {
+        // Sort latest observation first so current protocol/state/verification win.
+        group.sort_by(|a, b| {
+            let ta = a.source_recorded_at.unwrap_or(a.ingested_at);
+            let tb = b.source_recorded_at.unwrap_or(b.ingested_at);
+            tb.cmp(&ta)
+        });
         let mut merged = group[0].clone();
         let mut sources = BTreeSet::new();
         let mut hosts = BTreeSet::new();

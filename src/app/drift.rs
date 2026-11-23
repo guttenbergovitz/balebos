@@ -190,6 +190,7 @@ mod tests {
                 ns: vec![],
                 txt: vec![],
                 soa: vec![],
+                srv: vec![],
                 checked_at: old,
                 source: "dnsx".to_string(),
             });
@@ -207,6 +208,7 @@ mod tests {
                 ns: vec![],
                 txt: vec![],
                 soa: vec![],
+                srv: vec![],
                 checked_at: recent,
                 source: "dnsx".to_string(),
             });
