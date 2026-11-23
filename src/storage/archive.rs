@@ -27,7 +27,7 @@ use crate::storage::sqlite::SqliteStorage;
 use crate::storage::StorageEngine;
 
 /// Manifest schema version; bump on incompatible manifest changes.
-pub const ARCHIVE_SCHEMA_VERSION: u32 = 1;
+pub const ARCHIVE_SCHEMA_VERSION: u32 = 2;
 
 fn storage_err(msg: impl Into<String>) -> BalebosError {
     BalebosError::Storage(crate::error::StorageError::Io(std::io::Error::other(
@@ -49,11 +49,19 @@ pub struct ArchiveManifest {
     pub archive_id: String,
     pub schema_version: u32,
     pub segment_id: String,
+    /// Durable identity of the evidence journal this segment belongs to.
+    /// Prevents adopting files sealed by a different database.
+    pub instance_id: String,
     pub created_at: DateTime<Utc>,
     pub boundary: RecordBoundary,
     pub record_count: usize,
     pub record_types: BTreeMap<String, usize>,
+    /// SHA-256 of the final Parquet file bytes (physical integrity).
     pub sha256: String,
+    /// SHA-256 over the canonical form of every record in the boundary,
+    /// computed from the database (semantic identity: binds the segment
+    /// to this journal's content, not just a rowid range).
+    pub records_sha256: String,
     pub previous_segment_sha256: Option<String>,
     pub source: String,
 }
@@ -80,25 +88,181 @@ impl VerifyReport {
     }
 }
 
+#[cfg(test)]
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
 }
 
-/// Deterministic segment identity (review P0): derived from the
-/// selection boundary, never random. Records are append-only and never
-/// deleted, so a rowid range identifies its content; re-running a failed
-/// attempt addresses the same files, which makes publish-then-crash
-/// recovery work instead of orphaning segments. One archive directory
-/// belongs to one database.
-fn deterministic_segment_id(boundary: &RecordBoundary) -> String {
+/// Deterministic segment identity (review P0, hardened round 2): derived
+/// from the journal instance and the selection boundary, never random.
+/// Records are append-only and never deleted, so a rowid range identifies
+/// its content within one journal; re-running a failed attempt addresses
+/// the same files, which makes publish-then-crash recovery work instead
+/// of orphaning segments. One archive directory belongs to one database.
+fn deterministic_segment_id(instance_id: &str, boundary: &RecordBoundary) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"balebos-segment-v1|");
+    hasher.update(b"balebos-segment-v2|");
+    hasher.update(instance_id.as_bytes());
+    hasher.update(b"|");
     hasher.update(boundary.from_rowid.to_string().as_bytes());
     hasher.update(b"|");
     hasher.update(boundary.to_rowid.to_string().as_bytes());
     format!("{:x}", hasher.finalize())[..32].to_string()
+}
+
+/// Canonical per-record form for the semantic records digest.
+fn update_records_digest(
+    hasher: &mut Sha256,
+    rowid: i64,
+    record_type: &str,
+    record_id: &str,
+    body: &str,
+) {
+    hasher.update(rowid.to_string().as_bytes());
+    hasher.update(b"|");
+    hasher.update(record_type.as_bytes());
+    hasher.update(b"|");
+    hasher.update(record_id.as_bytes());
+    hasher.update(b"|");
+    hasher.update(body.as_bytes());
+    hasher.update(b"\n");
+}
+
+/// SHA-256 of a file, streamed in fixed chunks (bounded memory).
+fn hash_file(path: &Path) -> Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| storage_err(format!("cannot open {}: {e}", path.display())))?;
+    let mut hasher = Sha256::new();
+    let mut chunk = [0u8; 65536];
+    loop {
+        let n = file
+            .read(&mut chunk)
+            .map_err(|e| storage_err(format!("cannot read {}: {e}", path.display())))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&chunk[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Summary of a segment's records computed by streaming against the DB.
+struct SegmentSummary {
+    record_count: usize,
+    record_types: BTreeMap<String, usize>,
+    records_sha256: String,
+}
+
+/// Compare a segment against the database over the boundary, streaming
+/// both sides row by row (bounded memory on both). Returns `Some` summary
+/// when every pair matches, `None` on the first mismatch.
+fn segment_vs_db(
+    storage: &SqliteStorage,
+    path: &Path,
+    boundary: &RecordBoundary,
+) -> Result<Option<SegmentSummary>> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| storage_err(format!("cannot open segment {}: {e}", path.display())))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| storage_err(format!("cannot read segment {}: {e}", path.display())))?;
+    let mut reader = builder
+        .build()
+        .map_err(|e| storage_err(format!("cannot read segment {}: {e}", path.display())))?;
+
+    let mut count = 0usize;
+    let mut types: BTreeMap<String, usize> = BTreeMap::new();
+    let mut digest = Sha256::new();
+    let mut mismatch = false;
+    let mut read_err: Option<BalebosError> = None;
+    let mut batch_rows: std::collections::VecDeque<(i64, String, String, String)> =
+        std::collections::VecDeque::new();
+
+    let pull_row = |batch_rows: &mut std::collections::VecDeque<(i64, String, String, String)>,
+                    reader: &mut parquet::arrow::arrow_reader::ParquetRecordBatchReader|
+     -> Result<Option<(i64, String, String, String)>> {
+        if let Some(row) = batch_rows.pop_front() {
+            return Ok(Some(row));
+        }
+        loop {
+            match reader.next() {
+                Some(Ok(batch)) => {
+                    let rowids = batch
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .ok_or_else(|| storage_err("segment column 'rowid' has unexpected type"))?;
+                    let tys = batch
+                        .column(1)
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .ok_or_else(|| {
+                            storage_err("segment column 'record_type' has unexpected type")
+                        })?;
+                    let ids = batch
+                        .column(2)
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .ok_or_else(|| {
+                            storage_err("segment column 'record_id' has unexpected type")
+                        })?;
+                    let bodies = batch
+                        .column(3)
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .ok_or_else(|| storage_err("segment column 'body' has unexpected type"))?;
+                    for i in 0..batch.num_rows() {
+                        batch_rows.push_back((
+                            rowids.value(i),
+                            tys.value(i).to_string(),
+                            ids.value(i).to_string(),
+                            bodies.value(i).to_string(),
+                        ));
+                    }
+                    if let Some(row) = batch_rows.pop_front() {
+                        return Ok(Some(row));
+                    }
+                }
+                Some(Err(e)) => return Err(storage_err(e.to_string())),
+                None => return Ok(None),
+            }
+        }
+    };
+
+    storage.each_row_after(
+        boundary.from_rowid - 1,
+        boundary.to_rowid,
+        |rowid, ty, id, body| {
+            if mismatch || read_err.is_some() {
+                return;
+            }
+            match pull_row(&mut batch_rows, &mut reader) {
+                Ok(Some((s_rowid, s_ty, s_id, s_body)))
+                    if s_rowid == rowid && s_ty == ty && s_id == id && s_body == body =>
+                {
+                    *types.entry(ty.clone()).or_insert(0) += 1;
+                    count += 1;
+                    update_records_digest(&mut digest, rowid, &ty, &id, &body);
+                }
+                Ok(_) => mismatch = true,
+                Err(e) => read_err = Some(e),
+            }
+        },
+    )?;
+
+    if let Some(e) = read_err {
+        return Err(e);
+    }
+    if mismatch || pull_row(&mut batch_rows, &mut reader)?.is_some() {
+        return Ok(None);
+    }
+    Ok(Some(SegmentSummary {
+        record_count: count,
+        record_types: types,
+        records_sha256: format!("{:x}", digest.finalize()),
+    }))
 }
 
 /// Write-through SHA-256: hashes exactly the bytes handed to the writer
@@ -123,8 +287,12 @@ impl<W: Write> HashingWriter<W> {
 
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.hasher.update(buf);
-        self.inner.write(buf)
+        // Write first; hash exactly the bytes persisted. A partial write
+        // must not let the digest cover data that never reached the file
+        // (review round 2), and errors leave the hasher untouched.
+        let written = self.inner.write(buf)?;
+        self.hasher.update(&buf[..written]);
+        Ok(written)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -238,69 +406,149 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
         return Ok(SealReport::default());
     }
 
+    let instance_id = storage.archive_instance_id()?;
+
     // The boundary is known before reading a single row: records are
-    // append-only and never deleted, so the range identifies the content.
+    // append-only and never deleted, so the range identifies the content
+    // within this journal instance.
     let boundary = RecordBoundary {
         from_rowid: last_sealed + 1,
         to_rowid: max_rowid,
     };
 
-    // Deterministic identity (review P0): the same selection always
-    // addresses the same files. A crash after publication but before the
-    // SQLite state update is recovered by the adoption path below —
-    // nothing is orphaned by a fresh random id.
-    let segment_id = deterministic_segment_id(&boundary);
+    // Deterministic identity (review P0, P1): the same selection in the
+    // same journal always addresses the same files. A crash after
+    // publication (or between the two renames) before the SQLite state
+    // update is recovered by the adoption path below — nothing is
+    // orphaned by a fresh random id, and files from another journal
+    // instance cannot collide.
+    let segment_id = deterministic_segment_id(&instance_id, &boundary);
     let final_segment_path = segment_path(base, &segment_id);
     let final_manifest_path = manifest_path(base, &segment_id);
-
-    // Crash-after-rename recovery: both files exist but SQLite state was
-    // never recorded. Verify the on-disk manifest against the bytes and
-    // adopt it; never write a second segment for the same selection.
-    if final_segment_path.exists() && final_manifest_path.exists() {
-        let manifest_json = std::fs::read_to_string(&final_manifest_path).map_err(|e| {
-            storage_err(format!(
-                "cannot read manifest {}: {e}",
-                final_manifest_path.display()
-            ))
-        })?;
-        let on_disk: ArchiveManifest =
-            serde_json::from_str(&manifest_json).map_err(crate::error::StorageError::from)?;
-        let bytes = std::fs::read(&final_segment_path).map_err(|e| {
-            storage_err(format!(
-                "cannot read segment {}: {e}",
-                final_segment_path.display()
-            ))
-        })?;
-        if sha256_hex(&bytes) != on_disk.sha256 {
-            return Err(storage_err(format!(
-                "adoption failed: segment {} hash does not match its manifest",
-                on_disk.segment_id
-            )));
-        }
-        if count_segment_rows(&final_segment_path)? != on_disk.record_count {
-            return Err(storage_err(format!(
-                "adoption failed: segment {} row count does not match its manifest",
-                on_disk.segment_id
-            )));
-        }
-        storage.archive_record_segment(
-            &on_disk.segment_id,
-            &on_disk.sha256,
-            &manifest_json,
-            on_disk.boundary.to_rowid,
-        )?;
-        return Ok(SealReport {
-            segment_id: Some(on_disk.segment_id),
-            record_count: on_disk.record_count,
-            boundary: Some(on_disk.boundary),
-            adopted_existing: true,
-        });
-    }
-
     let previous = storage
         .archive_manifests()?
         .last()
         .map(|(_, sha256, _)| sha256.clone());
+
+    // Crash recovery (review P1/P2): handle both post-publish crash and
+    // crash between the two renames, using streaming verification
+    // (bounded memory) and binding to the current database.
+    match (final_segment_path.exists(), final_manifest_path.exists()) {
+        (true, true) => {
+            let manifest_json = std::fs::read_to_string(&final_manifest_path).map_err(|e| {
+                storage_err(format!(
+                    "cannot read manifest {}: {e}",
+                    final_manifest_path.display()
+                ))
+            })?;
+            let on_disk: ArchiveManifest =
+                serde_json::from_str(&manifest_json).map_err(crate::error::StorageError::from)?;
+            if on_disk.schema_version != ARCHIVE_SCHEMA_VERSION {
+                return Err(storage_err(format!(
+                    "adoption failed: segment {} has unsupported schema version {}",
+                    on_disk.segment_id, on_disk.schema_version
+                )));
+            }
+            if on_disk.instance_id != instance_id
+                || on_disk.segment_id != segment_id
+                || on_disk.boundary != boundary
+                || on_disk.previous_segment_sha256 != previous
+            {
+                return Err(storage_err(format!(
+                    "adoption failed: manifest {} does not match this journal or boundary",
+                    on_disk.segment_id
+                )));
+            }
+            if hash_file(&final_segment_path)? != on_disk.sha256 {
+                return Err(storage_err(format!(
+                    "adoption failed: segment {} hash does not match its manifest",
+                    on_disk.segment_id
+                )));
+            }
+            let Some(summary) = segment_vs_db(storage, &final_segment_path, &boundary)? else {
+                return Err(storage_err(format!(
+                    "adoption failed: segment {} records do not match database",
+                    on_disk.segment_id
+                )));
+            };
+            if summary.record_count != on_disk.record_count
+                || summary.record_types != on_disk.record_types
+                || summary.records_sha256 != on_disk.records_sha256
+            {
+                return Err(storage_err(format!(
+                    "adoption failed: segment {} metadata does not match database records",
+                    on_disk.segment_id
+                )));
+            }
+            storage.archive_record_segment(
+                &on_disk.segment_id,
+                &on_disk.sha256,
+                &manifest_json,
+                on_disk.boundary.to_rowid,
+            )?;
+            return Ok(SealReport {
+                segment_id: Some(on_disk.segment_id),
+                record_count: on_disk.record_count,
+                boundary: Some(on_disk.boundary),
+                adopted_existing: true,
+            });
+        }
+        (true, false) => {
+            // Crash between the two renames: Parquet was durably written,
+            // verified, and renamed, but the manifest rename never ran.
+            let Some(summary) = segment_vs_db(storage, &final_segment_path, &boundary)? else {
+                return Err(storage_err(format!(
+                    "adoption failed: published segment {segment_id} does not match database records"
+                )));
+            };
+            let segment_hash = hash_file(&final_segment_path)?;
+            let manifest = ArchiveManifest {
+                archive_id: uuid::Uuid::new_v4().to_string(),
+                schema_version: ARCHIVE_SCHEMA_VERSION,
+                segment_id: segment_id.clone(),
+                instance_id,
+                created_at: Utc::now(),
+                boundary: boundary.clone(),
+                record_count: summary.record_count,
+                record_types: summary.record_types,
+                sha256: segment_hash.clone(),
+                records_sha256: summary.records_sha256,
+                previous_segment_sha256: previous,
+                source: "balebos-sqlite".to_string(),
+            };
+            let manifest_json = serde_json::to_string_pretty(&manifest)
+                .map_err(crate::error::StorageError::from)?;
+            let manifest_tmp = write_tmp_fsync(
+                &incoming_dir(base),
+                &format!("{segment_id}.manifest.json"),
+                manifest_json.as_bytes(),
+            )?;
+            std::fs::rename(&manifest_tmp, &final_manifest_path)?;
+            if let Some(parent) = final_manifest_path.parent().and_then(|p| p.parent()) {
+                if let Ok(dir) = std::fs::File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+            storage.archive_record_segment(
+                &segment_id,
+                &segment_hash,
+                &manifest_json,
+                boundary.to_rowid,
+            )?;
+            return Ok(SealReport {
+                segment_id: Some(segment_id),
+                record_count: summary.record_count,
+                boundary: Some(boundary),
+                adopted_existing: true,
+            });
+        }
+        (false, true) => {
+            return Err(storage_err(format!(
+                "adoption failed: manifest for segment {segment_id} exists without its Parquet file"
+            )));
+        }
+        (false, false) => {}
+    }
 
     // Write the segment streaming in fixed-size chunks: memory stays
     // bounded regardless of the selection size (review P1). The SHA-256
@@ -310,6 +558,7 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
     let schema = segment_schema();
     let mut record_count = 0usize;
     let mut record_types: BTreeMap<String, usize> = BTreeMap::new();
+    let mut records_hasher = Sha256::new();
     let segment_hash: String = {
         let file = std::fs::File::create(&segment_tmp)?;
         let mut hash_writer = HashingWriter::new(&file);
@@ -348,28 +597,39 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
             };
 
             let mut stream_error: Option<BalebosError> = None;
-            storage.each_row_after(last_sealed, |rowid, record_type, record_id, body| {
-                if stream_error.is_some() {
-                    return;
-                }
-                chunk_rowids.push(rowid);
-                chunk_types.push(record_type.clone());
-                chunk_ids.push(record_id);
-                chunk_bodies.push(body);
-                *record_types.entry(record_type).or_insert(0) += 1;
-                record_count += 1;
-                if chunk_rowids.len() >= SEGMENT_CHUNK {
-                    if let Err(e) = flush_chunk(
-                        &mut writer,
-                        &mut chunk_rowids,
-                        &mut chunk_types,
-                        &mut chunk_ids,
-                        &mut chunk_bodies,
-                    ) {
-                        stream_error = Some(e);
+            storage.each_row_after(
+                last_sealed,
+                max_rowid,
+                |rowid, record_type, record_id, body| {
+                    if stream_error.is_some() {
+                        return;
                     }
-                }
-            })?;
+                    update_records_digest(
+                        &mut records_hasher,
+                        rowid,
+                        &record_type,
+                        &record_id,
+                        &body,
+                    );
+                    chunk_rowids.push(rowid);
+                    chunk_types.push(record_type.clone());
+                    chunk_ids.push(record_id);
+                    chunk_bodies.push(body);
+                    *record_types.entry(record_type).or_insert(0) += 1;
+                    record_count += 1;
+                    if chunk_rowids.len() >= SEGMENT_CHUNK {
+                        if let Err(e) = flush_chunk(
+                            &mut writer,
+                            &mut chunk_rowids,
+                            &mut chunk_types,
+                            &mut chunk_ids,
+                            &mut chunk_bodies,
+                        ) {
+                            stream_error = Some(e);
+                        }
+                    }
+                },
+            )?;
             if let Some(e) = stream_error {
                 return Err(e);
             }
@@ -396,15 +656,18 @@ pub fn seal_pending(storage: &SqliteStorage, archive_base: &str) -> Result<SealR
         return Ok(SealReport::default());
     }
 
+    let records_sha256 = format!("{:x}", records_hasher.finalize());
     let manifest = ArchiveManifest {
         archive_id: uuid::Uuid::new_v4().to_string(),
         schema_version: ARCHIVE_SCHEMA_VERSION,
         segment_id: segment_id.clone(),
+        instance_id,
         created_at: Utc::now(),
         boundary: boundary.clone(),
         record_count,
         record_types,
         sha256: segment_hash.clone(),
+        records_sha256,
         previous_segment_sha256: previous,
         source: "balebos-sqlite".to_string(),
     };
@@ -466,15 +729,13 @@ fn count_segment_rows(path: &Path) -> Result<usize> {
     Ok(total)
 }
 
-/// Verify one segment file pair against its manifest.
+/// Verify one segment file pair against its manifest (bounded memory).
 fn verify_segment_files(
     manifest: &ArchiveManifest,
     segment: &Path,
     manifest_file: &Path,
 ) -> Result<()> {
-    let bytes = std::fs::read(segment)
-        .map_err(|e| storage_err(format!("segment {} unreadable: {e}", segment.display())))?;
-    if sha256_hex(&bytes) != manifest.sha256 {
+    if hash_file(segment)? != manifest.sha256 {
         return Err(storage_err(format!(
             "segment {} hash does not match manifest",
             manifest.segment_id
@@ -506,6 +767,7 @@ pub fn verify_archive(storage: &SqliteStorage, archive_base: &str) -> Result<Ver
     let base = Path::new(archive_base);
     let mut report = VerifyReport::default();
 
+    let instance_id = storage.archive_instance_id()?;
     let manifests = storage.archive_manifests()?;
     let mut previous_hash: Option<String> = None;
     let mut previous_to: Option<i64> = None;
@@ -532,6 +794,12 @@ pub fn verify_archive(storage: &SqliteStorage, archive_base: &str) -> Result<Ver
             report.problems.push(format!(
                 "segment {} has unsupported schema version {}",
                 manifest.segment_id, manifest.schema_version
+            ));
+        }
+        if manifest.instance_id != instance_id {
+            report.problems.push(format!(
+                "segment {} belongs to a different journal instance ({})",
+                manifest.segment_id, manifest.instance_id
             ));
         }
         if recorded_sha256.as_str() != manifest.sha256 {
@@ -763,40 +1031,52 @@ mod tests {
             from_rowid: 1,
             to_rowid: 42,
         };
-        let a = deterministic_segment_id(&boundary);
-        let b = deterministic_segment_id(&boundary);
+        let a = deterministic_segment_id("journal-1", &boundary);
+        let b = deterministic_segment_id("journal-1", &boundary);
         assert_eq!(a, b);
         assert_eq!(a.len(), 32);
 
-        let other = deterministic_segment_id(&RecordBoundary {
-            from_rowid: 1,
-            to_rowid: 43,
-        });
-        assert_ne!(a, other);
+        let other_boundary = deterministic_segment_id(
+            "journal-1",
+            &RecordBoundary {
+                from_rowid: 1,
+                to_rowid: 43,
+            },
+        );
+        assert_ne!(a, other_boundary);
+
+        let other_journal = deterministic_segment_id("journal-2", &boundary);
+        assert_ne!(a, other_journal);
     }
 
-    /// Review P0: a crash after publication but before the SQLite state
-    /// update must be recovered by verify-and-adopt, never by writing a
-    /// second segment. Simulated with an equivalent store whose archive
-    /// directory already holds the published files.
+    /// Review P0/P1: a crash after publication but before the SQLite state
+    /// update must be recovered by verify-and-adopt on the same journal,
+    /// never by writing a second segment.
     #[test]
     fn crash_after_publish_is_recovered_by_adoption() {
         let (base, db, archive) = setup();
-        let storage = SqliteStorage::new(&db).unwrap();
-        save_domain(&storage, "a.example.com");
-        save_domain(&storage, "b.example.com");
-        let first = seal_pending(&storage, &archive).unwrap();
-        assert!(!first.adopted_existing);
-        let segment_id = first.segment_id.clone().unwrap();
+        let segment_id = {
+            let storage = SqliteStorage::new(&db).unwrap();
+            save_domain(&storage, "a.example.com");
+            save_domain(&storage, "b.example.com");
+            let first = seal_pending(&storage, &archive).unwrap();
+            assert!(!first.adopted_existing);
+            first.segment_id.unwrap()
+        };
 
-        // Disaster: a second store with the same content (same rowids)
-        // whose archive directory already holds the published files but
-        // has no SQLite state for them — exactly the crash window.
-        let db2 = format!("{db}.recovered");
-        let recovered = SqliteStorage::new(&db2).unwrap();
-        save_domain(&recovered, "a.example.com");
-        save_domain(&recovered, "b.example.com");
+        // Simulate crash before SQLite commit: files are on disk, SQLite
+        // state still thinks nothing was sealed.
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute("DELETE FROM archive_manifests", []).unwrap();
+            conn.execute(
+                "UPDATE archive_state SET last_sealed_rowid = 0 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        }
 
+        let recovered = SqliteStorage::new(&db).unwrap();
         let second = seal_pending(&recovered, &archive).unwrap();
         assert!(
             second.adopted_existing,
@@ -813,12 +1093,202 @@ mod tests {
             .collect();
         assert_eq!(segments.len(), 1, "exactly one segment on disk");
 
-        // Both stores now verify green and agree on state.
         let report = verify_archive(&recovered, &archive).unwrap();
         assert!(report.is_ok(), "problems: {:?}", report.problems);
         assert_eq!(recovered.archive_last_sealed_rowid().unwrap(), 2);
 
+        cleanup(&base);
+    }
+
+    /// Review P2: crash between the Parquet rename and the manifest rename
+    /// leaves the Parquet file on disk without its manifest. Re-running
+    /// seal_pending must verify the Parquet against the DB, publish the
+    /// manifest, and adopt without rewriting the segment.
+    #[test]
+    fn crash_between_parquet_and_manifest_rename_recovers_unambiguously() {
+        let (base, db, archive) = setup();
+        let segment_id = {
+            let storage = SqliteStorage::new(&db).unwrap();
+            save_domain(&storage, "a.example.com");
+            save_domain(&storage, "b.example.com");
+            let first = seal_pending(&storage, &archive).unwrap();
+            first.segment_id.unwrap()
+        };
+
+        // Remove manifest and reset SQLite state to simulate crash right
+        // after `rename(segment_tmp, final_segment_path)`.
+        std::fs::remove_file(manifest_path(Path::new(&archive), &segment_id)).unwrap();
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute("DELETE FROM archive_manifests", []).unwrap();
+            conn.execute(
+                "UPDATE archive_state SET last_sealed_rowid = 0 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        }
+
+        let recovered = SqliteStorage::new(&db).unwrap();
+        let second = seal_pending(&recovered, &archive).unwrap();
+        assert!(second.adopted_existing);
+        assert_eq!(second.segment_id.as_deref(), Some(segment_id.as_str()));
+        assert_eq!(second.record_count, 2);
+        assert!(manifest_path(Path::new(&archive), &segment_id).exists());
+
+        let report = verify_archive(&recovered, &archive).unwrap();
+        assert!(report.is_ok(), "problems: {:?}", report.problems);
+
+        cleanup(&base);
+    }
+
+    /// Review P1: HashingWriter must hash only the exact bytes written by
+    /// `inner.write()`, and must not update the hash on write errors.
+    #[test]
+    fn hashing_writer_handles_partial_writes_and_errors() {
+        struct PartialWriter {
+            written: Vec<u8>,
+            max_chunk: usize,
+            fail_after: Option<usize>,
+        }
+
+        impl Write for PartialWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if let Some(limit) = self.fail_after {
+                    if self.written.len() >= limit {
+                        return Err(std::io::Error::other("injected write error"));
+                    }
+                }
+                let n = buf.len().min(self.max_chunk);
+                self.written.extend_from_slice(&buf[..n]);
+                Ok(n)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let inner = PartialWriter {
+            written: Vec::new(),
+            max_chunk: 3,
+            fail_after: Some(7),
+        };
+        let mut hw = HashingWriter::new(inner);
+
+        let payload = b"abcdefghij";
+        let mut offset = 0;
+        while offset < payload.len() {
+            match hw.write(&payload[offset..]) {
+                Ok(0) => break,
+                Ok(n) => offset += n,
+                Err(_) => break,
+            }
+        }
+
+        let expected = sha256_hex(&hw.inner.written);
+        assert_eq!(hw.inner.written, b"abcdefghi"[..9].to_vec());
+        assert_eq!(hw.finish(), expected);
+    }
+
+    /// Review P1: concurrent appends during sealing must not escape the
+    /// manifest boundary; rows appended after `max_rowid` wait for the
+    /// next seal.
+    #[test]
+    fn concurrent_appends_during_seal_stay_bounded() {
+        let (base, db, archive) = setup();
+        let storage = std::sync::Arc::new(SqliteStorage::new(&db).unwrap());
+        for i in 0..20 {
+            save_domain(&storage, &format!("initial-{i}.example.com"));
+        }
+
+        let writer_store = std::sync::Arc::clone(&storage);
+        let handle = std::thread::spawn(move || {
+            for i in 0..20 {
+                save_domain(&writer_store, &format!("concurrent-{i}.example.com"));
+            }
+        });
+
+        let first = seal_pending(&storage, &archive).unwrap();
+        handle.join().unwrap();
+
+        let first_boundary = first.boundary.unwrap();
+        assert_eq!(
+            first.record_count,
+            (first_boundary.to_rowid - first_boundary.from_rowid + 1) as usize
+        );
+
+        let second = seal_pending(&storage, &archive).unwrap();
+        let total = first.record_count + second.record_count;
+        assert_eq!(total, 40);
+
+        let report = verify_archive(&storage, &archive).unwrap();
+        assert!(report.is_ok(), "problems: {:?}", report.problems);
+
+        cleanup(&base);
+    }
+
+    /// Review P1: two different databases with identical rowid ranges and
+    /// even identical content must have distinct identities and never
+    /// adopt each other's segments.
+    #[test]
+    fn different_databases_do_not_collide_or_adopt() {
+        let (base, db1, archive) = setup();
+        let db2 = format!("{db1}.other");
+
+        let s1 = SqliteStorage::new(&db1).unwrap();
+        save_domain(&s1, "a.example.com");
+        let r1 = seal_pending(&s1, &archive).unwrap();
+
+        let s2 = SqliteStorage::new(&db2).unwrap();
+        save_domain(&s2, "a.example.com");
+        let r2 = seal_pending(&s2, &archive).unwrap();
+
+        assert!(!r2.adopted_existing);
+        assert_ne!(r1.segment_id, r2.segment_id);
+        assert!(verify_archive(&s1, &archive).unwrap().is_ok());
+        assert!(verify_archive(&s2, &archive).unwrap().is_ok());
+
         let _ = std::fs::remove_file(db2);
+        cleanup(&base);
+    }
+
+    /// Review P1: adoption must reject a manifest whose records_sha256 or
+    /// content does not match the database even when segment_id and
+    /// instance_id match.
+    #[test]
+    fn adoption_rejects_mismatched_database_content() {
+        let (base, db, archive) = setup();
+        let segment_id = {
+            let storage = SqliteStorage::new(&db).unwrap();
+            save_domain(&storage, "real.example.com");
+            let first = seal_pending(&storage, &archive).unwrap();
+            first.segment_id.unwrap()
+        };
+
+        // Reset archive state and replace the DB record body in-place
+        // (simulating a different/tampered DB with the same instance_id).
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute("DELETE FROM archive_manifests", []).unwrap();
+            conn.execute(
+                "UPDATE archive_state SET last_sealed_rowid = 0 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE records SET record_id = 'forged.example.com' WHERE rowid = 1",
+                [],
+            )
+            .unwrap();
+        }
+
+        let storage = SqliteStorage::new(&db).unwrap();
+        let err = seal_pending(&storage, &archive).unwrap_err();
+        assert!(
+            err.to_string().contains("adoption failed"),
+            "unexpected error for {segment_id}: {err}"
+        );
+
         cleanup(&base);
     }
 }

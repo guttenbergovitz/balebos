@@ -12,7 +12,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{BalebosError, Result};
 use crate::inventory::ItemType;
@@ -147,11 +147,14 @@ impl SqliteStorage {
             .map_err(sqlite_err)
     }
 
-    /// Stream rows after `rowid` to `f`, one at a time, in rowid order.
-    /// Memory-bounded alternative to `rows_after` for large selections.
+    /// Stream rows in the half-open range (after_rowid, up_to_rowid] to
+    /// `f`, one at a time, in rowid order. Memory-bounded alternative to
+    /// `rows_after`; the upper bound pins the selection so rows appended
+    /// mid-seal cannot escape the manifest boundary.
     pub fn each_row_after(
         &self,
-        rowid: i64,
+        after_rowid: i64,
+        up_to_rowid: i64,
         mut f: impl FnMut(i64, String, String, String),
     ) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| {
@@ -162,11 +165,11 @@ impl SqliteStorage {
         let mut stmt = conn
             .prepare(
                 "SELECT rowid, record_type, record_id, body FROM records \
-                 WHERE rowid > ?1 ORDER BY rowid",
+                 WHERE rowid > ?1 AND rowid <= ?2 ORDER BY rowid",
             )
             .map_err(sqlite_err)?;
         let rows = stmt
-            .query_map(params![rowid], |row| {
+            .query_map(params![after_rowid, up_to_rowid], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })
             .map_err(sqlite_err)?;
@@ -175,6 +178,42 @@ impl SqliteStorage {
             f(rowid, record_type, record_id, body);
         }
         Ok(())
+    }
+
+    /// Durable identity of this evidence journal. Generated once per
+    /// database; archive manifests bind segments to it so files from a
+    /// different database can never be adopted here.
+    pub fn archive_instance_id(&self) -> Result<String> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS archive_identity (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                instance_id TEXT NOT NULL
+            );",
+        )
+        .map_err(sqlite_err)?;
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT instance_id FROM archive_identity WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(sqlite_err)?;
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO archive_identity (id, instance_id) VALUES (1, ?1)",
+            params![id],
+        )
+        .map_err(sqlite_err)?;
+        Ok(id)
     }
 
     /// Record a sealed segment: manifest row plus the new boundary, in one
