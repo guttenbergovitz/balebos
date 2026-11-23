@@ -4,7 +4,7 @@ use std::sync::Arc;
 use balebos::cli::{handlers, parse_command, Command};
 use balebos::exit_codes::*;
 use balebos::ignore::load_ignore_patterns;
-use balebos::storage::{ParquetStorage, StorageEngine};
+use balebos::storage::StorageEngine;
 
 fn print_usage() {
     eprintln!("Usage:");
@@ -84,16 +84,13 @@ fn print_usage() {
 }
 
 fn main() {
-    // Engine selection: SQLite (ADR 0012) is the target default; the legacy
-    // Parquet engine remains the default until the migration path (ADR 0018)
-    // is verified. BALEBOS_STORAGE=sqlite opts in early.
-    let storage: Arc<dyn StorageEngine> = match std::env::var("BALEBOS_STORAGE").as_deref() {
-        Ok("sqlite") => Arc::new(
-            balebos::storage::SqliteStorage::new("data/balebos.db")
-                .expect("Failed to initialise SQLite storage"),
-        ),
-        _ => Arc::new(ParquetStorage::new("data/parquet").expect("Failed to initialize storage")),
-    };
+    // SQLite is the authoritative operational store (ADR 0012); it became
+    // the default engine in Phase E after the migration path (ADR 0018)
+    // shipped. Legacy Parquet data imports via `balebos migrate`.
+    let storage: Arc<dyn StorageEngine> = Arc::new(
+        balebos::storage::SqliteStorage::new("data/balebos.db")
+            .expect("Failed to initialise SQLite storage"),
+    );
 
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 

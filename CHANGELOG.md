@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default storage engine is now SQLite (`data/balebos.db`); the legacy
+  Parquet engine and the Polars dependency are removed from the default
+  build (ADRs 0012/0013/0017). Legacy data imports via `balebos migrate`
+  (build with `--features parquet-archive`).
+
+### Measured (Phase E, cold `cargo build --release`, isolated target dir,
+same machine, rustc 1.100.0)
+
+| Metric | Baseline (pre-Phase E) | Now | Change |
+|---|---|---|---|
+| Cold release wall time | 4m 01s | 44.1s | **5.5× faster** |
+| Release binary | 84,028,768 B (~80 MiB) | 7,028,656 B (~6.7 MiB) | **12× smaller** |
+| Unique packages | 424 | 135 | **3.1× fewer** |
+| Cold target dir | 1.1 GiB | 272 MiB | 4× smaller |
+
 ## [2.0.0-alpha.1] - 2026-11-23
 
 Pre-release of the 2.0 realignment: product scope, engineering foundation,

@@ -214,11 +214,11 @@ pub fn display_lifecycle_summary(storage: &Arc<dyn StorageEngine>) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::ParquetStorage;
+    use crate::storage::SqliteStorage;
 
     fn create_test_storage() -> Arc<dyn StorageEngine> {
-        let temp_dir = format!("/tmp/test_balebos_{}", uuid::Uuid::new_v4());
-        Arc::new(ParquetStorage::new(&temp_dir).unwrap())
+        let path = format!("/tmp/test_balebos_{}.db", uuid::Uuid::new_v4());
+        Arc::new(SqliteStorage::new(&path).unwrap())
     }
 
     #[test]
