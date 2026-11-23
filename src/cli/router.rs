@@ -60,6 +60,16 @@ pub enum Command {
         max_candidates: usize,
         scope_domains: Vec<String>,
     },
+    SourcesStatus,
+    Discover {
+        source: String,
+        domain: String,
+        input_file: Option<String>,
+        scope_domains: Vec<String>,
+    },
+    DiscoveryReport {
+        json: bool,
+    },
 }
 
 pub enum ProbeKind {
@@ -299,6 +309,29 @@ pub fn parse_command() -> Option<Command> {
                 target,
                 max_depth,
                 max_candidates,
+                scope_domains,
+            })
+        }
+        "sources" if args.get(2).is_some_and(|a| a == "status") => Some(Command::SourcesStatus),
+        "discovery" if args.get(2).is_some_and(|a| a == "report") => {
+            let json = args.iter().any(|a| a == "--json");
+            Some(Command::DiscoveryReport { json })
+        }
+        "discover" => {
+            let source = find_flag_value(args.as_slice(), "--source")?;
+            let input_file = find_flag_value(args.as_slice(), "--input");
+            let scope_domains = find_flag_value(args.as_slice(), "--scope")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
+            let domain = args
+                .iter()
+                .skip(2)
+                .find(|a| !a.starts_with("--"))
+                .cloned()?;
+            Some(Command::Discover {
+                source,
+                domain,
+                input_file,
                 scope_domains,
             })
         }
