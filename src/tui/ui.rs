@@ -1254,7 +1254,7 @@ fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, area);
 
-    let mut text = vec![
+    let text = vec![
         Line::from(""),
         Line::from(vec![
             Span::styled("1. ", Style::default().fg(Color::Green)),
@@ -1311,31 +1311,6 @@ fn draw_lifecycle_edit_modal(f: &mut Frame, app: &App) {
             },
         ]),
     ];
-
-    if let Some(asset) = app.selected_asset() {
-        let rels: Vec<_> = app
-            .relationships
-            .iter()
-            .filter(|r| r.source.id == asset.name || r.target.id == asset.name)
-            .take(6)
-            .collect();
-        if !rels.is_empty() {
-            text.push(Line::from(""));
-            text.push(Line::from(Span::styled(
-                "Relationships & Evidence:",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )));
-            for rel in rels {
-                let state = if rel.is_current { "current" } else { "past" };
-                text.push(Line::from(format!(
-                    "  • {} --[{}]--> {} [{}, {}]",
-                    rel.source.id, rel.kind, rel.target.id, state, rel.signal
-                )));
-            }
-        }
-    }
 
     let paragraph = Paragraph::new(text).block(block);
     f.render_widget(paragraph, area);

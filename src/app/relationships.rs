@@ -135,6 +135,13 @@ pub fn project_relationships_before(
             continue;
         }
         let src = host_entity(&dns.target);
+        // Always advance latest_at for DNS relationship kinds on a valid DNS
+        // observation so an empty re-observation marks prior edges historical.
+        bump_latest(&src.id, RelationshipKind::ResolvesTo, dns.checked_at);
+        bump_latest(&src.id, RelationshipKind::AliasesTo, dns.checked_at);
+        bump_latest(&src.id, RelationshipKind::UsesNameserver, dns.checked_at);
+        bump_latest(&src.id, RelationshipKind::RoutesMailTo, dns.checked_at);
+
         for ip in dns.a.iter().chain(dns.aaaa.iter()) {
             bump_latest(&src.id, RelationshipKind::ResolvesTo, dns.checked_at);
             record_edge(
@@ -215,6 +222,16 @@ pub fn project_relationships_before(
             continue;
         }
         let src = host_entity(&http.target);
+        if http.status.is_some() {
+            // A successful HTTP observation without TLS/redirects supersedes
+            // prior edges; failed probes (status == None) do not erase history.
+            bump_latest(
+                &src.id,
+                RelationshipKind::PresentsCertificate,
+                http.checked_at,
+            );
+            bump_latest(&src.id, RelationshipKind::RedirectsTo, http.checked_at);
+        }
         if let Some(tls) = &http.tls {
             if !tls.fingerprint_sha256.is_empty() {
                 bump_latest(
@@ -371,6 +388,45 @@ fn extract_host(url_or_host: &str) -> Option<String> {
     }
 }
 
+/// Independent signal planes used to avoid treating correlated attributes
+/// (such as IP + TLS cert on one CDN) as independent confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SignalPlane {
+    NetworkAddress,
+    TlsIdentity,
+    DnsDelegation,
+    HttpNavigation,
+}
+
+fn signal_plane(kind: RelationshipKind) -> SignalPlane {
+    match kind {
+        RelationshipKind::ResolvesTo | RelationshipKind::BelongsToAsn => {
+            SignalPlane::NetworkAddress
+        }
+        RelationshipKind::PresentsCertificate => SignalPlane::TlsIdentity,
+        RelationshipKind::AliasesTo
+        | RelationshipKind::UsesNameserver
+        | RelationshipKind::RoutesMailTo => SignalPlane::DnsDelegation,
+        RelationshipKind::RedirectsTo | RelationshipKind::HostedBy => SignalPlane::HttpNavigation,
+    }
+}
+
+fn edges_overlap(a: &ObservedRelationship, b: &ObservedRelationship) -> bool {
+    a.evidence.first_seen <= b.evidence.last_seen && b.evidence.first_seen <= a.evidence.last_seen
+}
+
+fn is_shared_cdn_or_platform(records: &Records, host_a: &str, host_b: &str) -> bool {
+    let hosts = [host_a, host_b];
+    records
+        .hosting_observations
+        .iter()
+        .any(|h| hosts.contains(&normalise_host(&h.target).as_str()) && h.cdn_detected)
+        || records
+            .http_observations
+            .iter()
+            .any(|h| hosts.contains(&normalise_host(&h.target).as_str()) && h.cdn_name.is_some())
+}
+
 /// Shared-infrastructure clue between the queried entity and another entity
 /// via a common intermediate (IP, certificate, ASN, CNAME, NS, MX).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -378,6 +434,7 @@ pub struct SharedInfrastructureClue {
     pub other_entity: EntityRef,
     pub via: Vec<(RelationshipKind, EntityRef)>,
     pub signal: SignalCategory,
+    pub concurrent: bool,
     pub uncertainty: String,
 }
 
@@ -400,48 +457,76 @@ pub fn related_entities(records: &Records, query: &str) -> RelatedReport {
         .cloned()
         .collect();
 
-    // Find other entities that point to the same intermediate targets
-    // (IP, TLS certificate, CNAME, NS, MX, redirect target).
-    let mut by_shared_target: BTreeMap<String, Vec<(RelationshipKind, EntityRef, EntityRef)>> =
-        BTreeMap::new();
-    let query_targets: BTreeSet<(RelationshipKind, String)> = edges
+    // Index all non-provider edges of the queried entity by (kind, target_id).
+    let query_edges: Vec<&ObservedRelationship> = edges
         .iter()
         .filter(|e| e.source.id == norm && e.kind != RelationshipKind::HostedBy)
-        .map(|e| (e.kind, e.target.id.clone()))
         .collect();
 
-    for e in &edges {
-        if e.source.id != norm && query_targets.contains(&(e.kind, e.target.id.clone())) {
-            by_shared_target
-                .entry(e.source.id.clone())
-                .or_default()
-                .push((e.kind, e.target.clone(), e.source.clone()));
+    let mut by_shared_target: BTreeMap<
+        String,
+        Vec<(&ObservedRelationship, &ObservedRelationship)>,
+    > = BTreeMap::new();
+
+    for qe in &query_edges {
+        for other in &edges {
+            if other.source.id != norm && other.kind == qe.kind && other.target.id == qe.target.id {
+                by_shared_target
+                    .entry(other.source.id.clone())
+                    .or_default()
+                    .push((qe, other));
+            }
         }
     }
 
     let shared_clues = by_shared_target
         .into_values()
-        .map(|entries| {
-            let other_entity = entries[0].2.clone();
-            let via: Vec<(RelationshipKind, EntityRef)> = entries
-                .into_iter()
-                .map(|(k, t, _)| (k, t))
-                .collect();
-            let distinct_kinds: BTreeSet<RelationshipKind> = via.iter().map(|(k, _)| *k).collect();
-            let signal = if distinct_kinds.len() >= 2 {
-                SignalCategory::StrongCandidate
+        .map(|pairs| {
+            let other_entity = pairs[0].1.source.clone();
+            let mut concurrent = false;
+            let mut concurrent_planes: BTreeSet<SignalPlane> = BTreeSet::new();
+            let mut via = Vec::new();
+
+            for (qe, other) in &pairs {
+                via.push((other.kind, other.target.clone()));
+                if edges_overlap(qe, other) {
+                    concurrent = true;
+                    concurrent_planes.insert(signal_plane(other.kind));
+                }
+            }
+
+            let cdn_only_ip_cert = concurrent_planes.len() == 2
+                && concurrent_planes.contains(&SignalPlane::NetworkAddress)
+                && concurrent_planes.contains(&SignalPlane::TlsIdentity)
+                && is_shared_cdn_or_platform(records, &norm, &other_entity.id);
+
+            let (signal, uncertainty) = if !concurrent {
+                (
+                    SignalCategory::WeakSharedClue,
+                    "Historical-only shared infrastructure (observation windows do not overlap)".to_string(),
+                )
+            } else if cdn_only_ip_cert {
+                (
+                    SignalCategory::WeakSharedClue,
+                    "Shared IP and TLS certificate behind CDN/shared platform; does not indicate common ownership".to_string(),
+                )
+            } else if concurrent_planes.len() >= 2 {
+                (
+                    SignalCategory::StrongCandidate,
+                    "Concurrent match across multiple signal planes; still requires operator verification for ownership".to_string(),
+                )
             } else {
-                SignalCategory::WeakSharedClue
+                (
+                    SignalCategory::WeakSharedClue,
+                    "Single concurrent shared infrastructure signal; may be CDN, shared hosting or third-party service".to_string(),
+                )
             };
-            let uncertainty = if distinct_kinds.len() >= 2 {
-                "Multiple independent technical signals match; still requires operator verification for ownership".to_string()
-            } else {
-                "Single shared infrastructure signal; may be CDN, shared hosting or third-party service".to_string()
-            };
+
             SharedInfrastructureClue {
                 other_entity,
                 via,
                 signal,
+                concurrent,
                 uncertainty,
             }
         })
@@ -454,13 +539,21 @@ pub fn related_entities(records: &Records, query: &str) -> RelatedReport {
     }
 }
 
+/// A shared-infrastructure path between two entities with temporal overlap status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedPath {
+    pub left: ObservedRelationship,
+    pub right: ObservedRelationship,
+    pub concurrent: bool,
+}
+
 /// Explanation of how two entities are connected (directly or via a shared intermediate).
 #[derive(Debug, Clone)]
 pub struct ExplainReport {
     pub entity_a: String,
     pub entity_b: String,
     pub direct_edges: Vec<ObservedRelationship>,
-    pub shared_paths: Vec<(ObservedRelationship, ObservedRelationship)>,
+    pub shared_paths: Vec<SharedPath>,
     pub summary: String,
 }
 
@@ -488,7 +581,11 @@ pub fn explain_connection(records: &Records, a: &str, b: &str) -> ExplainReport 
     for ea in &edges_a {
         for eb in &edges_b {
             if ea.target.id == eb.target.id && ea.kind == eb.kind {
-                shared_paths.push(((*ea).clone(), (*eb).clone()));
+                shared_paths.push(SharedPath {
+                    left: (*ea).clone(),
+                    right: (*eb).clone(),
+                    concurrent: edges_overlap(ea, eb),
+                });
             }
         }
     }
@@ -501,9 +598,12 @@ pub fn explain_connection(records: &Records, a: &str, b: &str) -> ExplainReport 
             norm_b
         )
     } else if !shared_paths.is_empty() {
+        let concurrent_count = shared_paths.iter().filter(|p| p.concurrent).count();
         format!(
-            "Found {} shared-infrastructure path(s) between {} and {}; shared infrastructure alone does not prove common ownership.",
+            "Found {} shared-infrastructure path(s) ({} concurrent, {} historical-only) between {} and {}; shared infrastructure alone does not prove common ownership.",
             shared_paths.len(),
+            concurrent_count,
+            shared_paths.len() - concurrent_count,
             norm_a,
             norm_b
         )
@@ -791,5 +891,100 @@ mod tests {
         assert!(complete
             .iter()
             .any(|c| c.change_kind == RelationshipChangeKind::VerifiedRemoval));
+    }
+
+    #[test]
+    fn empty_reobservation_marks_previous_edge_historical() {
+        let t1 = Utc::now() - chrono::Duration::hours(24);
+        let t2 = Utc::now() - chrono::Duration::minutes(5);
+
+        let mut records = Records::default();
+        records
+            .dns_observations
+            .push(dns_obs("d1", "stale.example.com", &["203.0.113.10"], t1));
+        // Later valid DNS observation returns no A/AAAA records.
+        records
+            .dns_observations
+            .push(dns_obs("d2", "stale.example.com", &[], t2));
+
+        let edges = project_relationships(&records);
+        assert_eq!(edges.len(), 1);
+        assert!(
+            !edges[0].is_current,
+            "old IP must become historical when a newer DNS check returns no IPs"
+        );
+    }
+
+    #[test]
+    fn non_overlapping_shared_ip_is_marked_historical_only() {
+        let t1 = Utc::now() - chrono::Duration::days(10);
+        let t2 = Utc::now() - chrono::Duration::days(1);
+
+        let mut records = Records::default();
+        records
+            .dns_observations
+            .push(dns_obs("d1", "old.example.com", &["203.0.113.10"], t1));
+        records
+            .dns_observations
+            .push(dns_obs("d2", "new.example.net", &["203.0.113.10"], t2));
+
+        let rel = related_entities(&records, "old.example.com");
+        assert_eq!(rel.shared_clues.len(), 1);
+        assert!(!rel.shared_clues[0].concurrent);
+
+        let explained = explain_connection(&records, "old.example.com", "new.example.net");
+        assert_eq!(explained.shared_paths.len(), 1);
+        assert!(!explained.shared_paths[0].concurrent);
+        assert!(explained
+            .summary
+            .contains("0 concurrent, 1 historical-only"));
+    }
+
+    #[test]
+    fn shared_cdn_ip_and_cert_remains_weak_shared_clue() {
+        let now = Utc::now();
+        let mut records = Records::default();
+        records
+            .dns_observations
+            .push(dns_obs("d1", "one.example.com", &["203.0.113.10"], now));
+        records
+            .dns_observations
+            .push(dns_obs("d2", "two.example.net", &["203.0.113.10"], now));
+
+        for (id, host) in [("h1", "one.example.com"), ("h2", "two.example.net")] {
+            records.http_observations.push(HttpObservation {
+                item_type: ItemType::HttpCheck,
+                id: id.to_string(),
+                asset_type: "domain".to_string(),
+                target: host.to_string(),
+                status: Some(200),
+                response_time_ms: 10,
+                final_url: None,
+                redirect_chain: vec![],
+                tls: Some(TlsObservation {
+                    subject_dn: "CN=cdn".to_string(),
+                    issuer_dn: "CN=CA".to_string(),
+                    not_before: now,
+                    not_after: now + chrono::Duration::days(90),
+                    fingerprint_sha256: "deadbeef".to_string(),
+                }),
+                tech: vec![],
+                webserver: None,
+                title: None,
+                cdn_name: Some("Cloudflare".to_string()),
+                favicon_hash: None,
+                checked_at: now,
+                source: "httpx".to_string(),
+                error_kind: None,
+                error_message: None,
+            });
+        }
+
+        let report = related_entities(&records, "one.example.com");
+        assert_eq!(report.shared_clues.len(), 1);
+        assert_eq!(
+            report.shared_clues[0].signal,
+            SignalCategory::WeakSharedClue
+        );
     }
 }

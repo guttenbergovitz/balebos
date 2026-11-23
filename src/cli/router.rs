@@ -58,6 +58,7 @@ pub enum Command {
         target: String,
         max_depth: usize,
         max_candidates: usize,
+        scope_domains: Vec<String>,
     },
 }
 
@@ -291,10 +292,14 @@ pub fn parse_command() -> Option<Command> {
             let max_candidates = find_flag_value(args.as_slice(), "--limit")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(50);
+            let scope_domains = find_flag_value(args.as_slice(), "--scope")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
             Some(Command::Pivot {
                 target,
                 max_depth,
                 max_candidates,
+                scope_domains,
             })
         }
         "migrate" => {

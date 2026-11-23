@@ -186,10 +186,15 @@ fn main() {
             target,
             max_depth,
             max_candidates,
+            scope_domains,
         } => {
-            if let Err(e) =
-                handlers::relationships::cmd_pivot(&target, max_depth, max_candidates, &storage)
-            {
+            if let Err(e) = handlers::relationships::cmd_pivot(
+                &target,
+                max_depth,
+                max_candidates,
+                &scope_domains,
+                &storage,
+            ) {
                 eprintln!("Pivot discovery failed: {e}");
                 process::exit(EXIT_STORAGE_ERROR);
             }
