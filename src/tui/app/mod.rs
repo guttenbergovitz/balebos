@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use crate::error::BalebosError;
 
 use crate::storage::StorageEngine;
-use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
+use crate::tui::model::{load_tui_model_from_records, OrgModel, TuiModel};
 use crate::tui::state::{
     DriftState, FindingsState, FormState, InventoryState, OrgState, ProjectsState,
 };
@@ -43,12 +43,11 @@ impl Tab {
 
 /// Coverage of the most recent scan report, or None when no scan has
 /// been recorded yet.
-fn compute_coverage(storage: &Arc<dyn StorageEngine>) -> Option<bool> {
-    let records = storage.read_all_records().ok()?;
+fn compute_coverage_from_records(records: &crate::storage::reader::Records) -> Option<bool> {
     if records.scan_reports.is_empty() {
         return None;
     }
-    Some(crate::app::snapshot::latest_scan_is_complete(&records))
+    Some(crate::app::snapshot::latest_scan_is_complete(records))
 }
 
 /// Type of entity being added in OrgAdding mode
@@ -249,10 +248,11 @@ pub struct App {
 
 impl App {
     pub fn new(storage: Arc<dyn StorageEngine>) -> Result<Self, BalebosError> {
-        let model = load_tui_model(&storage)?;
-        let org_model = OrgModel::load(&storage)?;
+        let records = storage.read_all_records()?;
+        let model = load_tui_model_from_records(&records);
+        let org_model = OrgModel::load_from_records(&records);
         let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");
-        let coverage = compute_coverage(&storage);
+        let coverage = compute_coverage_from_records(&records);
 
         let mut app = Self {
             model,
@@ -314,9 +314,14 @@ impl App {
     }
 
     pub fn refresh(&mut self) -> Result<(), BalebosError> {
-        self.model = load_tui_model(&self.storage)?;
-        self.org_model = OrgModel::load(&self.storage)?;
-        self.coverage_complete = compute_coverage(&self.storage);
+        let records = self.storage.read_all_records()?;
+        self.model = load_tui_model_from_records(&records);
+        self.org_model = OrgModel::load_from_records(&records);
+        self.coverage_complete = compute_coverage_from_records(&records);
+        self.load_findings_from_records(&records);
+        if self.drift.loaded {
+            self.load_drift_from_records(&records);
+        }
         self.update_visible_items();
         self.update_org_selection();
         Ok(())

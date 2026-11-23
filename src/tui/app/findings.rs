@@ -6,19 +6,21 @@ use crate::tui::app::App;
 
 impl App {
     pub fn load_findings(&mut self) -> Result<(), BalebosError> {
-        // Read all records from storage
         let records = self.storage.read_all_records()?;
+        self.load_findings_from_records(&records);
+        Ok(())
+    }
 
-        // Extract findings and events
-        self.findings.all_findings = records.findings;
-        self.findings.all_events = records.finding_events;
+    pub fn load_findings_from_records(&mut self, records: &crate::storage::reader::Records) {
+        self.findings.all_findings = records.findings.clone();
+        self.findings.all_events = records.finding_events.clone();
         self.findings.apply_filter();
 
         if !self.findings.visible_findings.is_empty() {
             self.findings.table_state.select(Some(0));
+        } else {
+            self.findings.table_state.select(None);
         }
-
-        Ok(())
     }
 
     pub fn findings_next(&mut self) {
@@ -62,11 +64,26 @@ impl App {
     pub fn run_findings_scan(&mut self) {
         use crate::app::check::run_checks_and_persist;
 
+        let already_scanning = {
+            let mut scanning = self.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
+            if *scanning {
+                true
+            } else {
+                *scanning = true;
+                false
+            }
+        };
+        if already_scanning {
+            self.set_status("Scan already in progress...".to_string());
+            return;
+        }
+
         self.set_status("Running findings scan...".to_string());
 
         // Run checks in background thread
         let storage = self.storage.clone();
         let ignore_patterns = self.ignore_patterns.clone();
+        let is_scanning = self.is_scanning.clone();
         let scan_status = self.scan_status.clone();
 
         std::thread::spawn(move || {
@@ -93,6 +110,9 @@ impl App {
                     status.timestamp = chrono::Utc::now();
                 }
             }
+
+            let mut scanning = is_scanning.lock().unwrap_or_else(|p| p.into_inner());
+            *scanning = false;
         });
     }
 

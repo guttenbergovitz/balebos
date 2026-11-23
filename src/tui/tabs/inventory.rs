@@ -132,8 +132,9 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                 Some(http) => {
                     if !http.tech.is_empty() {
                         let t = http.tech.join(", ");
-                        if t.len() > 30 {
-                            format!("{}...", &t[..27])
+                        if t.chars().count() > 30 {
+                            let prefix: String = t.chars().take(27).collect();
+                            format!("{}...", prefix)
                         } else {
                             t
                         }

@@ -40,11 +40,7 @@ pub fn run(storage: Arc<dyn StorageEngine>) -> crate::error::Result<()> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err);
-    }
-
-    Ok(())
+    res
 }
 
 fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
@@ -92,7 +88,9 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
         let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
         if last_scan_state && !is_scanning {
             // Scan just finished, auto-refresh
-            let _ = app.refresh();
+            if let Err(e) = app.refresh() {
+                app.set_status(format!("❌ Refresh failed: {e}"));
+            }
         }
         last_scan_state = is_scanning;
 
@@ -230,7 +228,20 @@ fn handle_drift_keys(app: &mut App, code: KeyCode) {
             app.drift_previous();
         }
         KeyCode::Char('R') => {
-            let _ = app.load_drift();
+            if let Err(e) = app.load_drift() {
+                app.set_status(format!("❌ Failed to load drift: {e}"));
+            }
+        }
+        KeyCode::Char('i') | KeyCode::Enter => {
+            if let Some((finding, _)) = app.drift.selected_finding() {
+                let target = finding.asset.clone();
+                if app.select_asset_by_name(&target) {
+                    app.asset_details_scroll = 0;
+                    app.input_mode = InputMode::AssetDetails;
+                } else {
+                    app.set_status(format!("No inventory details cached for {target}"));
+                }
+            }
         }
         _ => {}
     }
