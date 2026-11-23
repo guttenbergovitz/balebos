@@ -623,6 +623,29 @@ pub fn run_single_recon_with_progress(
     on_step: &dyn Fn(&str),
     on_result: &dyn Fn(&ReconStepResult),
 ) -> crate::error::Result<Vec<ReconStepResult>> {
+    let run_id = format!("run-{}", chrono::Utc::now().format("%Y%m%d%H%M%S"));
+    run_single_recon_with_events(
+        &run_id,
+        domain,
+        storage,
+        ignore_patterns,
+        on_step,
+        on_result,
+        &|_| {},
+    )
+}
+
+/// Run single-domain reconnaissance while emitting typed [`crate::domain::scan_event::ScanEvent`]s.
+pub fn run_single_recon_with_events(
+    run_id: &str,
+    domain: &str,
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+    on_step: &dyn Fn(&str),
+    on_result: &dyn Fn(&ReconStepResult),
+    on_event: &dyn Fn(crate::domain::scan_event::ScanEvent),
+) -> crate::error::Result<Vec<ReconStepResult>> {
+    use crate::domain::scan_event::ScanEvent;
     let allow_internal = crate::app::probe::scope::internal_allowed_from_env();
     if let Err(denial) = crate::app::probe::scope::check_scope(domain, allow_internal) {
         return Err(crate::error::BalebosError::Validation(format!(
@@ -675,9 +698,24 @@ pub fn run_single_recon_with_progress(
     }
 
     // 2. Run RDAP probe (apex domain)
+    if crate::app::probe::process::is_cancelled() {
+        return Ok(results);
+    }
     on_step("Probing RDAP registration...");
+    on_event(ScanEvent::StageStarted {
+        run_id: run_id.to_string(),
+        stage: "rdap".to_string(),
+        total_targets: Some(1),
+        at: chrono::Utc::now(),
+    });
     match probe::run_rdap_probe(storage, domain) {
         Ok(_) => {
+            on_event(ScanEvent::ObservationSaved {
+                run_id: run_id.to_string(),
+                kind: "rdap".to_string(),
+                target: domain.to_string(),
+                at: chrono::Utc::now(),
+            });
             let r = ReconStepResult {
                 name: "rdap",
                 success: true,
@@ -698,9 +736,27 @@ pub fn run_single_recon_with_progress(
     }
 
     // 3. Discover subdomains
+    if crate::app::probe::process::is_cancelled() {
+        return Ok(results);
+    }
     on_step("Discovering subdomains...");
+    on_event(ScanEvent::StageStarted {
+        run_id: run_id.to_string(),
+        stage: "subdomains".to_string(),
+        total_targets: None,
+        at: chrono::Utc::now(),
+    });
     let subdomains = match probe::probe_subdomains(domain, storage) {
         Ok(subs) => {
+            for sub in &subs {
+                on_event(ScanEvent::CandidateDiscovered {
+                    run_id: run_id.to_string(),
+                    kind: "subdomain".to_string(),
+                    entity: sub.clone(),
+                    source: "subfinder".to_string(),
+                    at: chrono::Utc::now(),
+                });
+            }
             let r = ReconStepResult {
                 name: "subdomains",
                 success: true,
@@ -733,9 +789,34 @@ pub fn run_single_recon_with_progress(
     }
 
     // 5. Batch DNS Probe
+    if crate::app::probe::process::is_cancelled() {
+        return Ok(results);
+    }
     on_step("Probing DNS records...");
+    on_event(ScanEvent::StageStarted {
+        run_id: run_id.to_string(),
+        stage: "dns".to_string(),
+        total_targets: Some(targets.len()),
+        at: chrono::Utc::now(),
+    });
     let dns_observations = match probe::probe_dns_batch(&targets, storage) {
         Ok(obs) => {
+            for o in &obs {
+                on_event(ScanEvent::TargetCompleted {
+                    run_id: run_id.to_string(),
+                    stage: "dns".to_string(),
+                    target: o.target.clone(),
+                    ok: true,
+                    detail: None,
+                    at: chrono::Utc::now(),
+                });
+                on_event(ScanEvent::ObservationSaved {
+                    run_id: run_id.to_string(),
+                    kind: "dns".to_string(),
+                    target: o.target.clone(),
+                    at: chrono::Utc::now(),
+                });
+            }
             let r = ReconStepResult {
                 name: "dns",
                 success: true,
@@ -775,6 +856,15 @@ pub fn run_single_recon_with_progress(
     let skipped = targets.len().saturating_sub(http_targets.len());
 
     on_step("Probing HTTP status...");
+    if crate::app::probe::process::is_cancelled() {
+        return Ok(results);
+    }
+    on_event(ScanEvent::StageStarted {
+        run_id: run_id.to_string(),
+        stage: "http".to_string(),
+        total_targets: Some(http_targets.len()),
+        at: chrono::Utc::now(),
+    });
     let http_observations = if http_targets.is_empty() {
         let r = ReconStepResult {
             name: "http",
@@ -787,6 +877,14 @@ pub fn run_single_recon_with_progress(
     } else {
         match probe::probe_http_batch(&http_targets, storage) {
             Ok(obs) => {
+                for o in &obs {
+                    on_event(ScanEvent::ObservationSaved {
+                        run_id: run_id.to_string(),
+                        kind: "http".to_string(),
+                        target: o.target.clone(),
+                        at: chrono::Utc::now(),
+                    });
+                }
                 let success_count = obs.iter().filter(|o| o.status.is_some()).count();
                 let r = ReconStepResult {
                     name: "http",
