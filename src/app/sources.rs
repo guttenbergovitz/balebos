@@ -103,6 +103,76 @@ pub fn registered_sources() -> Vec<DiscoverySourceDescriptor> {
             limitations:
                 "Provider first_seen/last_seen are historical claims, not uninterrupted validity",
         },
+        DiscoverySourceDescriptor {
+            id: "censys",
+            api_version: "censys-hosts-v2",
+            mode: OperationMode::Passive,
+            requires_credentials: true,
+            scope_required: false,
+            rate_limit_hint: "Optional API credentials; offline JSON import/fixtures supported",
+            limitations:
+                "Indexed service observations carry provider timestamps; never a live Balebos check",
+        },
+        DiscoverySourceDescriptor {
+            id: "shodan",
+            api_version: "shodan-host-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: true,
+            scope_required: false,
+            rate_limit_hint: "Optional API key; offline JSON import/fixtures supported",
+            limitations:
+                "Banners may be stale or spoofed; port numbers never prove application protocol",
+        },
+        DiscoverySourceDescriptor {
+            id: "urlscan_io_indexed",
+            api_version: "urlscan-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: false,
+            scope_required: false,
+            rate_limit_hint: "Public indexed search; active submission requires explicit scope",
+            limitations:
+                "Browser requests show client-side fetches, not proven backend dependencies",
+        },
+        DiscoverySourceDescriptor {
+            id: "js_static",
+            api_version: "balebos-js-ref-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: false,
+            scope_required: false,
+            rate_limit_hint: "Bounded static scan (512 KiB/asset, no execution)",
+            limitations:
+                "Static references may be deprecated, dev-only, or dead; never proves runtime traffic",
+        },
+        DiscoverySourceDescriptor {
+            id: "openapi",
+            api_version: "balebos-openapi-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: false,
+            scope_required: false,
+            rate_limit_hint: "Static OpenAPI 3.x / Swagger 2.0 JSON parse (no execution)",
+            limitations:
+                "Declared servers are specifications, not verified reachable endpoints",
+        },
+        DiscoverySourceDescriptor {
+            id: "dns_srv_txt",
+            api_version: "balebos-dns-ref-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: false,
+            scope_required: false,
+            rate_limit_hint: "Derived from collected DNS SRV/TXT records",
+            limitations:
+                "Service/policy declarations only; opaque verification tokens are excluded",
+        },
+        DiscoverySourceDescriptor {
+            id: "public_repo",
+            api_version: "balebos-repo-ref-v1",
+            mode: OperationMode::Passive,
+            requires_credentials: false,
+            scope_required: false,
+            rate_limit_hint: "Bounded authorised config inspection",
+            limitations:
+                "Repository declarations may be historical, dev-only, or undeployed",
+        },
     ]
 }
 

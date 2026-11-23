@@ -51,6 +51,10 @@ pub enum ItemType {
     EnrichmentCandidate,
     #[serde(rename = "candidate_review")]
     CandidateReview,
+    #[serde(rename = "service_observation")]
+    ServiceObservation,
+    #[serde(rename = "application_reference")]
+    ApplicationReference,
 }
 
 impl ItemType {
@@ -78,6 +82,8 @@ impl ItemType {
             ItemType::ScanReport => "scan_report",
             ItemType::EnrichmentCandidate => "enrichment_candidate",
             ItemType::CandidateReview => "candidate_review",
+            ItemType::ServiceObservation => "service_observation",
+            ItemType::ApplicationReference => "application_reference",
         }
     }
 
@@ -109,6 +115,8 @@ impl ItemType {
             "scan_report" => Some(ItemType::ScanReport),
             "enrichment_candidate" => Some(ItemType::EnrichmentCandidate),
             "candidate_review" => Some(ItemType::CandidateReview),
+            "service_observation" => Some(ItemType::ServiceObservation),
+            "application_reference" => Some(ItemType::ApplicationReference),
             _ => None,
         }
     }

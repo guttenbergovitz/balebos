@@ -251,6 +251,64 @@ fn main() {
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }
+        Command::CandidatesExplain { candidate, json } => {
+            if let Err(e) = handlers::services::cmd_candidates_explain(&candidate, json, &storage) {
+                eprintln!("Candidate explain failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::ServicesList { json } => {
+            if let Err(e) = handlers::services::cmd_services_list(json, &storage) {
+                eprintln!("Services list failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::ServicesShow { endpoint, json } => {
+            if let Err(e) = handlers::services::cmd_services_show(&endpoint, json, &storage) {
+                eprintln!("Services show failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DiscoverServices {
+            target,
+            provider,
+            input_file,
+            scope_domains,
+            save,
+        } => {
+            if let Err(e) = handlers::services::cmd_discover_services(
+                &target,
+                &provider,
+                input_file.as_deref(),
+                &scope_domains,
+                save,
+                &storage,
+            ) {
+                eprintln!("Service discovery failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DiscoverReferences {
+            domain,
+            kind,
+            input_file,
+            urlscan_submitted,
+            scope_domains,
+            save,
+        } => {
+            if let Err(e) = handlers::services::cmd_discover_references(
+                &domain,
+                &kind,
+                input_file.as_deref(),
+                urlscan_submitted,
+                &scope_domains,
+                save,
+                &storage,
+            ) {
+                eprintln!("Reference discovery failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::DataInfo => {
             if let Err(e) = handlers::data::cmd_data_info(&data_dir, &storage) {
                 eprintln!("Data info failed: {e}");

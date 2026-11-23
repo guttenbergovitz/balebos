@@ -11,6 +11,7 @@ pub mod probe;
 pub mod relationships;
 pub mod risk;
 pub mod scan;
+pub mod services;
 pub mod tag;
 pub mod ui;
 pub mod web;

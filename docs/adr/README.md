@@ -38,6 +38,12 @@ stakeholders, approval boards or rollout theatre.
 | [0023](0023-infrastructure-attribution-roles.md) | Infrastructure attribution taxonomy | Accepted |
 | [0024](0024-provider-detection-and-evidence-precedence.md) | Provider detection and evidence precedence | Accepted |
 | [0025](0025-authoritative-registrar-identity.md) | Authoritative registrar identity and RDAP/WHOIS parsing | Accepted |
+| [0026](0026-external-network-service-discovery.md) | External network service discovery | Accepted |
+| [0027](0027-external-intelligence-providers.md) | External intelligence providers (Censys, Shodan, urlscan.io) | Accepted |
+| [0028](0028-application-reference-intelligence.md) | Application reference intelligence | Accepted |
+| [0029](0029-infrastructure-fingerprint-correlation.md) | Infrastructure fingerprint correlation | Accepted |
+| [0030](0030-service-discovery-measurement.md) | Service discovery measurement | Accepted |
+| [0031](0031-scope-and-verification-policy.md) | Scope and verification policy | Accepted |
 
 ADR 0007 (local persistence) was superseded by 0012 and 0013 and is
 retained as historical record of the interim engine's verified defects.
