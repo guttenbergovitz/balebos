@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod asset;
 pub mod check;
+pub mod drift;
 pub mod finding;
 pub mod inventory;
 pub mod migrate;

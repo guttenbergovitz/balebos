@@ -5,6 +5,7 @@ pub enum Command {
     },
     Batch {
         file: String,
+        allow_internal: bool,
     },
     List {
         unique: bool,
@@ -22,6 +23,10 @@ pub enum Command {
     Probe {
         kind: ProbeKind,
         target: String,
+        allow_internal: bool,
+    },
+    Drift {
+        within_hours: u64,
     },
     Migrate {
         from: Option<String>,
@@ -205,7 +210,11 @@ pub fn parse_command() -> Option<Command> {
         }
         "batch" => {
             let file = args.get(2)?.clone();
-            Some(Command::Batch { file })
+            let allow_internal = args.iter().any(|a| a == "--allow-internal");
+            Some(Command::Batch {
+                file,
+                allow_internal,
+            })
         }
         "list" => {
             let unique = args.get(2).is_some_and(|a| a == "--unique");
@@ -240,6 +249,12 @@ pub fn parse_command() -> Option<Command> {
         "diff" => Some(Command::Diff),
         "check" => Some(Command::Check),
         "report" => Some(Command::Report),
+        "drift" => {
+            let within_hours = find_flag_value(args.as_slice(), "--within")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(24);
+            Some(Command::Drift { within_hours })
+        }
         "migrate" => {
             let from = args.get(2).cloned();
             Some(Command::Migrate { from })
@@ -261,7 +276,12 @@ pub fn parse_command() -> Option<Command> {
                 "hosting" => ProbeKind::Hosting,
                 _ => return None,
             };
-            Some(Command::Probe { kind, target })
+            let allow_internal = args.iter().any(|a| a == "--allow-internal");
+            Some(Command::Probe {
+                kind,
+                target,
+                allow_internal,
+            })
         }
         "web" => {
             let action = args.get(2)?;

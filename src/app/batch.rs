@@ -73,6 +73,7 @@ pub fn batch_process(
     filepath: &str,
     storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],
+    allow_internal: bool,
 ) -> Result<BatchStats> {
     let start = Instant::now();
     let started_at = chrono::Utc::now();
@@ -121,6 +122,23 @@ pub fn batch_process(
         .par_iter()
         .enumerate()
         .map(|(idx, domain)| {
+            if let Err(denial) = crate::app::probe::scope::check_scope(domain, allow_internal) {
+                println!(
+                    "  ⊘ [{}/{}] {} (out of scope: {})",
+                    idx + 1,
+                    domains.len(),
+                    domain,
+                    denial
+                );
+                return (
+                    idx,
+                    domain.clone(),
+                    None,
+                    None,
+                    Some(format!("out of scope: {denial}")),
+                    false,
+                );
+            }
             if crate::ignore::is_ignored(domain, ignore_patterns)
                 || crate::ignore::is_junk(domain, &junk_assets)
             {
@@ -158,6 +176,21 @@ pub fn batch_process(
 
     for (idx, domain, item_opt, rdap_opt, err_opt, _skip_rdap) in results {
         if let Some(err) = err_opt {
+            if let Some(denial) = err.strip_prefix("out of scope: ") {
+                // Scope refusals are deliberate skips, not failures.
+                println!(
+                    "  ⊘ [{}/{}] {} ({})",
+                    idx + 1,
+                    domains.len(),
+                    domain,
+                    denial
+                );
+                coverage_outcomes.push(crate::domain::coverage::TargetCoverageRecord {
+                    target: domain.clone(),
+                    coverage: crate::domain::coverage::TargetCoverage::Skipped,
+                });
+                continue;
+            }
             println!(
                 "  ✗ [{}/{}] {} (error: {})",
                 idx + 1,
@@ -240,11 +273,13 @@ pub fn batch_process(
 
     // Collect all results in memory, save to storage once at the end.
     // This avoids 3×N save_batch calls per group (Parquet I/O is expensive).
+    let scope_excluded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let pipeline_results: Vec<GroupPipelineResult> = groups
         .par_iter()
         .enumerate()
         .filter_map(|(group_idx, group_domains)| {
             let group_num = group_idx + 1;
+            let scope_excluded = scope_excluded.clone();
 
             // Log group start
             println!(
@@ -324,9 +359,28 @@ pub fn batch_process(
                 .map(|o| o.target.clone())
                 .collect();
 
+            // Scope enforcement on resolved addresses: a target whose
+            // A/AAAA records are all internal is never sent to httpx,
+            // unless the operator enabled internal probing. Targets with
+            // no address records (CNAME-only) lack evidence and stay.
+            let excluded_by_scope: std::collections::HashSet<String> = dns_obs
+                .iter()
+                .filter(|o| {
+                    crate::app::probe::scope::all_addresses_internal(
+                        &o.a.iter().chain(o.aaaa.iter()).cloned().collect::<Vec<_>>(),
+                        allow_internal,
+                    )
+                })
+                .map(|o| o.target.clone())
+                .collect();
+            scope_excluded.fetch_add(
+                excluded_by_scope.len(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+
             let http_targets: Vec<String> = targets
                 .into_iter()
-                .filter(|t| has_dns.contains(t))
+                .filter(|t| has_dns.contains(t) && !excluded_by_scope.contains(t))
                 .collect();
 
             // --- HTTP (no save) ---
@@ -358,6 +412,14 @@ pub fn batch_process(
     let mut all_dns_obs = Vec::new();
     let mut all_http_obs = Vec::new();
     let mut all_junk_candidates: Vec<String> = Vec::new();
+
+    let scope_excluded_count = scope_excluded.load(std::sync::atomic::Ordering::Relaxed);
+    if scope_excluded_count > 0 {
+        println!(
+            "  ⊘ Scope guard: excluded {} target(s) resolving only to internal addresses (not probed over HTTP)",
+            scope_excluded_count
+        );
+    }
 
     for result in &pipeline_results {
         stats.subdomains_found += result.subdomains.len();
@@ -561,6 +623,13 @@ pub fn run_single_recon_with_progress(
     on_step: &dyn Fn(&str),
     on_result: &dyn Fn(&ReconStepResult),
 ) -> crate::error::Result<Vec<ReconStepResult>> {
+    let allow_internal = crate::app::probe::scope::internal_allowed_from_env();
+    if let Err(denial) = crate::app::probe::scope::check_scope(domain, allow_internal) {
+        return Err(crate::error::BalebosError::Validation(format!(
+            "refusing to scan '{domain}': {denial}"
+        )));
+    }
+
     let junk_assets: std::collections::BTreeSet<String> = storage
         .read_all_records()
         .map(|r| crate::app::tags::get_junk_assets(&r.asset_tags))

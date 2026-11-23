@@ -1,3 +1,4 @@
+use super::process;
 use super::types::{HttpErrorKind, HttpObservation, RedirectHop, TlsObservation};
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
@@ -70,18 +71,11 @@ fn categorize_httpx_error(error_msg: &str) -> HttpErrorKind {
 
 /// Helper function to check if httpx is correctly installed from ProjectDiscovery.
 fn check_httpx_installation() -> Result<()> {
-    let version_check = Command::new("httpx")
-        .arg("-version")
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ProbeError::ToolNotFound {
-                    tool: "httpx".to_string(),
-                }
-            } else {
-                ProbeError::Execution(e)
-            }
-        })?;
+    let version_check = process::run_bounded(
+        Command::new("httpx").arg("-version"),
+        std::time::Duration::from_secs(10),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
 
     if !String::from_utf8_lossy(&version_check.stdout).contains("projectdiscovery")
         && !String::from_utf8_lossy(&version_check.stderr).contains("projectdiscovery")
@@ -361,7 +355,13 @@ fn probe_http_batch_with_progress_inner(
         }
         all_observations.extend(observations);
 
-        let _ = child.wait()?;
+        // Backstop envelope: the stdout reader above finishes when httpx
+        // closes its output; if the process hangs regardless, kill and reap.
+        let _ = process::wait_bounded(
+            child,
+            std::time::Duration::from_secs(300),
+            process::DEFAULT_MAX_OUTPUT,
+        );
     }
 
     Ok(all_observations)
@@ -387,8 +387,8 @@ pub fn http_check(domain: &str, storage: &Arc<dyn StorageEngine>) -> Result<Http
 
     let clean_domain = domain.trim().replace("http://", "").replace("https://", "");
 
-    let output = Command::new("httpx")
-        .args([
+    let output = process::run_bounded(
+        Command::new("httpx").args([
             "-u", &clean_domain,
             "-json",
             "-td",
@@ -406,8 +406,10 @@ pub fn http_check(domain: &str, storage: &Arc<dyn StorageEngine>) -> Result<Http
             "-x", "get",
             "-retries", "2",
             "-timeout", "10",
-        ])
-        .output()?;
+        ]),
+        std::time::Duration::from_secs(300),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     let trimmed = stdout_str.trim();

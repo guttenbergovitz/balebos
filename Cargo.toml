@@ -21,8 +21,12 @@ parquet = { version = "60.2.0", features = ["arrow"], optional = true }
 sha2 = { version = "0.10", optional = true }
 arrow-array = { version = "60", optional = true }
 arrow-schema = { version = "60", optional = true }
+ctrlc = "3.5.3"
 
 
 [features]
 default = []
 parquet-archive = ["dep:parquet", "dep:arrow-array", "dep:arrow-schema", "dep:sha2"]
+
+[target."cfg(unix)".dependencies]
+nix = { version = "0.32.0", features = ["process", "signal"] }

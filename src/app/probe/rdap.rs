@@ -1,3 +1,4 @@
+use super::process;
 use crate::error::{ProbeError, Result};
 use crate::org::{DomainContact, DomainRegistrationRecord};
 use crate::storage::{StorageEngine, StorageEngineExt};
@@ -49,11 +50,11 @@ pub fn run_rdap_probe_no_save(domain: &str) -> Result<DomainRegistrationRecord> 
 }
 
 fn perform_rdap_query(domain: &str) -> Result<DomainRegistrationRecord> {
-    let output = Command::new("rdap")
-        .arg(domain)
-        .arg("--json")
-        .output()
-        .map_err(ProbeError::Execution)?;
+    let output = process::run_bounded(
+        Command::new("rdap").arg(domain).arg("--json"),
+        std::time::Duration::from_secs(60),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
 
     if !output.status.success() {
         return Err(ProbeError::RdapFailed.into());
@@ -153,10 +154,11 @@ fn parse_vcard(vcard: &Option<serde_json::Value>) -> Option<DomainContact> {
 }
 
 fn perform_whois_query(domain: &str) -> Result<DomainRegistrationRecord> {
-    let output = Command::new("whois")
-        .arg(domain)
-        .output()
-        .map_err(ProbeError::Execution)?;
+    let output = process::run_bounded(
+        Command::new("whois").arg(domain),
+        std::time::Duration::from_secs(30),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
 
     let text = String::from_utf8_lossy(&output.stdout);
     let mut record = DomainRegistrationRecord::new(domain.to_string(), "whois".to_string());

@@ -21,6 +21,9 @@ fn print_usage() {
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!(
+        "  balebos drift [--within <hours>]   - Classified drift since the window (default 24h)"
+    );
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
@@ -84,6 +87,14 @@ fn print_usage() {
 }
 
 fn main() {
+    // SIGINT cancels in-flight scanner processes: the watchdog in
+    // app::probe::process kills their process groups and reaps them
+    // before the process exits, so no orphaned scanners outlive us.
+    let _ = ctrlc::set_handler(|| {
+        balebos::app::probe::process::cancel();
+        eprintln!("\nCancelling: terminating scanner processes…");
+    });
+
     // SQLite is the authoritative operational store (ADR 0012); it became
     // the default engine in Phase E after the migration path (ADR 0018)
     // shipped. Legacy Parquet data imports via `balebos migrate`.
@@ -104,7 +115,10 @@ fn main() {
 
     match command {
         Command::Scan { domain } => handlers::scan::cmd_scan(&domain, &storage),
-        Command::Batch { file } => handlers::scan::cmd_batch(&file, &storage, &ignore_patterns),
+        Command::Batch {
+            file,
+            allow_internal,
+        } => handlers::scan::cmd_batch(&file, &storage, &ignore_patterns, allow_internal),
         Command::List { unique } => handlers::inventory::cmd_list(unique, &storage),
         Command::Tree => handlers::inventory::cmd_tree(&storage),
         Command::Status { export } => handlers::inventory::cmd_status(export, &storage),
@@ -112,7 +126,17 @@ fn main() {
         Command::Diff => handlers::inventory::cmd_diff(&storage),
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
-        Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
+        Command::Probe {
+            kind,
+            target,
+            allow_internal,
+        } => handlers::probe::cmd_probe(kind, &target, &storage, allow_internal),
+        Command::Drift { within_hours } => {
+            if let Err(e) = handlers::drift::cmd_drift(within_hours, &storage) {
+                eprintln!("Drift report failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::Migrate { from } => {
             if let Err(e) = handlers::migrate::cmd_migrate(from) {
                 eprintln!("Migration failed: {e}");

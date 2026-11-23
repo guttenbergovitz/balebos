@@ -1,7 +1,9 @@
 pub mod asn;
 pub mod dns;
 pub mod http;
+pub mod process;
 pub mod rdap;
+pub mod scope;
 pub mod subfinder;
 pub mod types;
 

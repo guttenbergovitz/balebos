@@ -1,5 +1,6 @@
+use super::process;
 use super::types::DnsObservation;
-use crate::error::{ProbeError, Result};
+use crate::error::Result;
 use crate::inventory::ItemType;
 use crate::storage::{StorageEngine, StorageEngineExt};
 use chrono::Utc;
@@ -37,15 +38,11 @@ struct DnsxOutput {
 
 /// Helper function to check if dnsx is correctly installed.
 fn check_dnsx_installation() -> Result<()> {
-    Command::new("dnsx").arg("-version").output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ProbeError::ToolNotFound {
-                tool: "dnsx".to_string(),
-            }
-        } else {
-            ProbeError::Execution(e)
-        }
-    })?;
+    process::run_bounded(
+        Command::new("dnsx").arg("-version"),
+        std::time::Duration::from_secs(10),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
     Ok(())
 }
 
@@ -80,8 +77,8 @@ fn probe_dns_batch_inner(
         let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
         fs::write(&temp_file, chunk.join("\n"))?;
 
-        let output = Command::new("dnsx")
-            .args([
+        let output = process::run_bounded(
+            Command::new("dnsx").args([
                 "-l",
                 &temp_file.to_string_lossy(),
                 "-json",
@@ -93,8 +90,10 @@ fn probe_dns_batch_inner(
                 "-txt",
                 "-soa",
                 "-silent",
-            ])
-            .output()?;
+            ]),
+            std::time::Duration::from_secs(300),
+            process::DEFAULT_MAX_OUTPUT,
+        )?;
 
         let _ = fs::remove_file(&temp_file);
 

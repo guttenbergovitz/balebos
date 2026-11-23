@@ -12,7 +12,9 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_findings, draw_inventory, draw_organization, draw_projects};
+use crate::tui::tabs::{
+    draw_drift, draw_findings, draw_inventory, draw_organization, draw_projects,
+};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -204,6 +206,7 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         Tab::Organization => 1,
         Tab::Projects => 2,
         Tab::Findings => 3,
+        Tab::Drift => 4,
     };
 
     let tabs = Tabs::new(titles)
@@ -270,6 +273,7 @@ fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
         Tab::Organization => draw_organization(f, app, area),
         Tab::Projects => draw_projects(f, app, area),
         Tab::Findings => draw_findings(f, app, area),
+        Tab::Drift => draw_drift(f, app, area),
     }
 }
 
@@ -359,7 +363,10 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             " q: Quit | R: Refresh | 1-4: Tabs | a: Add | e: Edit | r: Role | c: Contractor | Space: Toggle | j/k: Nav "
         }
         Tab::Findings => {
-            " q: Quit | R: Refresh | 1-4: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
+            " q: Quit | R: Refresh | 1-5: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
+        }
+        Tab::Drift => {
+            " q: Quit | R: Refresh | 1-5: Tabs | j/k: Nav — yellow classes are uncertainty, not incidents "
         }
     };
 

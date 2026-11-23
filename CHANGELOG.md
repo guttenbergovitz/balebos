@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bounded subprocess execution for all probe adapters: uniform
+  wall-clock timeouts, bounded captured output (64 MiB ceiling), and on
+  Unix process-group termination so timed-out scanners cannot leak
+  orphaned grandchildren; killed children are always reaped. Replaces
+  the platform-dependent `gtimeout`/`timeout` shell-outs and every
+  unbounded `.output()` call (subfinder, dnsx, httpx, rdap, whois, dig,
+  asnmap). `nix` added (unix-only process-group control).
+- Inspection scope guard: `balebos probe` and `balebos batch` refuse
+  private, loopback and link-local targets (and localhost-style names)
+  unless `--allow-internal` or `BALEBOS_ALLOW_INTERNAL=1`. Refusals are
+  reported and counted as coverage skips, never silent. Enforced on
+  literals at the command boundary and on resolved addresses before the
+  HTTP stage; the TUI single-recon path honours the same guard.
+- Operator cancellation: SIGINT sets a process-wide flag that every
+  bounded scanner watchdog checks — in-flight scanner process groups are
+  killed and reaped before exit, so Ctrl+C mid-scan leaves no orphaned
+  scanners. `ctrlc` added for signal handling.
+- TUI Drift tab (key 5, ADR 0006): drift findings and the coverage
+  banner come from the same shared service as `balebos drift`, so both
+  surfaces agree by construction. Incomplete coverage is shown
+  explicitly; uncertainty classes render yellow, not as incidents.
+
 ### Changed
 
 - Default storage engine is now SQLite (`data/balebos.db`); the legacy
@@ -33,6 +57,11 @@ same machine, rustc 1.100.0)
   with explicit coverage. Absence is interpreted strictly through
   completeness; unobserved aspects report insufficient evidence without
   blocking comparable aspects.
+- Snapshot assembly and `balebos drift [--within <hours>]`: materialises
+  drift views from recorded observations (latest evidence per target at an
+  optional time boundary; completeness from the latest scan report) and
+  prints classified drift with evidence. Absences in an incomplete window
+  are reported as "not observed", never as verified change.
 
 ## [2.0.0-alpha.1] - 2026-11-23
 

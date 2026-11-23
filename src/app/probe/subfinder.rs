@@ -1,3 +1,4 @@
+use crate::app::probe::process;
 use crate::error::{ProbeError, Result};
 use crate::inventory::{InventoryItem, ItemType};
 use crate::storage::{StorageEngine, StorageEngineExt};
@@ -10,12 +11,14 @@ use std::time::Instant;
 use uuid::Uuid;
 
 fn run_subfinder(domain: &str) -> Result<String> {
-    let output = Command::new("subfinder")
-        .arg("-d")
-        .arg(domain)
-        .arg("-silent")
-        .output()
-        .map_err(ProbeError::Execution)?;
+    let output = process::run_bounded(
+        Command::new("subfinder")
+            .arg("-d")
+            .arg(domain)
+            .arg("-silent"),
+        std::time::Duration::from_secs(300),
+        process::DEFAULT_MAX_OUTPUT,
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -270,7 +273,13 @@ fn run_subfinder_batch_inner(
         }
         println!(); // New line after chunk progress (only in CLI mode)
 
-        let _ = child.wait();
+        // Backstop envelope: kill and reap if subfinder hangs after
+        // producing its output.
+        let _ = process::wait_bounded(
+            child,
+            std::time::Duration::from_secs(300),
+            process::DEFAULT_MAX_OUTPUT,
+        );
         let _ = fs::remove_file(&temp_file);
 
         all_subdomains.extend(chunk_subdomains);
