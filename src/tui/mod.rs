@@ -48,6 +48,7 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
     app: &mut App,
 ) -> crate::error::Result<()> {
     let mut last_scan_state = false;
+    let mut last_event_count = 0usize;
 
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -92,14 +93,20 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
             }
         }
 
-        // Detect transition from scanning to finished
+        // Incremental refresh while scanning + final refresh on finish
         let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
-        if last_scan_state && !is_scanning {
-            // Scan just finished, auto-refresh
+        let event_count = app
+            .scan_status
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .event_log
+            .len();
+        if (last_scan_state && !is_scanning) || (is_scanning && event_count > last_event_count) {
             if let Err(e) = app.refresh() {
                 app.set_status(format!("❌ Refresh failed: {e}"));
             }
         }
+        last_event_count = event_count;
         last_scan_state = is_scanning;
 
         if app.should_quit {

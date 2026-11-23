@@ -248,6 +248,7 @@ fn probe_http_batch_with_progress_inner(
     save_to_storage: bool,
     storage: Option<&Arc<dyn StorageEngine>>,
     on_progress: Option<ProgressCallback>,
+    on_target: Option<&dyn Fn(&str)>,
 ) -> Result<Vec<HttpObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
@@ -343,6 +344,9 @@ fn probe_http_batch_with_progress_inner(
                     // Global progress calculation if needed, here we just use chunk local
                     cb(line_idx + 1, chunk.len(), &obs.target);
                 }
+                if let Some(cb) = on_target {
+                    cb(&obs.target);
+                }
 
                 observations.push(obs);
             }
@@ -373,25 +377,21 @@ pub fn probe_http_batch_with_progress(
     storage: &Arc<dyn StorageEngine>,
     on_progress: Option<ProgressCallback>,
 ) -> Result<Vec<HttpObservation>> {
-    probe_http_batch_with_progress_inner(targets, true, Some(storage), on_progress)
+    probe_http_batch_with_progress_inner(targets, true, Some(storage), on_progress, None)
 }
 
-/// Stream each completed HTTP target to a borrowed callback without `'static` requirements.
+/// Stream each completed HTTP target live as `httpx` emits JSON lines.
 pub fn probe_http_batch_streaming(
     targets: &[String],
     storage: &Arc<dyn StorageEngine>,
     on_target: &dyn Fn(&str),
 ) -> Result<Vec<HttpObservation>> {
-    let obs = probe_http_batch_with_progress_inner(targets, true, Some(storage), None)?;
-    for o in &obs {
-        on_target(&o.target);
-    }
-    Ok(obs)
+    probe_http_batch_with_progress_inner(targets, true, Some(storage), None, Some(on_target))
 }
 
 /// Run HTTP batch probe without saving to storage.
 pub fn probe_http_batch_no_save(targets: &[String]) -> Result<Vec<HttpObservation>> {
-    probe_http_batch_with_progress_inner(targets, false, None, None)
+    probe_http_batch_with_progress_inner(targets, false, None, None, None)
 }
 
 // Perform HTTP probe (single domain wrapper around batch)

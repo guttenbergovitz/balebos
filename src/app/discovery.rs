@@ -34,6 +34,7 @@ const MAX_FETCH_BYTES: usize = 512 * 1024;
 pub struct AutonomousDiscoverySummary {
     pub domain: String,
     pub ct_candidates: usize,
+    pub ct_entities: Vec<String>,
     pub dns_references: usize,
     pub js_assets_fetched: usize,
     pub js_references: usize,
@@ -149,6 +150,38 @@ fn extract_host_and_port(url: &str) -> std::result::Result<(String, u16), String
     }
 }
 
+/// Construct a `curl` command with pinned IP resolution, zero redirects,
+/// and all proxy environment variables disabled so SSRF checks cannot be
+/// bypassed via `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`.
+pub fn build_pinned_curl_command(url: &str, resolve_arg: &str) -> Command {
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-sS",
+        "--max-time",
+        "10",
+        "--max-filesize",
+        "524288",
+        "--max-redirs",
+        "0",
+        "--noproxy",
+        "*",
+        "--resolve",
+        resolve_arg,
+        url,
+    ]);
+    for var in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
 fn fetch_bounded_url(url: &str) -> std::result::Result<String, String> {
     let (host, port) = extract_host_and_port(url)?;
     let addrs: Vec<IpAddr> = format!("{}:{}", host, port)
@@ -160,18 +193,7 @@ fn fetch_bounded_url(url: &str) -> std::result::Result<String, String> {
     let resolve_arg = format!("{}:{}:{}", host, port, pinned_ip);
 
     let out = process::run_bounded(
-        Command::new("curl").args([
-            "-sS",
-            "--max-time",
-            "10",
-            "--max-filesize",
-            "524288",
-            "--max-redirs",
-            "0",
-            "--resolve",
-            &resolve_arg,
-            url,
-        ]),
+        &mut build_pinned_curl_command(url, &resolve_arg),
         FETCH_TIMEOUT,
         MAX_FETCH_BYTES,
     )
@@ -212,6 +234,7 @@ pub fn run_autonomous_discovery(
             match parse_ct_json(ct_json.as_bytes(), &scope_set, 200) {
                 Ok(cands) => {
                     summary.ct_candidates = cands.len();
+                    summary.ct_entities = cands.iter().map(|c| c.entity.id.clone()).collect();
                     if save {
                         for (idx, c) in cands.into_iter().enumerate() {
                             storage.save(&EnrichmentCandidateRecord {
@@ -357,5 +380,33 @@ mod tests {
                 bad
             );
         }
+    }
+
+    #[test]
+    fn pinned_curl_command_disables_proxies_and_redirects() {
+        let cmd = build_pinned_curl_command(
+            "https://example.com/app.js",
+            "example.com:443:93.184.216.34",
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.windows(2).any(|w| w == ["--noproxy", "*"]));
+        assert!(args.windows(2).any(|w| w == ["--max-redirs", "0"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--resolve", "example.com:443:93.184.216.34"]));
+        let envs: Vec<(String, Option<String>)> = cmd
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|val| val.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        assert!(envs.iter().any(|(k, v)| k == "HTTPS_PROXY" && v.is_none()));
+        assert!(envs.iter().any(|(k, v)| k == "HTTP_PROXY" && v.is_none()));
     }
 }

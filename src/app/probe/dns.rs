@@ -7,7 +7,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -80,8 +80,8 @@ fn probe_dns_batch_inner(
         let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
         fs::write(&temp_file, chunk.join("\n"))?;
 
-        let output = process::run_bounded(
-            Command::new("dnsx").args([
+        let mut child = Command::new("dnsx")
+            .args([
                 "-l",
                 &temp_file.to_string_lossy(),
                 "-json",
@@ -94,20 +94,17 @@ fn probe_dns_batch_inner(
                 "-soa",
                 "-srv",
                 "-silent",
-            ]),
-            std::time::Duration::from_secs(300),
-            process::DEFAULT_MAX_OUTPUT,
-        )?;
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
-        let _ = fs::remove_file(&temp_file);
-
-        if !output.status.success() {
-            eprintln!("      ✗ DNS chunk failed");
-            continue;
-        }
-
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| std::io::Error::other("failed to open dnsx stdout pipe"))?;
         let mut observations = Vec::new();
-        let reader = BufReader::new(&output.stdout[..]);
+        let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
             let line = line?;
@@ -156,6 +153,13 @@ fn probe_dns_batch_inner(
                 }
             }
         }
+
+        let _ = process::wait_bounded(
+            child,
+            std::time::Duration::from_secs(300),
+            process::DEFAULT_MAX_OUTPUT,
+        );
+        let _ = fs::remove_file(&temp_file);
 
         if save_to_storage && !observations.is_empty() {
             if let Some(s) = storage {
