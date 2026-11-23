@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Builder
 # ==========================================
-FROM --platform=$BUILDPLATFORM rust:1.94.1-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.100-bookworm AS builder
 
 WORKDIR /app
 
@@ -11,13 +11,12 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project files
-COPY Cargo.toml Cargo.lock ./
+# Copy project files (provider data is compiled in from src/hosting/)
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY src ./src
-COPY data ./data
 
 # Build the application in release mode
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # ==========================================
 # Stage 2: Scanner binaries

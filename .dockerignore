@@ -4,13 +4,10 @@ target/
 .idea/
 .vscode/
 
-# Data
+# Data (operator storage never enters the image)
 data/
-!data/providers.json
 *.duckdb
 *.jsonl
 
 # Envs
 .env
-Taskfile.yml
-Makefile
