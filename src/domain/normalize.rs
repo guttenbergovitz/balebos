@@ -5,15 +5,30 @@ const TWO_PART_PUBLIC_SUFFIXES: &[&str] = &[
     "gov.pl", "edu.pl", "waw.pl", "com.tr", "com.ua", "com.sg", "com.hk",
 ];
 
+/// Normalise a DNS FQDN without stripping `www.` (preserving host identity).
+///
+/// Transformations applied:
+/// 1. Trim whitespace and trailing `.`
+/// 2. Lowercase
+/// 3. Strip scheme (`http://`, `https://`) and path/port if present
+pub fn normalize_fqdn(raw: &str) -> String {
+    let mut s = raw.trim().to_lowercase();
+    if let Some(pos) = s.find("://") {
+        s = s[pos + 3..].to_string();
+    }
+    if let Some(host) = s.split('/').next() {
+        s = host.to_string();
+    }
+    if let Some((host, _port)) = s.split_once(':') {
+        s = host.to_string();
+    }
+    s.trim_end_matches('.').to_string()
+}
+
 /// Extract the registrable domain (eTLD+1) using a public-suffix table
 /// rather than naive label counting.
 pub fn registrable_domain(domain: &str) -> String {
-    let norm = normalize_domain(domain);
-    let host = norm
-        .split('/')
-        .next()
-        .unwrap_or(&norm)
-        .trim_end_matches('.');
+    let host = normalize_fqdn(domain);
     let parts: Vec<&str> = host.split('.').collect();
     if parts.len() < 2 {
         return host.to_string();

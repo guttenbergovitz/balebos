@@ -70,6 +70,19 @@ pub enum Command {
     DiscoveryReport {
         json: bool,
     },
+    CandidatesList,
+    CandidatesReview {
+        entity: String,
+        decision: String,
+    },
+    DataInfo,
+    DataBackup {
+        dest: Option<String>,
+    },
+    DataReset {
+        dry_run: bool,
+        backup: bool,
+    },
 }
 
 pub enum ProbeKind {
@@ -218,12 +231,23 @@ pub enum RiskCommand {
     Show { asset_name: String },
 }
 
-/// Parse command-line arguments into a structured Command.
+/// Parse command-line arguments into a structured Command, stripping any
+/// leading `--data-dir <path>` global flag.
 ///
 /// Returns `None` if no valid command is recognized
 /// (caller should print usage and exit).
 pub fn parse_command() -> Option<Command> {
-    let args: Vec<String> = std::env::args().collect();
+    let raw_args: Vec<String> = std::env::args().collect();
+    let mut args = Vec::with_capacity(raw_args.len());
+    let mut i = 0;
+    while i < raw_args.len() {
+        if raw_args[i] == "--data-dir" {
+            i += 2;
+            continue;
+        }
+        args.push(raw_args[i].clone());
+        i += 1;
+    }
 
     if args.len() < 2 {
         return None;
@@ -316,6 +340,22 @@ pub fn parse_command() -> Option<Command> {
         "discovery" if args.get(2).is_some_and(|a| a == "report") => {
             let json = args.iter().any(|a| a == "--json");
             Some(Command::DiscoveryReport { json })
+        }
+        "candidates" if args.get(2).is_some_and(|a| a == "list") => Some(Command::CandidatesList),
+        "candidates" if args.get(2).is_some_and(|a| a == "review") => {
+            let entity = args.get(3)?.clone();
+            let decision = args.get(4)?.clone();
+            Some(Command::CandidatesReview { entity, decision })
+        }
+        "data" if args.get(2).is_some_and(|a| a == "info") => Some(Command::DataInfo),
+        "data" if args.get(2).is_some_and(|a| a == "backup") => {
+            let dest = args.get(3).cloned();
+            Some(Command::DataBackup { dest })
+        }
+        "data" if args.get(2).is_some_and(|a| a == "reset") => {
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let backup = args.iter().any(|a| a == "--backup");
+            Some(Command::DataReset { dry_run, backup })
         }
         "discover" => {
             let source = find_flag_value(args.as_slice(), "--source")?;

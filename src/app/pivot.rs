@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::app::relationships::project_relationships;
-use crate::domain::normalize::normalize_domain;
+use crate::domain::normalize::normalize_fqdn;
 use crate::domain::relationship::{EntityRef, RelationshipKind, SignalCategory};
 use crate::storage::reader::Records;
 
@@ -79,7 +79,7 @@ pub struct PivotReport {
 }
 
 fn is_shared_provider_host(host: &str) -> bool {
-    let norm = normalize_domain(host);
+    let norm = normalize_fqdn(host);
     SHARED_PROVIDER_SUFFIXES
         .iter()
         .any(|suffix| norm == *suffix || norm.ends_with(&format!(".{suffix}")))
@@ -89,7 +89,7 @@ fn is_in_scope(host: &str, approved_domains: &BTreeSet<String>) -> bool {
     if approved_domains.is_empty() {
         return false;
     }
-    let norm = normalize_domain(host);
+    let norm = normalize_fqdn(host);
     approved_domains
         .iter()
         .any(|root| norm == *root || norm.ends_with(&format!(".{root}")))
@@ -104,7 +104,7 @@ fn is_in_scope(host: &str, approved_domains: &BTreeSet<String>) -> bool {
 /// Enforces cycle detection, deduplication, `max_depth`, `max_candidates`,
 /// provider-noise suppression, and explicit `in_scope` tagging.
 pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> PivotReport {
-    let seed_norm = normalize_domain(seed.trim().trim_end_matches('.'));
+    let seed_norm = normalize_fqdn(seed);
     let edges = project_relationships(records);
 
     let approved = &config.approved_domains;

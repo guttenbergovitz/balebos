@@ -59,6 +59,10 @@ pub struct Records {
     pub lifecycle_events: Vec<LifecycleEvent>,
     /// Per-scan coverage reports (ADR 0005).
     pub scan_reports: Vec<crate::domain::coverage::ScanReport>,
+    /// Persisted passive enrichment candidates (CT / Passive DNS).
+    pub enrichment_candidates: Vec<crate::app::sources::EnrichmentCandidateRecord>,
+    /// Persisted operator candidate review decisions.
+    pub candidate_reviews: Vec<crate::app::sources::CandidateReviewRecord>,
     /// Records that could not be typed, with reasons. Never silently empty.
     pub skipped: Vec<SkippedRecord>,
 }
@@ -149,6 +153,18 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::FindingEvent => try_parse!(FindingEvent, finding_events),
             ItemType::LifecycleEvent => try_parse!(LifecycleEvent, lifecycle_events),
             ItemType::ScanReport => try_parse!(crate::domain::coverage::ScanReport, scan_reports),
+            ItemType::EnrichmentCandidate => {
+                try_parse!(
+                    crate::app::sources::EnrichmentCandidateRecord,
+                    enrichment_candidates
+                )
+            }
+            ItemType::CandidateReview => {
+                try_parse!(
+                    crate::app::sources::CandidateReviewRecord,
+                    candidate_reviews
+                )
+            }
         }
     }
 

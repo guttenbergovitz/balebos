@@ -277,12 +277,15 @@ pub fn cmd_probe(
                     }
                     println!("\nOrigin:");
                     match &attr.origin {
-                        crate::hosting::OriginAttribution::Observed {
+                        crate::hosting::OriginAttribution::Heuristic {
                             provider_name,
                             provider_category,
                             status,
                             ..
-                        } => println!("  {} ({}) [{}]", provider_name, provider_category, status),
+                        } => println!(
+                            "  {} ({}) [{} — heuristic]",
+                            provider_name, provider_category, status
+                        ),
                         crate::hosting::OriginAttribution::Conflicting { candidates, .. } => {
                             println!("  Conflicting: {}", candidates.join(", "));
                         }

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::normalize::normalize_domain;
+use crate::domain::normalize::normalize_fqdn;
 use crate::domain::relationship::{EntityKind, EntityRef, SignalCategory};
 use crate::error::{BalebosError, Result};
 use crate::storage::reader::Records;
@@ -126,6 +126,27 @@ pub struct EnrichmentCandidate {
     pub note: String,
 }
 
+/// Persisted enrichment candidate record in SQLite `records`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnrichmentCandidateRecord {
+    pub item_type: crate::inventory::ItemType,
+    pub id: String,
+    #[serde(flatten)]
+    pub candidate: EnrichmentCandidate,
+}
+
+/// Persisted operator review decision for a candidate entity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CandidateReviewRecord {
+    pub item_type: crate::inventory::ItemType,
+    pub id: String,
+    pub entity_id: String,
+    pub decision: crate::app::metrics::CandidateReviewDecision,
+    pub reviewed_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// Minimal subset of `crt.sh/?q=%.<domain>&output=json` entry fields.
 #[derive(Debug, Deserialize)]
 struct CrtShEntry {
@@ -181,7 +202,7 @@ pub fn parse_ct_json(
                 continue;
             }
             let is_wildcard = trimmed.starts_with("*.");
-            let clean_host = normalize_domain(trimmed.trim_start_matches("*."));
+            let clean_host = normalize_fqdn(trimmed.trim_start_matches("*."));
             if clean_host.is_empty() {
                 continue;
             }
@@ -268,7 +289,7 @@ pub fn parse_passive_dns_json(
     let mut out = Vec::new();
 
     for row in rows {
-        let host = normalize_domain(row.fqdn.trim().trim_end_matches('.'));
+        let host = normalize_fqdn(&row.fqdn);
         let ip = row.ip.trim().to_string();
         if host.is_empty() || ip.is_empty() || !seen.insert((host.clone(), ip.clone())) {
             continue;
@@ -310,7 +331,7 @@ pub fn novel_candidates<'a>(
     let known: BTreeSet<String> = records
         .items
         .iter()
-        .map(|i| normalize_domain(&i.name))
+        .map(|i| normalize_fqdn(&i.name))
         .collect();
     enrichment
         .iter()

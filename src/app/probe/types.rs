@@ -195,6 +195,10 @@ pub struct HostingObservation {
     // Evidence trail for debugging
     pub evidence: Vec<String>,
 
+    /// Role-separated attribution persisted alongside the legacy fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<crate::hosting::InfrastructureAttribution>,
+
     pub checked_at: chrono::DateTime<Utc>,
     pub source: String,
 }

@@ -704,6 +704,7 @@ mod tests {
                 confidence: crate::app::probe::Confidence::High,
                 detection_method: crate::app::probe::DetectionMethod::Asn,
                 evidence: vec!["new".to_string()],
+                attribution: None,
                 checked_at: newer,
                 source: "test".to_string(),
             });
@@ -721,6 +722,7 @@ mod tests {
                 confidence: crate::app::probe::Confidence::Low,
                 detection_method: crate::app::probe::DetectionMethod::Asn,
                 evidence: vec!["old".to_string()],
+                attribution: None,
                 checked_at: older,
                 source: "test".to_string(),
             });
