@@ -3,6 +3,7 @@
 pub mod app;
 pub mod cli;
 pub mod domain;
+pub mod drift;
 pub mod error;
 pub mod exit_codes;
 pub mod hosting;
