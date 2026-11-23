@@ -193,11 +193,13 @@ pub fn compute_discovery_metrics(
         } else if aref.target_kind == crate::domain::relationship::EntityKind::StorageEndpoint {
             storage_refs.insert(aref.referenced_target.clone());
         }
-        all_novel.insert(aref.referenced_target.clone());
-        per_source_novel
-            .entry(aref.source.clone())
-            .or_default()
-            .insert(aref.referenced_target.clone());
+        if !known.contains(&normalize_fqdn(&aref.referenced_target)) {
+            all_novel.insert(aref.referenced_target.clone());
+            per_source_novel
+                .entry(aref.source.clone())
+                .or_default()
+                .insert(aref.referenced_target.clone());
+        }
         if !aref.evidence.is_empty() {
             traceable_count += 1;
         }
@@ -344,6 +346,7 @@ mod tests {
             ns: vec![],
             txt: vec![],
             soa: vec![],
+            srv: vec![],
             checked_at: at,
             source: "dnsx".to_string(),
         }

@@ -172,6 +172,7 @@ pub struct TuiModel {
     pub risk_scores: HashMap<String, u32>,
     pub service_observations: Vec<crate::domain::service::ServiceObservation>,
     pub application_references: Vec<crate::domain::service::ApplicationReferenceObservation>,
+    pub scan_reports: Vec<crate::domain::coverage::ScanReport>,
 }
 
 pub struct GlobalStats {
@@ -635,6 +636,7 @@ pub fn load_tui_model_from_records(records: &crate::storage::reader::Records) ->
         risk_scores,
         service_observations: records.service_observations.clone(),
         application_references: records.application_references.clone(),
+        scan_reports: records.scan_reports.clone(),
     }
 }
 

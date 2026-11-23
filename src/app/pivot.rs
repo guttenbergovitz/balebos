@@ -259,6 +259,7 @@ mod tests {
             ns: ns.iter().map(|s| s.to_string()).collect(),
             txt: vec![],
             soa: vec![],
+            srv: vec![],
             checked_at: Utc::now(),
             source: "dnsx".to_string(),
         }

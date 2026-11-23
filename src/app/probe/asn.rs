@@ -419,6 +419,7 @@ mod tests {
             ns: vec![],
             txt: vec![],
             soa: vec![],
+            srv: vec![],
             checked_at: now,
             source: "dnsx".to_string(),
         };

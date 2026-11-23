@@ -34,6 +34,8 @@ struct DnsxOutput {
     txt: Vec<String>,
     #[serde(default)]
     soa: Option<Vec<SoaRecord>>,
+    #[serde(default)]
+    srv: Vec<String>,
 }
 
 /// Helper function to check if dnsx is correctly installed.
@@ -89,6 +91,7 @@ fn probe_dns_batch_inner(
                 "-ns",
                 "-txt",
                 "-soa",
+                "-srv",
                 "-silent",
             ]),
             std::time::Duration::from_secs(300),
@@ -138,6 +141,7 @@ fn probe_dns_batch_inner(
                         ns: parsed.ns,
                         txt: parsed.txt,
                         soa: soa_strings,
+                        srv: parsed.srv,
                         checked_at: Utc::now(),
                         source: "dnsx".to_string(),
                     };
@@ -192,6 +196,7 @@ pub fn probe_dns(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<DnsOb
             ns: Vec::new(),
             txt: Vec::new(),
             soa: Vec::new(),
+            srv: Vec::new(),
             checked_at: Utc::now(),
             source: "dnsx".to_string(),
         };

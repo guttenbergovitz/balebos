@@ -47,7 +47,8 @@ pub fn cmd_data_info(data_dir: &str, storage: &Arc<dyn StorageEngine>) -> Result
     Ok(())
 }
 
-/// Create a timestamped backup copy of `balebos.db` in `dest` (or `<data_dir>/backups`).
+/// Create a WAL-safe, verified backup copy of `balebos.db` in `dest` (or
+/// `<data_dir>/backups`) using SQLite `VACUUM INTO` and `PRAGMA integrity_check`.
 pub fn cmd_data_backup(data_dir: &str, dest: Option<&str>) -> Result<String> {
     let base = Path::new(data_dir);
     let db_path = base.join("balebos.db");
@@ -60,11 +61,47 @@ pub fn cmd_data_backup(data_dir: &str, dest: Option<&str>) -> Result<String> {
     let ts = Utc::now().format("%Y%m%d-%H%M%S");
     let backup_file = backup_dir.join(format!("balebos-{ts}.db"));
     if db_path.exists() {
-        std::fs::copy(&db_path, &backup_file)?;
+        if backup_file.exists() {
+            std::fs::remove_file(&backup_file)?;
+        }
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| {
+            crate::error::BalebosError::Io(std::io::Error::other(format!(
+                "Failed to open SQLite DB for backup: {}",
+                e
+            )))
+        })?;
+        let dest_str = backup_file.to_string_lossy().to_string();
+        conn.execute("VACUUM INTO ?1", [&dest_str]).map_err(|e| {
+            crate::error::BalebosError::Io(std::io::Error::other(format!(
+                "SQLite VACUUM INTO backup failed: {}",
+                e
+            )))
+        })?;
+
+        // Verify the resulting backup before reporting success or allowing reset.
+        let verify_conn = rusqlite::Connection::open(&backup_file).map_err(|e| {
+            crate::error::BalebosError::Io(std::io::Error::other(format!(
+                "Failed to open backup DB for verification: {}",
+                e
+            )))
+        })?;
+        let integrity: String = verify_conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .map_err(|e| {
+                crate::error::BalebosError::Io(std::io::Error::other(format!(
+                    "Backup integrity check failed: {}",
+                    e
+                )))
+            })?;
+        if integrity != "ok" {
+            return Err(crate::error::BalebosError::Io(std::io::Error::other(
+                format!("Backup integrity check returned '{}'", integrity),
+            )));
+        }
     } else {
         std::fs::File::create(&backup_file)?;
     }
-    println!("Backup written to {}", backup_file.display());
+    println!("Verified backup written to {}", backup_file.display());
     Ok(backup_file.to_string_lossy().to_string())
 }
 
@@ -102,4 +139,43 @@ pub fn cmd_data_reset(data_dir: &str, dry_run: bool, backup: bool) -> Result<()>
     }
     println!("Operational database reset (archive preserved).");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inventory::{InventoryItem, ItemType};
+    use crate::storage::{SqliteStorage, StorageEngineExt};
+
+    #[test]
+    fn wal_safe_backup_preserves_uncheckpointed_wal_transactions() {
+        let dir = std::env::temp_dir().join(format!("balebos_wal_bak_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("balebos.db");
+        let db_str = db_path.to_str().unwrap();
+
+        let storage: Arc<dyn StorageEngine> = Arc::new(SqliteStorage::new(db_str).unwrap());
+        storage
+            .save(&InventoryItem {
+                item_type: ItemType::Domain,
+                id: "wal-item-1".to_string(),
+                name: "wal-test.example.com".to_string(),
+                original_input: Some("wal-test.example.com".to_string()),
+                discovered_at: Utc::now(),
+                source: "cli".to_string(),
+            })
+            .unwrap();
+        storage.flush().unwrap();
+
+        // Keep `storage` open (WAL active) while running backup!
+        let backup_path = cmd_data_backup(dir.to_str().unwrap(), None).unwrap();
+        drop(storage);
+
+        let restored = SqliteStorage::new(&backup_path).unwrap();
+        let records = restored.read_all_records().unwrap();
+        assert_eq!(records.items.len(), 1);
+        assert_eq!(records.items[0].name, "wal-test.example.com");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -309,6 +309,18 @@ fn main() {
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }
+        Command::DiscoverRun {
+            domain,
+            scope_domains,
+            save,
+        } => {
+            if let Err(e) =
+                handlers::services::cmd_discover_run(&domain, &scope_domains, save, &storage)
+            {
+                eprintln!("Autonomous discovery failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::DataInfo => {
             if let Err(e) = handlers::data::cmd_data_info(&data_dir, &storage) {
                 eprintln!("Data info failed: {e}");
