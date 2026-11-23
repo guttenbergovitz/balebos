@@ -12,6 +12,9 @@ impl App {
         self.input.clear();
         self.input_mode = InputMode::Normal;
 
+        // A previous cancellation must not poison the next scan.
+        crate::app::probe::process::reset_cancel();
+
         // Reset scan status before starting a new scan
         {
             let mut status = self.scan_status.lock().unwrap_or_else(|p| p.into_inner());

@@ -123,13 +123,19 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
 
     let scanning_span = if is_scanning {
         Span::styled(
-            " ⟳ SCANNING... ",
+            " ⟳ SCANNING… (c: cancel) ",
             Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         )
     } else {
         Span::raw("")
+    };
+
+    let coverage_span = match app.coverage_complete {
+        Some(true) => Span::styled(" Coverage: complete ", Style::default().fg(Color::Green)),
+        Some(false) => Span::styled(" Coverage: incomplete ", Style::default().fg(Color::Yellow)),
+        None => Span::styled(" Coverage: no scan ", Style::default().fg(Color::DarkGray)),
     };
 
     let storage_name = app.storage.name();
@@ -169,6 +175,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             format!(" DNS Issues: {} ", stats.dns_issues),
             Style::default().fg(Color::Yellow),
         ),
+        coverage_span,
         scanning_span,
     ])];
 
