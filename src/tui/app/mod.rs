@@ -23,28 +23,18 @@ use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 pub enum Tab {
     #[default]
     Inventory,
-    Organization,
-    Projects,
     Findings,
     Drift,
 }
 
 impl Tab {
     pub fn all() -> &'static [Tab] {
-        &[
-            Tab::Inventory,
-            Tab::Organization,
-            Tab::Projects,
-            Tab::Findings,
-            Tab::Drift,
-        ]
+        &[Tab::Inventory, Tab::Findings, Tab::Drift]
     }
 
     pub fn title(&self) -> &'static str {
         match self {
             Tab::Inventory => "Inventory",
-            Tab::Organization => "Organization",
-            Tab::Projects => "Projects",
             Tab::Findings => "Findings",
             Tab::Drift => "Drift",
         }
