@@ -122,60 +122,39 @@ fn extract_domain_from_url(url: &str) -> String {
 }
 
 /// Checks whether two domain names share the same root domain.
-///
-/// Handles common two-part TLDs (e.g. co.uk, com.au) as well as standard TLDs.
-/// For example:
-/// - `shop.josera.de` and `template.josera.de` → true (root: josera.de)
-/// - `josera.de` and `maxcluster.net` → false
-/// - `foo.co.uk` and `bar.co.uk` → true (root: co.uk level, need 3 labels)
-fn is_same_root_domain(a: &str, b: &str) -> bool {
-    let a_parts: Vec<&str> = a.split('.').collect();
-    let b_parts: Vec<&str> = b.split('.').collect();
+const TWO_PART_TLDS: &[&str] = &[
+    "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il", "com.au", "com.br", "com.cn",
+    "com.mx", "com.pl", "com.tr", "com.ua", "org.uk", "org.au", "org.pl", "net.au", "net.uk",
+    "net.pl", "ac.uk", "gov.uk", "edu.au",
+];
 
-    // Known two-part TLDs where the root domain requires 3 labels
-    const TWO_PART_TLDS: &[&str] = &[
-        "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il", "com.au", "com.br",
-        "com.cn", "com.mx", "com.tr", "com.ua", "org.uk", "org.au", "net.au", "net.uk", "ac.uk",
-        "gov.uk", "edu.au",
-    ];
-
-    let needed = if a_parts.len() >= 3 || b_parts.len() >= 3 {
-        let a_suffix = if a_parts.len() >= 2 {
-            format!(
-                "{}.{}",
-                a_parts[a_parts.len() - 2],
-                a_parts[a_parts.len() - 1]
-            )
-        } else {
-            String::new()
-        };
-        let b_suffix = if b_parts.len() >= 2 {
-            format!(
-                "{}.{}",
-                b_parts[b_parts.len() - 2],
-                b_parts[b_parts.len() - 1]
-            )
-        } else {
-            String::new()
-        };
-
-        if TWO_PART_TLDS.contains(&a_suffix.as_str()) || TWO_PART_TLDS.contains(&b_suffix.as_str())
-        {
-            3
-        } else {
-            2
-        }
+/// Return the apex (registrable) domain for `domain`, accounting for known
+/// two-part public suffixes (e.g. `www.example.co.uk` → `example.co.uk`).
+fn apex_domain(domain: &str) -> Option<String> {
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let two_part = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
+    let needed = if TWO_PART_TLDS.contains(&two_part.as_str()) {
+        3
     } else {
         2
     };
-
-    if a_parts.len() < needed || b_parts.len() < needed {
-        return false;
+    if parts.len() < needed {
+        return None;
     }
+    Some(parts[parts.len() - needed..].join("."))
+}
 
-    let root_a = &a_parts[a_parts.len() - needed..];
-    let root_b = &b_parts[b_parts.len() - needed..];
-    root_a == root_b
+/// Check if two domains belong to the same root domain.
+///
+/// Handles common two-part TLDs (e.g. co.uk, com.au) as well as standard TLDs.
+fn is_same_root_domain(a: &str, b: &str) -> bool {
+    match (apex_domain(a), apex_domain(b)) {
+        (Some(ra), Some(rb)) => ra == rb,
+        _ => false,
+    }
 }
 
 /// A group of subdomains under a root domain
@@ -463,10 +442,8 @@ pub fn load_tui_model_from_records(records: &crate::storage::reader::Records) ->
         if let Some(reg) = domain_registrations.get(name) {
             return Some(reg.clone());
         }
-        // Try apex domain (e.g., www.example.com -> example.com)
-        let parts: Vec<&str> = name.split('.').collect();
-        if parts.len() > 2 {
-            let apex = parts[parts.len() - 2..].join(".");
+        // Try apex domain (e.g., www.example.co.uk -> example.co.uk)
+        if let Some(apex) = apex_domain(name) {
             if let Some(reg) = domain_registrations.get(&apex) {
                 return Some(reg.clone());
             }
