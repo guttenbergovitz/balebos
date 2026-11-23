@@ -207,17 +207,17 @@ fn check_asnmap_installation() -> Result<()> {
 /// Run a batch ASN probe for multiple IP addresses.
 ///
 /// Uses asnmap as primary source, with Team Cymru DNS and whois as fallbacks.
-/// Takes a map of IP -> hostname for correlation, since we need to track which
-/// host each IP came from.
+/// Takes a map of IP -> hostnames for correlation, since multiple hosts
+/// can share an IP address and each association must be preserved.
 pub fn probe_asn_batch(
-    ip_to_host: &HashMap<String, String>,
+    ip_to_hosts: &HashMap<String, Vec<String>>,
     storage: &Arc<dyn StorageEngine>,
 ) -> Result<Vec<AsnObservation>> {
-    if ip_to_host.is_empty() {
+    if ip_to_hosts.is_empty() {
         return Ok(Vec::new());
     }
 
-    let ips: Vec<&String> = ip_to_host.keys().collect();
+    let ips: Vec<&String> = ip_to_hosts.keys().collect();
     let mut all_observations = Vec::new();
     let mut resolved_ips: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -265,7 +265,6 @@ pub fn probe_asn_batch(
 
                 if let Ok(parsed) = serde_json::from_str::<AsnmapOutput>(&line) {
                     let ip = parsed.input.unwrap_or_default();
-                    let host = ip_to_host.get(&ip).cloned().unwrap_or_else(|| ip.clone());
 
                     // Parse ASN number (format: "ASXXXXX" or just number)
                     let asn = parsed
@@ -282,19 +281,27 @@ pub fn probe_asn_batch(
                     }
 
                     resolved_ips.insert(ip.clone());
+                    let org = parsed.as_name.unwrap_or_else(|| "UNKNOWN".to_string());
+                    let country = parsed.as_country.unwrap_or_else(|| "XX".to_string());
+                    let hosts = ip_to_hosts
+                        .get(&ip)
+                        .filter(|h| !h.is_empty())
+                        .cloned()
+                        .unwrap_or_else(|| vec![ip.clone()]);
 
-                    let obs = AsnObservation {
-                        item_type: ItemType::AsnRecord,
-                        id: Uuid::new_v4().to_string(),
-                        target: ip,
-                        host,
-                        asn,
-                        org: parsed.as_name.unwrap_or_else(|| "UNKNOWN".to_string()),
-                        country: parsed.as_country.unwrap_or_else(|| "XX".to_string()),
-                        checked_at: Utc::now(),
-                        source: "asnmap".to_string(),
-                    };
-                    all_observations.push(obs);
+                    for host in hosts {
+                        all_observations.push(AsnObservation {
+                            item_type: ItemType::AsnRecord,
+                            id: Uuid::new_v4().to_string(),
+                            target: ip.clone(),
+                            host,
+                            asn,
+                            org: org.clone(),
+                            country: country.clone(),
+                            checked_at: Utc::now(),
+                            source: "asnmap".to_string(),
+                        });
+                    }
                 }
             }
         }
@@ -310,20 +317,25 @@ pub fn probe_asn_batch(
     if !unresolved.is_empty() {
         for ip in unresolved {
             if let Some(result) = lookup_asn_with_fallback(ip) {
-                let host = ip_to_host.get(ip).cloned().unwrap_or_else(|| ip.clone());
+                let hosts = ip_to_hosts
+                    .get(ip)
+                    .filter(|h| !h.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| vec![ip.clone()]);
 
-                let obs = AsnObservation {
-                    item_type: ItemType::AsnRecord,
-                    id: Uuid::new_v4().to_string(),
-                    target: ip.clone(),
-                    host,
-                    asn: result.asn,
-                    org: result.org,
-                    country: result.country,
-                    checked_at: Utc::now(),
-                    source: result.source,
-                };
-                all_observations.push(obs);
+                for host in hosts {
+                    all_observations.push(AsnObservation {
+                        item_type: ItemType::AsnRecord,
+                        id: Uuid::new_v4().to_string(),
+                        target: ip.clone(),
+                        host,
+                        asn: result.asn,
+                        org: result.org.clone(),
+                        country: result.country.clone(),
+                        checked_at: Utc::now(),
+                        source: result.source.clone(),
+                    });
+                }
             }
         }
     }
@@ -339,10 +351,10 @@ pub fn probe_asn_batch(
 /// Run ASN probe for a single IP address.
 #[allow(dead_code)]
 pub fn probe_asn(ip: &str, host: &str, storage: &Arc<dyn StorageEngine>) -> Result<AsnObservation> {
-    let mut ip_to_host = HashMap::new();
-    ip_to_host.insert(ip.to_string(), host.to_string());
+    let mut ip_to_hosts = HashMap::new();
+    ip_to_hosts.insert(ip.to_string(), vec![host.to_string()]);
 
-    let mut results = probe_asn_batch(&ip_to_host, storage)?;
+    let mut results = probe_asn_batch(&ip_to_hosts, storage)?;
 
     if let Some(obs) = results.pop() {
         Ok(obs)
@@ -364,25 +376,65 @@ pub fn probe_asn(ip: &str, host: &str, storage: &Arc<dyn StorageEngine>) -> Resu
     }
 }
 
-/// Build IP to host mapping from DNS observations.
-/// This extracts all unique IPs from A and AAAA records and maps them back to hosts.
+/// Build IP-to-hosts mapping from DNS observations.
+/// Extracts all unique IPs from A and AAAA records and preserves every
+/// host that resolved to each IP (many-to-many, sorted deterministically).
 pub fn build_ip_host_map(
     dns_observations: &[super::types::DnsObservation],
-) -> HashMap<String, String> {
-    let mut ip_to_host = HashMap::new();
+) -> HashMap<String, Vec<String>> {
+    let mut ip_to_hosts: HashMap<String, std::collections::BTreeSet<String>> = HashMap::new();
 
     for obs in dns_observations {
-        for ip in &obs.a {
-            ip_to_host
+        for ip in obs.a.iter().chain(obs.aaaa.iter()) {
+            ip_to_hosts
                 .entry(ip.clone())
-                .or_insert_with(|| obs.target.clone());
-        }
-        for ip in &obs.aaaa {
-            ip_to_host
-                .entry(ip.clone())
-                .or_insert_with(|| obs.target.clone());
+                .or_default()
+                .insert(obs.target.clone());
         }
     }
 
-    ip_to_host
+    ip_to_hosts
+        .into_iter()
+        .map(|(ip, hosts)| (ip, hosts.into_iter().collect()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::probe::types::DnsObservation;
+
+    #[test]
+    fn build_ip_host_map_preserves_multiple_hosts_per_ip() {
+        let now = Utc::now();
+        let obs1 = DnsObservation {
+            item_type: ItemType::DnsRecord,
+            id: "1".to_string(),
+            asset_type: "domain".to_string(),
+            target: "a.example.com".to_string(),
+            a: vec!["203.0.113.10".to_string()],
+            aaaa: vec![],
+            cname: vec![],
+            mx: vec![],
+            ns: vec![],
+            txt: vec![],
+            soa: vec![],
+            checked_at: now,
+            source: "dnsx".to_string(),
+        };
+        let obs2 = DnsObservation {
+            target: "b.example.com".to_string(),
+            id: "2".to_string(),
+            ..obs1.clone()
+        };
+
+        let map = build_ip_host_map(&[obs1, obs2]);
+        assert_eq!(
+            map.get("203.0.113.10"),
+            Some(&vec![
+                "a.example.com".to_string(),
+                "b.example.com".to_string()
+            ])
+        );
+    }
 }

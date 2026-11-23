@@ -1,6 +1,6 @@
-# 0011 — Infrastructure relationship graph (future phase)
+# 0011 — Infrastructure relationship graph
 
-**Status:** Proposed
+**Status:** Accepted (Phase B–D implemented as deterministic projections)
 
 ## Context
 
@@ -16,10 +16,9 @@ closing it. It is an extension of the existing product, not a replacement
 for its core purpose, and it must not interrupt or derail the ongoing
 migration.
 
-## Decision (draft — deferred)
+## Decision (implemented incrementally without a graph engine)
 
-No implementation in the current phases. The following constraints bind the
-existing 2.0 work so the graph can land later without a domain-model rewrite:
+The following constraints bind the relationship model and queries:
 
 - **Stable entity identities.** Asset identity rules (ADR 0004) must remain
   stable and explicit; identity is never derived from mutable attributes.

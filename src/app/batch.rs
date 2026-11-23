@@ -647,6 +647,7 @@ pub fn run_single_recon_with_progress(
         return Ok(vec![result]);
     }
 
+    let started_at = chrono::Utc::now();
     let mut results = Vec::new();
 
     // 1. Scan/Add domain
@@ -817,7 +818,8 @@ pub fn run_single_recon_with_progress(
     // 7. ASN Probe
     on_step("Looking up ASN information...");
     let ip_to_host = probe::asn::build_ip_host_map(&dns_observations);
-    let asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
+    let mut asn_by_ip: HashMap<String, probe::AsnObservation> = HashMap::new();
+    let mut asn_ok = true;
     if ip_to_host.is_empty() {
         let r = ReconStepResult {
             name: "asn",
@@ -827,21 +829,35 @@ pub fn run_single_recon_with_progress(
         on_result(&r);
         results.push(r);
     } else {
-        // Start ASN lookup in background (non-blocking)
-        let ip_count = ip_to_host.len();
-        let r = ReconStepResult {
-            name: "asn",
-            success: true,
-            message: format!(
-                "ASN lookup started for {} IPs (running in background)",
-                ip_count
-            ),
-        };
-        on_result(&r);
-        results.push(r);
-
-        // Note: ASN results won't be available for hosting detection in this run
-        // Run separately with: balebos asn-lookup
+        match probe::probe_asn_batch(&ip_to_host, storage) {
+            Ok(observations) => {
+                let count = observations.len();
+                for obs in observations {
+                    asn_by_ip.insert(obs.target.clone(), obs);
+                }
+                let r = ReconStepResult {
+                    name: "asn",
+                    success: true,
+                    message: format!(
+                        "ASN lookup completed for {} IPs ({} records)",
+                        ip_to_host.len(),
+                        count
+                    ),
+                };
+                on_result(&r);
+                results.push(r);
+            }
+            Err(e) => {
+                asn_ok = false;
+                let r = ReconStepResult {
+                    name: "asn",
+                    success: false,
+                    message: format!("ASN lookup failed: {}", e),
+                };
+                on_result(&r);
+                results.push(r);
+            }
+        }
     }
 
     // 8. Hosting Detection
@@ -877,6 +893,41 @@ pub fn run_single_recon_with_progress(
             results.push(r);
         }
     }
+
+    // Persist ScanReport covering all targets (input domain + discovered
+    // subdomains) so coverage reflects actual probe outcomes (ADR 0005).
+    let dns_stage_failed = results.iter().any(|r| r.name == "dns" && !r.success);
+    let http_stage_failed = results.iter().any(|r| r.name == "http" && !r.success);
+    let coverage_outcomes: Vec<crate::domain::coverage::TargetCoverageRecord> = targets
+        .iter()
+        .map(|t| {
+            let coverage = if dns_stage_failed || (has_dns.contains(t) && http_stage_failed) {
+                crate::domain::coverage::TargetCoverage::Failed {
+                    error: "probe stage failed".to_string(),
+                }
+            } else if !asn_ok && has_dns.contains(t) {
+                crate::domain::coverage::TargetCoverage::Failed {
+                    error: "asn lookup failed".to_string(),
+                }
+            } else {
+                crate::domain::coverage::TargetCoverage::Observed
+            };
+            crate::domain::coverage::TargetCoverageRecord {
+                target: t.clone(),
+                coverage,
+            }
+        })
+        .collect();
+    let report = crate::domain::coverage::ScanReport::start(started_at).finish(
+        targets,
+        coverage_outcomes,
+        chrono::Utc::now(),
+    );
+    let record = ScanReportRecord {
+        item_type: crate::inventory::ItemType::ScanReport,
+        report,
+    };
+    let _ = storage.save(&record);
 
     Ok(results)
 }
