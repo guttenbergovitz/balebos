@@ -10,8 +10,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use polars::prelude::*;
-
 use crate::error::{BalebosError, Result};
 use crate::inventory::ItemType;
 use crate::storage::sqlite::SqliteStorage;
@@ -52,32 +50,48 @@ fn storage_err(msg: impl Into<String>) -> BalebosError {
 
 /// Read the raw JSON rows of one legacy Parquet file, in file order.
 ///
-/// Uses Polars while it remains in the tree; Phase E swaps this reader to
-/// the `parquet` crate without changing the migration guarantees.
+/// Uses the `parquet` crate (feature `parquet-archive`). Legacy Parquet
+/// support is transitional; the feature requirement is the cost of
+/// reading the old format without a DataFrame engine (ADR 0013).
+#[cfg(feature = "parquet-archive")]
 fn read_raw_rows(path: &Path) -> Result<Vec<String>> {
-    let df = LazyFrame::scan_parquet(
-        path.to_string_lossy().as_ref().into(),
-        ScanArgsParquet::default(),
-    )
-    .and_then(|lf| lf.collect())
-    .map_err(|e| storage_err(format!("failed to read {}: {e}", path.display())))?;
+    use arrow_array::StringArray;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-    let column = df
-        .column("raw_json")
-        .map_err(|_| storage_err(format!("{}: missing 'raw_json' column", path.display())))?
-        .str()
-        .map_err(|_| {
-            storage_err(format!(
-                "{}: 'raw_json' is not a string column",
-                path.display()
-            ))
-        })?;
+    let file = std::fs::File::open(path)
+        .map_err(|e| storage_err(format!("cannot open {}: {e}", path.display())))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(|e| storage_err(format!("failed to read {}: {e}", path.display())))?;
 
-    Ok(column
-        .into_iter()
-        .flatten()
-        .map(|s| s.to_string())
-        .collect())
+    let mut rows = Vec::new();
+    for batch in builder
+        .build()
+        .map_err(|e| storage_err(format!("failed to read {}: {e}", path.display())))?
+    {
+        let batch = batch.map_err(|e| storage_err(e.to_string()))?;
+        let column = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or_else(|| {
+                storage_err(format!(
+                    "{}: 'raw_json' column is not a string type",
+                    path.display()
+                ))
+            })?;
+        for value in column.iter().flatten() {
+            rows.push(value.to_string());
+        }
+    }
+    Ok(rows)
+}
+
+#[cfg(not(feature = "parquet-archive"))]
+fn read_raw_rows(path: &Path) -> Result<Vec<String>> {
+    Err(storage_err(format!(
+        "reading {} requires a build with --features parquet-archive",
+        path.display()
+    )))
 }
 
 /// Migrate every legacy `*.parquet` file in `legacy_dir` into `storage`.
@@ -181,17 +195,31 @@ pub fn migrate_legacy_parquet(
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "parquet-archive"))]
 mod tests {
     use super::*;
 
     /// Build a legacy-format parquet file: a single raw_json column of
     /// arbitrary strings (including deliberately malformed rows).
     fn write_legacy_file(dir: &Path, name: &str, rows: &[&str]) {
-        let series = Series::new("raw_json".into(), rows.to_vec());
-        let mut df = DataFrame::new(rows.len(), vec![series.into()]).unwrap();
+        use arrow_array::StringArray;
+        use arrow_schema::{DataType, Field, Schema};
+        use parquet::arrow::ArrowWriter;
+
+        let schema = std::sync::Arc::new(Schema::new(vec![Field::new(
+            "raw_json",
+            DataType::Utf8,
+            false,
+        )]));
+        let batch = arrow_array::RecordBatch::try_new(
+            schema.clone(),
+            vec![std::sync::Arc::new(StringArray::from(rows.to_vec()))],
+        )
+        .unwrap();
         let file = std::fs::File::create(dir.join(name)).unwrap();
-        ParquetWriter::new(file).finish(&mut df).unwrap();
+        let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
     }
 
     fn setup_dirs() -> (String, String) {

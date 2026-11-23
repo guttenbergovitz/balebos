@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default storage engine is now SQLite (`data/balebos.db`); the legacy
+  Parquet engine and the Polars dependency are removed from the default
+  build (ADRs 0012/0013/0017). Legacy data imports via `balebos migrate`
+  (build with `--features parquet-archive`).
+- Measured build improvement vs the Phase A baseline (cold release,
+  isolated target dir, same machine): see the Phase E commit message.
+
 ## [2.0.0-alpha.1] - 2026-11-23
 
 Pre-release of the 2.0 realignment: product scope, engineering foundation,
