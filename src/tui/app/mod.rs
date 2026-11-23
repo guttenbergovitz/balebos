@@ -193,6 +193,7 @@ pub struct ScanState {
     pub total_targets: Option<usize>,
     pub stage_processed: usize,
     pub processed_targets: usize,
+    pub active_targets: Vec<String>,
     pub new_discoveries: usize,
     pub services_discovered: usize,
     pub error_count: usize,
@@ -212,6 +213,7 @@ impl Default for ScanState {
             total_targets: None,
             stage_processed: 0,
             processed_targets: 0,
+            active_targets: Vec::new(),
             new_discoveries: 0,
             services_discovered: 0,
             error_count: 0,
@@ -241,6 +243,7 @@ impl ScanState {
                 self.total_targets = None;
                 self.stage_processed = 0;
                 self.processed_targets = 0;
+                self.active_targets.clear();
                 self.new_discoveries = 0;
                 self.services_discovered = 0;
                 self.error_count = 0;
@@ -263,6 +266,12 @@ impl ScanState {
                 stage, target, at, ..
             } => {
                 self.current_stage = Some(stage.clone());
+                if !self.active_targets.contains(target) {
+                    self.active_targets.push(target.clone());
+                    if self.active_targets.len() > 10 {
+                        self.active_targets.remove(0);
+                    }
+                }
                 self.message = format!("{}: {}", stage, target);
                 self.timestamp = *at;
             }
@@ -274,6 +283,7 @@ impl ScanState {
                 at,
                 ..
             } => {
+                self.active_targets.retain(|t| t != target);
                 self.processed_targets += 1;
                 self.stage_processed += 1;
                 if !*ok {

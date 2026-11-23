@@ -69,8 +69,15 @@ pub fn draw_runs(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(format!(
-            "New discoveries: {}  |  Services: {}  |  Errors: {}  |  (c: Cancel, s: New scan)",
-            scan.new_discoveries, scan.services_discovered, scan.error_count
+            "Active: {}  |  New discoveries: {}  |  Services: {}  |  Errors: {}  |  (c: Cancel, s: New scan)",
+            if scan.active_targets.is_empty() {
+                "-".to_string()
+            } else {
+                scan.active_targets.join(", ")
+            },
+            scan.new_discoveries,
+            scan.services_discovered,
+            scan.error_count
         )),
     ];
     let active_block = Paragraph::new(active_lines).block(
