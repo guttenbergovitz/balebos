@@ -110,6 +110,21 @@ impl SqliteStorage {
         Ok(value)
     }
 
+    /// Highest rowid in the records table (0 when empty).
+    pub fn max_rowid(&self) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let value: i64 = conn
+            .query_row("SELECT COALESCE(MAX(rowid), 0) FROM records", [], |row| {
+                row.get(0)
+            })
+            .map_err(sqlite_err)?;
+        Ok(value)
+    }
+
     /// Rows not yet covered by any sealed segment, in rowid order.
     pub fn rows_after(&self, rowid: i64) -> Result<Vec<(i64, String, String, String)>> {
         let conn = self.conn.lock().map_err(|e| {
@@ -130,6 +145,36 @@ impl SqliteStorage {
             .map_err(sqlite_err)?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(sqlite_err)
+    }
+
+    /// Stream rows after `rowid` to `f`, one at a time, in rowid order.
+    /// Memory-bounded alternative to `rows_after` for large selections.
+    pub fn each_row_after(
+        &self,
+        rowid: i64,
+        mut f: impl FnMut(i64, String, String, String),
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT rowid, record_type, record_id, body FROM records \
+                 WHERE rowid > ?1 ORDER BY rowid",
+            )
+            .map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map(params![rowid], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(sqlite_err)?;
+        for row in rows {
+            let (rowid, record_type, record_id, body) = row.map_err(sqlite_err)?;
+            f(rowid, record_type, record_id, body);
+        }
+        Ok(())
     }
 
     /// Record a sealed segment: manifest row plus the new boundary, in one

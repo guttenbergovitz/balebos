@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Archive crash recovery (review P0): segment identity is now
+  deterministic (derived from the selection boundary, not random), so a
+  crash after publication but before the SQLite state update is recovered
+  by verify-and-adopt — no orphaned segments, no duplicate seals. The
+  adoption path previously also compared against an unfilled manifest
+  hash; it now verifies the on-disk manifest against the bytes.
+- Archive memory and durability (review P1): segments stream in 8192-row
+  chunks (bounded RAM regardless of selection size), SHA-256 is computed
+  by a write-through hasher (no re-read for hashing), publish
+  verification counts rows via a streaming reader, and the segment file
+  is fsynced before rename.
+
 ### Added
 
 - Bounded subprocess execution for all probe adapters: uniform
