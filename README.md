@@ -25,6 +25,10 @@ Balebos is designed so that system state does not depend on constant human atten
 - archives historical evidence into sealed Parquet segments with SHA-256 manifests (optional `parquet-archive` build)
 - records scan coverage: every batch run persists an identifiable report of what was planned and what happened to each target (observed, failed, skipped, not attempted)
 - tracks changes over time and highlights drift and unknowns
+- discovers and correlates infrastructure relationships (`related`, `explain`, `history`, `pivot`) across domains, FQDNs, IPs, ASNs, TLS certificates, network services and application references
+- ingests optional external service intelligence (Censys, Shodan, `urlscan.io`, Certificate Transparency, Passive DNS) with provider timestamps and explicit uncertainty
+- extracts bounded application references from JavaScript assets, OpenAPI/Swagger specs, DNS SRV/TXT records, cloud storage URLs and public repository configs
+- provides a 5-tab interactive TUI Investigation Workbench (`Overview`, `Runs`, `Explore`, `Changes`, `Findings`)
 - persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
 - exports an interactive static web dashboard for stakeholders
 
@@ -77,10 +81,11 @@ balebos risk report
 - **Current (Balebos 2.0)**
   - [Product definition](docs/product.md) - Identity, scope and explicit non-goals
   - [Architecture](docs/architecture.md) - Module boundaries and dependency direction
+  - [Capabilities](docs/capabilities.md) - Code-verified capability matrix and epistemic boundaries
   - [Conventions](docs/conventions.md) - Rust standards, testing, Git discipline
   - [Operations](docs/operations.md) - Quality gate, tasks, release procedure
   - [Migration to 2.0](docs/migration-v2.md) - Data, CLI and feature disposition
-  - [Architecture Decision Records](docs/adr/) - Recorded decisions (0001–0011)
+  - [Architecture Decision Records](docs/adr/) - Recorded decisions (0001–0031)
 - **Guides (1.x era, historical)**
   - [Getting Started](documentation/guides/getting-started.md) - Installation and first steps
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
@@ -140,11 +145,29 @@ balebos tree                                # Hierarchical view
 balebos status                              # Health report by status code
 ```
 
-**Storage and evidence:**
+**Infrastructure relationships, services & references:**
 ```bash
-balebos migrate                          # Import legacy Parquet data into SQLite (verified, reversible)
-balebos archive build                    # Seal unarchived observations into a Parquet segment
-balebos archive verify                   # Validate segment hashes, counts and chain
+balebos discover run example.com --save             # Bounded CT, DNS SRV/TXT, JS & OpenAPI discovery
+balebos discover services 203.0.113.10 --provider censys --input host.json --save
+balebos discover references app.example.com --kind js --input bundle.js --save
+balebos services list                               # List persisted network services & fingerprints
+balebos services show 203.0.113.10:5432/tcp         # Inspect protocol evidence & uncertainty
+balebos related example.com                         # Direct & shared-infrastructure relationships
+balebos explain a.example.com b.example.com         # Explain supporting evidence between two entities
+balebos pivot example.com --scope example.com       # Controlled local pivot discovery
+balebos candidates list                             # Review passive discovery candidates
+balebos candidates explain 203.0.113.10:5432/tcp    # Inspect candidate provenance & scope
+balebos discovery report --json                     # Discovery yield, novelty & precision metrics
+```
+
+**Storage, backups and evidence:**
+```bash
+balebos --data-dir ./custom-data data info          # Show SQLite path, size and record counts
+balebos data backup                                 # WAL-safe verified SQLite backup (VACUUM INTO)
+balebos data reset --dry-run                        # Preview operational DB reset (archive preserved)
+balebos migrate                                     # Import legacy Parquet data into SQLite (verified, reversible)
+balebos archive build                               # Seal unarchived observations into a Parquet segment
+balebos archive verify                              # Validate segment hashes, counts and chain
 ```
 
 > Archive commands require a build with `--features parquet-archive`.
