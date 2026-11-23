@@ -107,12 +107,7 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
     let seed_norm = normalize_domain(seed.trim().trim_end_matches('.'));
     let edges = project_relationships(records);
 
-    let mut approved = config.approved_domains.clone();
-    if approved.is_empty() {
-        for item in &records.items {
-            approved.insert(normalize_domain(&item.name));
-        }
-    }
+    let approved = &config.approved_domains;
 
     let mut visited: BTreeSet<String> = BTreeSet::new();
     visited.insert(seed_norm.clone());
@@ -149,7 +144,7 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
                     if !visited.insert(target_id.clone()) {
                         continue;
                     }
-                    let in_scope = is_in_scope(&target_id, &approved);
+                    let in_scope = is_in_scope(&target_id, approved);
                     let signal = match edge.kind {
                         RelationshipKind::AliasesTo | RelationshipKind::RedirectsTo => {
                             SignalCategory::DirectlyObserved
@@ -192,7 +187,7 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
                         if !visited.insert(peer_id.clone()) {
                             continue;
                         }
-                        let in_scope = is_in_scope(&peer_id, &approved);
+                        let in_scope = is_in_scope(&peer_id, approved);
                         let mut obs_ids = edge.evidence.observation_ids.clone();
                         obs_ids.extend(peer.evidence.observation_ids.clone());
                         candidates.push(PivotCandidate {
@@ -339,6 +334,40 @@ mod tests {
                 .iter()
                 .any(|c| c.candidate.id == "example.com"),
             "seed must not reappear via cycle"
+        );
+    }
+
+    #[test]
+    fn empty_scope_marks_all_candidates_out_of_scope() {
+        let mut records = Records::default();
+        records.items.push(InventoryItem {
+            item_type: ItemType::Domain,
+            id: "1".to_string(),
+            name: "other.example.net".to_string(),
+            discovered_at: Utc::now(),
+            source: "cli".to_string(),
+            original_input: None,
+        });
+        records.dns_observations.push(dns_with(
+            "d1",
+            "seed.example.com",
+            &["203.0.113.10"],
+            &[],
+            &[],
+        ));
+        records.dns_observations.push(dns_with(
+            "d2",
+            "other.example.net",
+            &["203.0.113.10"],
+            &[],
+            &[],
+        ));
+
+        let report = discover_pivots(&records, "seed.example.com", &PivotConfig::default());
+        assert_eq!(report.candidates.len(), 1);
+        assert!(
+            !report.candidates[0].in_scope,
+            "inventory membership alone must never grant active-probing scope"
         );
     }
 
