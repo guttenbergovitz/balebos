@@ -68,9 +68,48 @@ pub fn extract_script_srcs_from_html(base_url: &str, html: &str) -> Vec<String> 
     out
 }
 
+/// Verify that a script or spec URL resolves to an authorised, public-scope host
+/// using strict authority/label-boundary matching (never substring `.contains()`).
+pub fn is_url_in_scope(raw_url: &str, approved_scope: &[String]) -> bool {
+    let lower = raw_url.trim().to_ascii_lowercase();
+    let Some(after_scheme) = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let Some(authority) = after_scheme.split(['/', '?', '#']).next() else {
+        return false;
+    };
+    let host_raw = authority
+        .split('@')
+        .next_back()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+    let host = normalize_fqdn(host_raw);
+    if host.is_empty() || check_scope(&host, false).is_err() {
+        return false;
+    }
+    approved_scope.iter().any(|s| {
+        let sc = normalize_fqdn(s);
+        !sc.is_empty() && (host == sc || host.ends_with(&format!(".{}", sc)))
+    })
+}
+
 fn fetch_bounded_url(url: &str) -> std::result::Result<String, String> {
     let out = process::run_bounded(
-        Command::new("curl").args(["-sSL", "--max-time", "10", "--max-filesize", "524288", url]),
+        Command::new("curl").args([
+            "-sS",
+            "--max-time",
+            "10",
+            "--max-filesize",
+            "524288",
+            "--max-redirs",
+            "0",
+            url,
+        ]),
         FETCH_TIMEOUT,
         MAX_FETCH_BYTES,
     )
@@ -149,10 +188,7 @@ pub fn run_autonomous_discovery(
     match fetch_bounded_url(&base_url) {
         Ok(html) => {
             for script_url in extract_script_srcs_from_html(&base_url, &html) {
-                let same_scope = effective_scope
-                    .iter()
-                    .any(|s| script_url.contains(&normalize_fqdn(s)));
-                if !same_scope {
+                if !is_url_in_scope(&script_url, &effective_scope) {
                     continue;
                 }
                 match fetch_bounded_url(&script_url) {
@@ -218,5 +254,21 @@ mod tests {
         assert_eq!(srcs[0], "https://www.example.com/assets/app.js");
         assert_eq!(srcs[2], "https://cdn.example.com/chunk1.js");
         assert_eq!(srcs[3], "https://www.example.com/main.js");
+    }
+
+    #[test]
+    fn scope_check_rejects_path_substring_and_suffix_spoofing() {
+        let scope = vec!["example.com".to_string()];
+        assert!(is_url_in_scope("https://cdn.example.com/app.js", &scope));
+        assert!(is_url_in_scope("https://example.com/app.js", &scope));
+        assert!(!is_url_in_scope(
+            "https://evil.com/example.com/app.js",
+            &scope
+        ));
+        assert!(!is_url_in_scope("https://notexample.com/app.js", &scope));
+        assert!(!is_url_in_scope(
+            "http://127.0.0.1/example.com/app.js",
+            &scope
+        ));
     }
 }

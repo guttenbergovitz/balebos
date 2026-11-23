@@ -8,6 +8,21 @@ impl App {
             return;
         }
 
+        // Atomic guard against launching concurrent scans
+        let already_running = {
+            let mut scanning = self.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
+            if *scanning {
+                true
+            } else {
+                *scanning = true;
+                false
+            }
+        };
+        if already_running {
+            self.set_status("A scan is already in progress".to_string());
+            return;
+        }
+
         let target = self.input.clone();
         self.input.clear();
         self.input_mode = InputMode::Normal;
@@ -35,49 +50,40 @@ impl App {
         let ignore_patterns = self.ignore_patterns.clone();
 
         std::thread::spawn(move || {
-            {
-                let mut s = is_scanning.lock().unwrap_or_else(|p| p.into_inner());
-                *s = true;
-            }
-
             let scan_status_for_step = scan_status.clone();
-            let run_id_for_step = run_id.clone();
             let on_step = move |step: &str| {
                 let mut status = scan_status_for_step
                     .lock()
                     .unwrap_or_else(|p| p.into_inner());
-                status.apply_event(crate::domain::scan_event::ScanEvent::StageStarted {
-                    run_id: run_id_for_step.clone(),
-                    stage: step.to_string(),
-                    total_targets: None,
-                    at: chrono::Utc::now(),
-                });
+                status.message = step.to_string();
+                status.timestamp = chrono::Utc::now();
             };
 
             let scan_status_for_result = scan_status.clone();
-            let run_id_for_result = run_id.clone();
-            let target_for_result = target.clone();
             let on_result = move |result: &crate::app::batch::ReconStepResult| {
                 let mut status = scan_status_for_result
                     .lock()
                     .unwrap_or_else(|p| p.into_inner());
                 status.steps.push(result.clone());
-                status.apply_event(crate::domain::scan_event::ScanEvent::TargetCompleted {
-                    run_id: run_id_for_result.clone(),
-                    stage: result.name.to_string(),
-                    target: target_for_result.clone(),
-                    ok: result.success,
-                    detail: Some(result.message.clone()),
-                    at: chrono::Utc::now(),
-                });
+                status.timestamp = chrono::Utc::now();
             };
 
-            let res = crate::app::batch::run_single_recon_with_progress(
+            let scan_status_for_event = scan_status.clone();
+            let on_event = move |ev: crate::domain::scan_event::ScanEvent| {
+                let mut status = scan_status_for_event
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                status.apply_event(ev);
+            };
+
+            let res = crate::app::batch::run_single_recon_with_events(
+                &run_id,
                 &target,
                 &storage,
                 &ignore_patterns,
                 &on_step,
                 &on_result,
+                &on_event,
             );
 
             {
@@ -85,9 +91,18 @@ impl App {
                 *s = false;
             }
 
+            let cancelled = crate::app::probe::process::is_cancelled();
             let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
             let failures: Vec<_> = status.steps.iter().filter(|s| !s.success).collect();
             let err_count = failures.len();
+            if cancelled {
+                status.message = "⚠ Scan cancelled".to_string();
+                status.apply_event(crate::domain::scan_event::ScanEvent::RunCancelled {
+                    run_id,
+                    finished_at: chrono::Utc::now(),
+                });
+                return;
+            }
             if let Err(e) = res {
                 status.message = format!("❌ Scan error: {}", e);
                 status.apply_event(crate::domain::scan_event::ScanEvent::StageFailed {
