@@ -107,6 +107,15 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
 // ---------------------------------------------------------------------------
 
 fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> {
+    // Cancelling an in-flight scan wins over every other binding: the
+    // watchdogs in app::probe::process see the flag, kill the scanner
+    // process groups and reap them.
+    if code == KeyCode::Char('c') && *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner()) {
+        crate::app::probe::process::cancel();
+        app.set_status("Cancelling scan: terminating scanner processes…".to_string());
+        return Ok(());
+    }
+
     match code {
         // Global keys
         KeyCode::Char('q') => app.should_quit = true,

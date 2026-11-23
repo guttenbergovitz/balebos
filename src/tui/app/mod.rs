@@ -51,6 +51,16 @@ impl Tab {
     }
 }
 
+/// Coverage of the most recent scan report, or None when no scan has
+/// been recorded yet.
+fn compute_coverage(storage: &Arc<dyn StorageEngine>) -> Option<bool> {
+    let records = storage.read_all_records().ok()?;
+    if records.scan_reports.is_empty() {
+        return None;
+    }
+    Some(crate::app::snapshot::latest_scan_is_complete(&records))
+}
+
 /// Type of entity being added in OrgAdding mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrgAddType {
@@ -199,6 +209,9 @@ impl ScanState {
 pub struct App {
     pub model: TuiModel,
     pub org_model: OrgModel,
+    /// Latest scan coverage: None = no scan report yet, Some(false) =
+    /// incomplete (absences are not verified change).
+    pub coverage_complete: Option<bool>,
     pub storage: Arc<dyn StorageEngine>,
     pub should_quit: bool,
 
@@ -249,10 +262,12 @@ impl App {
         let model = load_tui_model(&storage)?;
         let org_model = OrgModel::load(&storage)?;
         let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");
+        let coverage = compute_coverage(&storage);
 
         let mut app = Self {
             model,
             org_model,
+            coverage_complete: coverage,
             storage,
             should_quit: false,
 
@@ -311,6 +326,7 @@ impl App {
     pub fn refresh(&mut self) -> Result<(), BalebosError> {
         self.model = load_tui_model(&self.storage)?;
         self.org_model = OrgModel::load(&self.storage)?;
+        self.coverage_complete = compute_coverage(&self.storage);
         self.update_visible_items();
         self.update_org_selection();
         Ok(())

@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banner come from the same shared service as `balebos drift`, so both
   surfaces agree by construction. Incomplete coverage is shown
   explicitly; uncertainty classes render yellow, not as incidents.
+- TUI scan cancellation: `c` while scanning sets the operator-cancel
+  flag (scanner groups killed and reaped); the flag resets on the next
+  scan, and the global header shows scan coverage (complete / incomplete
+  / no scan) at all times.
 
 ### Changed
 
