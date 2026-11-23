@@ -1,22 +1,10 @@
-mod app;
-pub mod cli;
-mod domain;
-mod error;
-pub mod exit_codes;
-mod hosting;
-mod ignore;
-mod inventory;
-mod org;
-mod storage;
-mod tui;
-
-use exit_codes::*;
-use ignore::load_ignore_patterns;
 use std::process;
 use std::sync::Arc;
 
-use crate::cli::{handlers, parse_command, Command};
-use crate::storage::StorageEngine;
+use balebos::cli::{handlers, parse_command, Command};
+use balebos::exit_codes::*;
+use balebos::ignore::load_ignore_patterns;
+use balebos::storage::{ParquetStorage, StorageEngine};
 
 fn print_usage() {
     eprintln!("Usage:");
@@ -33,6 +21,8 @@ fn print_usage() {
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
+    eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
@@ -94,10 +84,16 @@ fn print_usage() {
 }
 
 fn main() {
-    // Initialize Parquet storage
-    let storage: Arc<dyn StorageEngine> = Arc::new(
-        crate::storage::ParquetStorage::new("data/parquet").expect("Failed to initialize storage"),
-    );
+    // Engine selection: SQLite (ADR 0012) is the target default; the legacy
+    // Parquet engine remains the default until the migration path (ADR 0018)
+    // is verified. BALEBOS_STORAGE=sqlite opts in early.
+    let storage: Arc<dyn StorageEngine> = match std::env::var("BALEBOS_STORAGE").as_deref() {
+        Ok("sqlite") => Arc::new(
+            balebos::storage::SqliteStorage::new("data/balebos.db")
+                .expect("Failed to initialise SQLite storage"),
+        ),
+        _ => Arc::new(ParquetStorage::new("data/parquet").expect("Failed to initialize storage")),
+    };
 
     let ignore_patterns = load_ignore_patterns("balebos.ignore");
 
@@ -120,6 +116,18 @@ fn main() {
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
+        Command::Migrate { from } => {
+            if let Err(e) = handlers::migrate::cmd_migrate(from) {
+                eprintln!("Migration failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::Archive { action, segment } => {
+            if let Err(e) = handlers::archive::cmd_archive(&action, segment) {
+                eprintln!("Archive operation failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::Ui => handlers::ui::cmd_ui(storage.clone()),
         Command::Web { output_dir } => handlers::web::cmd_web_export(&output_dir, &storage),
         Command::Org(org_cmd) => handlers::org::cmd_org(org_cmd, &storage),

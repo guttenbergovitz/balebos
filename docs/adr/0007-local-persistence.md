@@ -1,8 +1,11 @@
 # 0007 — Local persistence and migration
 
-**Status:** Proposed
+**Status:** Superseded by [0012](0012-sqlite-operational-storage.md) and
+[0013](0013-parquet-evidence-archive.md) (2026-11-22). Retained unchanged
+for history: it captured the verified defects of the interim Parquet engine
+that motivated the replacement.
 
-## Context
+## Context (historical)
 
 The 1.x Parquet engine (audit §5, verified) stores JSON strings in a single
 `raw_json` column, appends by reading and rewriting entire files, lacks atomic

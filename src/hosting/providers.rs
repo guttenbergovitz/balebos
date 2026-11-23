@@ -107,7 +107,7 @@ pub struct ProviderKnowledgeBase {
 impl ProviderKnowledgeBase {
     /// Load the provider knowledge base from embedded JSON.
     pub fn load() -> Self {
-        let json = include_str!("../../data/providers.json");
+        let json = include_str!("providers.json");
         let file: ProvidersFile =
             serde_json::from_str(json).expect("Failed to parse providers.json");
 

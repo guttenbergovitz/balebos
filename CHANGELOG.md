@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-alpha.1] - 2026-11-23
+
+Pre-release of the 2.0 realignment: product scope, engineering foundation,
+storage evidence integrity, SQLite operational engine and the sealed
+evidence archive. The default engine remains the legacy Parquet store
+until the migration path has been exercised on real data; see
+`docs/migration-v2.md` and ADRs 0012-0018.
+
 ### Added
 
 - Engineering foundation for Balebos 2.0: `docs/` durable documentation
@@ -21,6 +29,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of being coerced to `Domain`; unreadable records are reported in
   `Records::skipped` with reasons; atomic batch writes (temp file + fsync +
   rename); uncommitted records survive flush failures for retry.
+- Domain vocabulary for the 2.0 model: `ObservationOutcome` (success,
+  failed, skipped, unsupported, incomplete, unverified, confirmed absent —
+  ADR 0005) and validated identity newtypes `AssetId`, `ScanId`,
+  `ObservationId` (ADR 0004), serde-stable for persistence.
+- Scan coverage: every `batch` run persists an identifiable `ScanReport`
+  (scan id, timestamps, planned targets, per-target outcome — observed,
+  failed, skipped, not attempted) so partial and failed scans stay
+  distinguishable from verified change (ADR 0005).
+- SQLite operational storage behind `BALEBOS_STORAGE=sqlite` (ADR 0012):
+  append-only records, transactional all-or-nothing batches, per-write
+  commits, quarantine table with reader-visible reporting.
+- `balebos migrate [dir]`: verified, idempotent migration of legacy
+  Parquet data into SQLite — per-row classification, verbatim quarantine
+  of unknown/malformed rows, count verification, rename-not-delete
+  rollback (ADR 0018).
+- `balebos archive build|verify|restore` (feature `parquet-archive`):
+  sealed evidence segments — deterministic rowid-prefix selection,
+  immutable Parquet segments with typed columns, SHA-256 manifests with
+  chain field, crash-safe publication, hash/count/chain verification and
+  idempotent restore (ADRs 0013/0014). Default build unchanged.
 
 ### Changed
 

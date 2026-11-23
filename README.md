@@ -15,18 +15,18 @@ Balebos is designed so that system state does not depend on constant human atten
 
 ## What it does
 
-- discovers assets (domains, subdomains, repos)
+- discovers assets (domains, subdomains) via subfinder
 - resolves DNS records (A, AAAA, CNAME) via dnsx
 - performs deep HTTP probing (tech stack, title, web server) via httpx
 - tracks domain registration and expiration details via rdap/whois
 - tracks HTTP redirect chains (internal vs external redirects)
 - monitors TLS certificate expiration and issuer details
-- stores state in columnar format (Apache Parquet) with Polars query engine
-- tracks changes over time
-- exposes system state via API / queries
-- highlights drift and unknowns
+- stores state locally in SQLite — transactional, append-only, no server or database required
+- archives historical evidence into sealed Parquet segments with SHA-256 manifests (optional `parquet-archive` build)
+- records scan coverage: every batch run persists an identifiable report of what was planned and what happened to each target (observed, failed, skipped, not attempted)
+- tracks changes over time and highlights drift and unknowns
 - persists findings with lifecycle tracking (acknowledge, resolve, auto-resolve)
-- exports interactive web dashboard for business stakeholders
+- exports an interactive static web dashboard for stakeholders
 
 ## Quick Start
 
@@ -74,15 +74,19 @@ balebos risk report
 
 ## Documentation
 
-- **Guides**
+- **Current (Balebos 2.0)**
+  - [Product definition](docs/product.md) - Identity, scope and explicit non-goals
+  - [Architecture](docs/architecture.md) - Module boundaries and dependency direction
+  - [Conventions](docs/conventions.md) - Rust standards, testing, Git discipline
+  - [Operations](docs/operations.md) - Quality gate, tasks, release procedure
+  - [Migration to 2.0](docs/migration-v2.md) - Data, CLI and feature disposition
+  - [Architecture Decision Records](docs/adr/) - Recorded decisions (0001–0011)
+- **Guides (1.x era, historical)**
   - [Getting Started](documentation/guides/getting-started.md) - Installation and first steps
   - [Reconnaissance Pipeline](documentation/guides/recon-pipeline.md) - How assets are discovered and probed
   - [Usage Reference](documentation/guides/usage.md) - Detailed command documentation
   - [Tag Management](documentation/guides/tag-management.md) - Asset tagging and organization
   - [Findings Management](documentation/guides/findings.md) - Persisted issues and lifecycle tracking
-- **Technical Specs**
-  - [Architecture Overview](documentation/architecture.md) - Design principles and layers
-  - [Data Model](documentation/specs/data-model.md) - JSONL schema and record types
 
 ## Why
 
@@ -105,7 +109,10 @@ Balebos exists to make that visible and controlled.
 
 ## Status
 
-Beta stage with high-performance storage and container support.
+Beta. The Balebos 2.0 realignment is in progress (product scope, engineering
+foundation and storage evidence integrity landed; see `docs/adr/` and
+`CHANGELOG.md`). CI runs the full quality gate on every push to `develop`
+and `main`.
 
 ## Usage
 
@@ -133,34 +140,54 @@ balebos tree                                # Hierarchical view
 balebos status                              # Health report by status code
 ```
 
+**Storage and evidence:**
+```bash
+balebos migrate                          # Import legacy Parquet data into SQLite (verified, reversible)
+balebos archive build                    # Seal unarchived observations into a Parquet segment
+balebos archive verify                   # Validate segment hashes, counts and chain
+```
+
+> Archive commands require a build with `--features parquet-archive`.
+
+**Batch scanning (with coverage):**
+```bash
+balebos batch domains.txt                   # Full recon; persists a scan report
+                                            # (planned vs observed/failed/skipped per target)
+```
+
 **Ownership and context:**
 ```bash
-balebos org brand add "Acme Corp"           # Create brand
-balebos org company add "Acme Corp DE" DE --brand <id>  # Create company under brand
-balebos org project add "Website" --company <id>  # Create project
-balebos org assign asset api.example.com --project <id>  # Link asset to team
+balebos tag add api.example.com production  # Tag assets for local grouping
 balebos asset lifecycle set api.example.com active  # Mark lifecycle state
 ```
+
+> The `org` command family (Brand → Company → Project governance) still works
+> but is slated for retirement in 2.0 — see ADR 0008. Prefer tags, lifecycle
+> states and lightweight owner references for new workflows.
 
 For comprehensive command reference, advanced filters, batch processing, and export options, see the [Usage Guide](documentation/guides/usage.md).
 
 ### Data Storage
 
-Balebos uses a high-performance storage approach:
-- **Apache Parquet** - Columnar storage partitioned by record type (domains, findings, DNS records, etc.)
-- **Polars** - In-memory DataFrame engine for efficient data processing and queries
-- **Memory Buffering** - Records are buffered (default: 100 items) before being written to Parquet for optimal I/O
+Balebos keeps operational state in a local SQLite database (`data/balebos.db`):
 
-Records are automatically partitioned by item type (domain, subdomain, http_check, dns_record, finding, etc.) with each type stored in its own Parquet file. This structure enables fast data retrieval and efficient batch operations while maintaining the entire history of all observations.
+- **Transactional and append-only** - observations are inserted and never modified; every write commits before the command returns
+- **Quarantine** - records with unknown types or malformed content are preserved verbatim and reported on read, never silently dropped or reclassified
+- **Scan coverage** - every batch run records what was planned and what happened to each target
+
+Historical evidence is archived explicitly (build with `--features parquet-archive`):
+
+- `balebos archive build` seals unarchived observations into immutable Parquet segments — never rewritten
+- Each segment carries a versioned SHA-256 manifest: record counts, schema version, boundary, hash chain
+- `balebos archive verify` re-validates segments (hash, counts, chain continuity); `balebos archive restore <id>` re-imports them
+
+Legacy 1.x Parquet data imports losslessly: `balebos migrate [dir]` classifies every row, quarantines the unrecognised, verifies counts, and renames (never deletes) the old directory for rollback.
 
 ### Storage Considerations
 
-- **In-Memory Loading** - All queries load data into memory. For datasets >1M records, consider filtering by time range or asset subset
-- **All Fields are Text** - Parquet schema uses UTF-8 strings for all fields (efficient for infrastructure metadata)
-- **Append-Only** - New observations are merged (vstack) with existing records, preserving complete history
-- **No Live Indexes** - Lookups scan the entire Parquet file; acceptable for typical infrastructure inventories (10K-100K assets)
-
-For very large-scale deployments (100K+ assets with daily updates), consider integrating a time-series database like ClickHouse or PostgreSQL for real-time queries while keeping Balebos for historical analysis and reporting.
+- **Single-process ownership** - one Balebos process owns the database; no inter-process locking
+- **Retention** - observations stay in SQLite until sealed into a verified archive segment; no automated removal
+- **Local-first** - no server, broker or hosted backend is ever required
 
 ### Core Concepts
 
@@ -428,9 +455,12 @@ See `docs/operations.md` for the full list.
 ### Dependencies
 
 - Rust (toolchain pinned in `rust-toolchain.toml`; installed automatically by rustup)
-- Apache Parquet (for columnar storage)
+- SQLite (bundled via `rusqlite` — no system dependency)
 - Infrastructure discovery tools (required for probes):
   - [subfinder](https://github.com/projectdiscovery/subfinder)
   - [dnsx](https://github.com/projectdiscovery/dnsx)
   - [httpx](https://github.com/projectdiscovery/httpx)
   - [rdap](https://github.com/openrdap/rdap) (or a compatible RDAP client)
+
+The optional `parquet-archive` feature adds Parquet segment support for
+long-term evidence archival (see `balebos archive --help`).

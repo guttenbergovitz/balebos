@@ -1,7 +1,9 @@
+pub mod archive;
 pub mod asset;
 pub mod check;
 pub mod finding;
 pub mod inventory;
+pub mod migrate;
 pub mod org;
 pub mod probe;
 pub mod risk;

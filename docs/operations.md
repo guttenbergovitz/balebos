@@ -49,6 +49,15 @@ skill (`.agents/skills/balebos-release-check/`). In short:
 
 ## Storage data
 
-Operator data lives under `data/` (gitignored). Legacy 1.x data includes Parquet
-files and JSONL exports; migration tooling and rollback options are described in
-`docs/migration-v2.md`. Never delete historical observations during upgrades.
+Operator data lives under `data/` (gitignored). Current-state layout:
+
+- `data/balebos.db` — SQLite operational store (target default; opt in
+  with `BALEBOS_STORAGE=sqlite`).
+- `data/parquet/` — legacy 1.x Parquet store (default until migration is
+  exercised; `balebos migrate` imports it and renames the directory).
+- `data/archive/` — sealed evidence segments and manifests (written by
+  `balebos archive build` in `parquet-archive` builds).
+
+Legacy formats, migration procedure and rollback options are described in
+`docs/migration-v2.md`. Never delete historical observations during
+upgrades.

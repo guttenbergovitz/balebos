@@ -1,0 +1,805 @@
+{
+  "providers": [
+    {
+      "id": "aws",
+      "name": "Amazon Web Services",
+      "category": "hyperscaler",
+      "country": "US",
+      "asn_patterns": [16509, 14618, 7224, 8987],
+      "cname_patterns": ["amazonaws.com", "cloudfront.net", "elasticbeanstalk.com", "awsdns-", "elb.amazonaws.com", "s3.amazonaws.com", "s3-website"],
+      "header_patterns": ["x-amz-", "AmazonS3", "awselb"],
+      "cdn_name_patterns": ["cloudfront"]
+    },
+    {
+      "id": "gcp",
+      "name": "Google Cloud Platform",
+      "category": "hyperscaler",
+      "country": "US",
+      "asn_patterns": [15169, 396982, 36040],
+      "cname_patterns": ["googleusercontent.com", "googleapis.com", "google.com", "appspot.com", "run.app", "cloudfunctions.net", "web.app", "firebaseapp.com"],
+      "header_patterns": ["gws", "gse", "x-goog-"],
+      "cdn_name_patterns": ["google"]
+    },
+    {
+      "id": "azure",
+      "name": "Microsoft Azure",
+      "category": "hyperscaler",
+      "country": "US",
+      "asn_patterns": [8075, 8068, 8069, 8070, 8071],
+      "cname_patterns": ["azure.com", "azurewebsites.net", "cloudapp.azure.com", "blob.core.windows.net", "azureedge.net", "trafficmanager.net", "azurefd.net"],
+      "header_patterns": ["Microsoft-IIS", "Microsoft-HTTPAPI"],
+      "cdn_name_patterns": ["azure"]
+    },
+    {
+      "id": "alibaba",
+      "name": "Alibaba Cloud",
+      "category": "hyperscaler",
+      "country": "CN",
+      "asn_patterns": [37963, 45102, 134963],
+      "cname_patterns": ["aliyuncs.com", "alibaba.com", "alicdn.com", "aliyun.com"],
+      "header_patterns": ["aliyun"],
+      "cdn_name_patterns": ["alicdn"]
+    },
+    {
+      "id": "oracle",
+      "name": "Oracle Cloud",
+      "category": "hyperscaler",
+      "country": "US",
+      "asn_patterns": [31898, 17334],
+      "cname_patterns": ["oraclecloud.com", "oracle.com", "oci.oraclecloud.com"],
+      "header_patterns": ["Oracle-"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "ibm",
+      "name": "IBM Cloud",
+      "category": "hyperscaler",
+      "country": "US",
+      "asn_patterns": [36351, 2686],
+      "cname_patterns": ["cloud.ibm.com", "mybluemix.net", "bluemix.net", "softlayer.com"],
+      "header_patterns": ["ibm-"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare",
+      "category": "cdn",
+      "country": "US",
+      "asn_patterns": [13335, 209242],
+      "cname_patterns": ["cloudflare.net", "cloudflare-dns.com", "cloudflaressl.com", "workers.dev", "pages.dev"],
+      "header_patterns": ["cloudflare", "cf-ray"],
+      "cdn_name_patterns": ["cloudflare"]
+    },
+    {
+      "id": "fastly",
+      "name": "Fastly",
+      "category": "cdn",
+      "country": "US",
+      "asn_patterns": [54113],
+      "cname_patterns": ["fastly.net", "fastly.com", "fastlylb.net", "fastly-edge.com", "edgecompute.app"],
+      "header_patterns": ["fastly", "x-served-by", "x-fastly"],
+      "cdn_name_patterns": ["fastly"]
+    },
+    {
+      "id": "akamai",
+      "name": "Akamai",
+      "category": "cdn",
+      "country": "US",
+      "asn_patterns": [16625, 20940, 32787],
+      "cname_patterns": ["akamai.net", "akamaiedge.net", "edgesuite.net", "edgekey.net", "akamaitechnologies.com", "akamaized.net"],
+      "header_patterns": ["akamai", "x-akamai"],
+      "cdn_name_patterns": ["akamai"]
+    },
+    {
+      "id": "bunnycdn",
+      "name": "BunnyCDN",
+      "category": "cdn",
+      "country": "SI",
+      "asn_patterns": [200325],
+      "cname_patterns": ["bunny.net", "bunnycdn.com", "b-cdn.net"],
+      "header_patterns": ["bunny"],
+      "cdn_name_patterns": ["bunny"]
+    },
+    {
+      "id": "keycdn",
+      "name": "KeyCDN",
+      "category": "cdn",
+      "country": "CH",
+      "asn_patterns": [59691],
+      "cname_patterns": ["kxcdn.com", "keycdn.com"],
+      "header_patterns": ["keycdn"],
+      "cdn_name_patterns": ["keycdn"]
+    },
+    {
+      "id": "stackpath",
+      "name": "StackPath",
+      "category": "cdn",
+      "country": "US",
+      "asn_patterns": [33438, 12989],
+      "cname_patterns": ["stackpath.com", "stackpathdns.com", "hwcdn.net", "highwinds.net"],
+      "header_patterns": ["stackpath"],
+      "cdn_name_patterns": ["stackpath", "highwinds"]
+    },
+    {
+      "id": "ovh",
+      "name": "OVH",
+      "category": "european",
+      "country": "FR",
+      "asn_patterns": [16276],
+      "cname_patterns": ["ovh.net", "ovh.com", "ovh.co.uk", "ovhcloud.com", "ovh.ie"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "scaleway",
+      "name": "Scaleway",
+      "category": "european",
+      "country": "FR",
+      "asn_patterns": [12876],
+      "cname_patterns": ["scaleway.com", "scw.cloud", "online.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "hetzner",
+      "name": "Hetzner",
+      "category": "european",
+      "country": "DE",
+      "asn_patterns": [24940, 213230],
+      "cname_patterns": ["hetzner.com", "hetzner.de", "hetzner-cloud.de", "your-server.de"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "contabo",
+      "name": "Contabo",
+      "category": "european",
+      "country": "DE",
+      "asn_patterns": [51167],
+      "cname_patterns": ["contabo.com", "contabo.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "upcloud",
+      "name": "UpCloud",
+      "category": "european",
+      "country": "FI",
+      "asn_patterns": [202053],
+      "cname_patterns": ["upcloud.com", "upcloudcdn.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "leaseweb",
+      "name": "Leaseweb",
+      "category": "european",
+      "country": "NL",
+      "asn_patterns": [60781, 28753],
+      "cname_patterns": ["leaseweb.com", "leaseweb.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "transip",
+      "name": "TransIP",
+      "category": "european",
+      "country": "NL",
+      "asn_patterns": [20857],
+      "cname_patterns": ["transip.nl", "transip.eu"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "exoscale",
+      "name": "Exoscale",
+      "category": "european",
+      "country": "CH",
+      "asn_patterns": [61098],
+      "cname_patterns": ["exo.io", "exoscale.ch", "exoscale.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "aruba",
+      "name": "Aruba Cloud",
+      "category": "european",
+      "country": "IT",
+      "asn_patterns": [31034, 31034],
+      "cname_patterns": ["aruba.it", "arubacloud.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "infomaniak",
+      "name": "Infomaniak",
+      "category": "european",
+      "country": "CH",
+      "asn_patterns": [29222],
+      "cname_patterns": ["infomaniak.ch", "infomaniak.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "ionos",
+      "name": "IONOS",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [8560, 6724],
+      "cname_patterns": ["ionos.com", "1und1.de", "1and1.com", "schlund.de", "ui-dns."],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "strato",
+      "name": "Strato",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [6724],
+      "cname_patterns": ["strato.de", "strato.com", "strato-hosting."],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "hosteurope",
+      "name": "Host Europe",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [20773],
+      "cname_patterns": ["hosteurope.de", "hosteurope.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "allinkl",
+      "name": "ALL-INKL.COM",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [35366],
+      "cname_patterns": ["all-inkl.de", "all-inkl.com", "kasserver.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "mittwald",
+      "name": "Mittwald",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [9050],
+      "cname_patterns": ["mittwald.de", "mittwald.info"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "netcup",
+      "name": "netcup",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [197540],
+      "cname_patterns": ["netcup.de", "netcup.net", "netcup.eu"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "webgo",
+      "name": "webgo",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [207695],
+      "cname_patterns": ["webgo.de", "webgo24.de"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "dfeu",
+      "name": "df.eu",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [8972],
+      "cname_patterns": ["df.eu", "domainfactory."],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "checkdomain",
+      "name": "checkdomain",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [47215],
+      "cname_patterns": ["checkdomain.de", "checkdomain.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "homepl",
+      "name": "home.pl",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [12824],
+      "cname_patterns": ["home.pl", "home.net.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "nazwapl",
+      "name": "nazwa.pl",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [15967],
+      "cname_patterns": ["nazwa.pl", "linuxpl.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "cyberfolks",
+      "name": "cyber_Folks",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [198414],
+      "cname_patterns": ["cyberfolks.pl", "cfolks.pl", "netart.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "lhpl",
+      "name": "LH.pl",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [47328],
+      "cname_patterns": ["lh.pl", "linuxhosting.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "zenbox",
+      "name": "Zenbox",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [57367],
+      "cname_patterns": ["zenbox.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "webdpl",
+      "name": "webd.pl",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [201054],
+      "cname_patterns": ["webd.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "beyondpl",
+      "name": "Beyond.pl",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [44896],
+      "cname_patterns": ["beyond.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "atman",
+      "name": "Atman",
+      "category": "poland",
+      "country": "PL",
+      "asn_patterns": [24748],
+      "cname_patterns": ["atman.pl"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "fasthosts",
+      "name": "Fasthosts",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [20738],
+      "cname_patterns": ["fasthosts.co.uk", "fasthosts.net.uk"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "123reg",
+      "name": "123-Reg",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [35425],
+      "cname_patterns": ["123-reg.co.uk", "123-reg.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "heartinternet",
+      "name": "Heart Internet",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [34931],
+      "cname_patterns": ["heartinternet.uk", "heartinternet.co.uk"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "krystal",
+      "name": "Krystal",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [62235],
+      "cname_patterns": ["krystal.uk", "krystal.co.uk"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "tsohost",
+      "name": "TSOHost",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [64427],
+      "cname_patterns": ["tsohost.com", "tsohost.co.uk"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "mythicbeasts",
+      "name": "Mythic Beasts",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [44684],
+      "cname_patterns": ["mythic-beasts.com", "mythicbeasts.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "ukfast",
+      "name": "UKFast",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [34934],
+      "cname_patterns": ["ukfast.co.uk", "ukfast.net", "ans.co.uk"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "namesco",
+      "name": "Namesco",
+      "category": "uk",
+      "country": "GB",
+      "asn_patterns": [15695],
+      "cname_patterns": ["names.co.uk", "namesco.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "digitalocean",
+      "name": "DigitalOcean",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [14061, 393406],
+      "cname_patterns": ["digitalocean.com", "digitaloceanspaces.com", "ondigitalocean.app"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "linode",
+      "name": "Linode (Akamai)",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [63949],
+      "cname_patterns": ["linode.com", "linodeobjects.com", "linode.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "vultr",
+      "name": "Vultr",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [20473, 64515],
+      "cname_patterns": ["vultr.com", "vultrobj.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "rackspace",
+      "name": "Rackspace",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [27357, 19994, 10532],
+      "cname_patterns": ["rackspacecloud.com", "rackspace.com", "rackcdn.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "bluehost",
+      "name": "Bluehost",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [46606],
+      "cname_patterns": ["bluehost.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "godaddy",
+      "name": "GoDaddy",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [26496, 398101],
+      "cname_patterns": ["godaddy.com", "secureserver.net", "mediatemple.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "hostgator",
+      "name": "HostGator",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [21844],
+      "cname_patterns": ["hostgator.com", "websitewelcome.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "siteground",
+      "name": "SiteGround",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [204093, 395570],
+      "cname_patterns": ["siteground.com", "sgvps.net", "siteground.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "dreamhost",
+      "name": "DreamHost",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [26347],
+      "cname_patterns": ["dreamhost.com", "dreamhosters.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "wpengine",
+      "name": "WP Engine",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [394815],
+      "cname_patterns": ["wpengine.com", "wpesvc.net", "wpe.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "hostinger",
+      "name": "Hostinger",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [47583],
+      "cname_patterns": ["hostinger.com", "hostingerapp.com", "hstgr.io"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "a2hosting",
+      "name": "A2 Hosting",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [55293],
+      "cname_patterns": ["a2hosting.com", "a2hosted.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "inmotion",
+      "name": "InMotion Hosting",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [19148, 22611],
+      "cname_patterns": ["inmotionhosting.com", "imhhosting.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "liquidweb",
+      "name": "Liquid Web",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [32244],
+      "cname_patterns": ["liquidweb.com", "liquidwebsites.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "mediatemple",
+      "name": "Media Temple",
+      "category": "us_hosting",
+      "country": "US",
+      "asn_patterns": [8560],
+      "cname_patterns": ["mediatemple.net", "grid.mt"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "vercel",
+      "name": "Vercel",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [209242],
+      "cname_patterns": ["vercel.app", "vercel.com", "vercel-dns.com", "now.sh", "zeit.co"],
+      "header_patterns": ["x-vercel-"],
+      "cdn_name_patterns": ["vercel"]
+    },
+    {
+      "id": "netlify",
+      "name": "Netlify",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [395747],
+      "cname_patterns": ["netlify.app", "netlify.com", "netlify.net", "netlifyusercontent.com"],
+      "header_patterns": ["x-nf-"],
+      "cdn_name_patterns": ["netlify"]
+    },
+    {
+      "id": "render",
+      "name": "Render",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [395082],
+      "cname_patterns": ["render.com", "onrender.com"],
+      "header_patterns": ["x-render-"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "railway",
+      "name": "Railway",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [],
+      "cname_patterns": ["railway.app", "up.railway.app"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "flyio",
+      "name": "Fly.io",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [40509],
+      "cname_patterns": ["fly.dev", "fly.io", "flycast.io"],
+      "header_patterns": ["fly-"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "heroku",
+      "name": "Heroku",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [36209],
+      "cname_patterns": ["heroku.com", "herokuapp.com", "herokussl.com", "herokudns.com"],
+      "header_patterns": ["heroku"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "github_pages",
+      "name": "GitHub Pages",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [36459],
+      "cname_patterns": ["github.io", "githubusercontent.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "gitlab_pages",
+      "name": "GitLab Pages",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [394507],
+      "cname_patterns": ["gitlab.io", "gitlab.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "deno_deploy",
+      "name": "Deno Deploy",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [],
+      "cname_patterns": ["deno.dev", "deno.land"],
+      "header_patterns": ["x-deno-"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "cloudflare_pages",
+      "name": "Cloudflare Pages",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [],
+      "cname_patterns": ["pages.dev"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "maxcluster",
+      "name": "maxcluster",
+      "category": "germany",
+      "country": "DE",
+      "asn_patterns": [47215, 47447, 206012],
+      "cname_patterns": ["maxcluster.net", "maxcluster.de"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "webflow",
+      "name": "Webflow",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [395942],
+      "cname_patterns": ["webflow.io", "webflow.com", "proxy-ssl.webflow.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "squarespace",
+      "name": "Squarespace",
+      "category": "edge",
+      "country": "US",
+      "asn_patterns": [53831],
+      "cname_patterns": ["squarespace.com", "sqsp.net", "squarespace-cdn.com"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "shopify",
+      "name": "Shopify",
+      "category": "edge",
+      "country": "CA",
+      "asn_patterns": [62679],
+      "cname_patterns": ["shopify.com", "myshopify.com", "shopifycloud.com"],
+      "header_patterns": ["x-shopify"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "wix",
+      "name": "Wix",
+      "category": "edge",
+      "country": "IL",
+      "asn_patterns": [47173],
+      "cname_patterns": ["wix.com", "wixsite.com", "wixdns.net"],
+      "header_patterns": [],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "plesk",
+      "name": "Plesk (Generic)",
+      "category": "other",
+      "country": "XX",
+      "asn_patterns": [],
+      "cname_patterns": [],
+      "header_patterns": ["plesk"],
+      "cdn_name_patterns": []
+    },
+    {
+      "id": "cpanel",
+      "name": "cPanel (Generic)",
+      "category": "other",
+      "country": "XX",
+      "asn_patterns": [],
+      "cname_patterns": [],
+      "header_patterns": ["cpanel", "whm"],
+      "cdn_name_patterns": []
+    }
+  ],
+  "categories": {
+    "hyperscaler": "Major cloud providers with global infrastructure",
+    "cdn": "Content Delivery Network providers",
+    "european": "European cloud and hosting providers",
+    "germany": "German hosting providers",
+    "poland": "Polish hosting providers",
+    "uk": "UK hosting providers",
+    "us_hosting": "US-based traditional hosting providers",
+    "edge": "Edge/PaaS providers (JAMstack, serverless)",
+    "other": "Other/Generic detection"
+  }
+}

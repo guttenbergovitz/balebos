@@ -50,6 +50,9 @@ pub enum StorageError {
 
     #[error("Serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
+
+    #[error("SQLite error: {0}")]
+    Sqlite(String),
 }
 
 pub type Result<T> = std::result::Result<T, BalebosError>;

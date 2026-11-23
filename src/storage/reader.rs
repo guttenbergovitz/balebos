@@ -57,6 +57,8 @@ pub struct Records {
     pub asset_importances: Vec<AssetImportanceRecord>,
     pub domain_registrations: Vec<DomainRegistrationRecord>,
     pub lifecycle_events: Vec<LifecycleEvent>,
+    /// Per-scan coverage reports (ADR 0005).
+    pub scan_reports: Vec<crate::domain::coverage::ScanReport>,
     /// Records that could not be typed, with reasons. Never silently empty.
     pub skipped: Vec<SkippedRecord>,
 }
@@ -146,6 +148,7 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
             ItemType::Finding => try_parse!(Finding, findings),
             ItemType::FindingEvent => try_parse!(FindingEvent, finding_events),
             ItemType::LifecycleEvent => try_parse!(LifecycleEvent, lifecycle_events),
+            ItemType::ScanReport => try_parse!(crate::domain::coverage::ScanReport, scan_reports),
         }
     }
 
@@ -170,6 +173,24 @@ pub fn read_records(file_path: &str) -> Result<Records> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_records_typed_scan_report() {
+        let report = crate::domain::coverage::ScanReport::start(chrono::Utc::now()).finish(
+            vec!["a.example.com".to_string()],
+            vec![crate::domain::coverage::TargetCoverageRecord {
+                target: "a.example.com".to_string(),
+                coverage: crate::domain::coverage::TargetCoverage::Observed,
+            }],
+            chrono::Utc::now(),
+        );
+        let mut value = serde_json::to_value(&report).unwrap();
+        value["item_type"] = serde_json::json!("scan_report");
+
+        let records = parse_records(vec![value.to_string()].into_iter()).unwrap();
+        assert_eq!(records.scan_reports.len(), 1);
+        assert_eq!(records.scan_reports[0], report);
+    }
 
     #[test]
     fn parse_records_reports_invalid_json() {

@@ -26,13 +26,24 @@ Status: living document. Updated as each disposition is implemented.
 ## Data migration
 
 1.x stores per-type Parquet files (`domain.parquet`, `finding.parquet`, …) whose
-rows are JSON strings. The 2.0 storage engine (ADR 0007) will ship an importer
-that reads these files losslessly: every row is preserved, unknown record types
-are quarantined (not coerced), and malformed rows are reported with counts
-rather than dropped. A verification pass compares record counts before and after.
+rows are JSON strings. Migration to SQLite follows ADR 0018 (verify-don't-trust):
 
-Rollback: keep the pre-migration `data/` directory untouched; the importer only
-reads from it.
+1. **Discover** all legacy `*.parquet` files.
+2. **Read and classify** every row: supported record / unknown type / malformed.
+3. **Quarantine** unknown and malformed rows verbatim in SQLite (never coerced,
+   never dropped).
+4. **Import** supported records transactionally, preserving ids, timestamps
+   and order.
+5. **Verify**: per-type record counts before vs after; quarantine counts;
+   identity/timestamp spot checks.
+6. **Roll back**: legacy directory is renamed, never deleted; rollback =
+   point the engine at the old directory and remove the SQLite file.
+
+The tooling exists: `balebos migrate [dir]` (default `data/parquet`)
+executes steps 1-6 — idempotent re-runs, verbatim quarantine, count
+verification, and rename of the legacy directory to
+`<dir>.migrated-<timestamp>` on success. Exercise it on a copy of real
+data before the default engine flips (Phase E).
 
 ## Removed features and their data
 
