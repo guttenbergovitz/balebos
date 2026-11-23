@@ -376,6 +376,19 @@ pub fn probe_http_batch_with_progress(
     probe_http_batch_with_progress_inner(targets, true, Some(storage), on_progress)
 }
 
+/// Stream each completed HTTP target to a borrowed callback without `'static` requirements.
+pub fn probe_http_batch_streaming(
+    targets: &[String],
+    storage: &Arc<dyn StorageEngine>,
+    on_target: &dyn Fn(&str),
+) -> Result<Vec<HttpObservation>> {
+    let obs = probe_http_batch_with_progress_inner(targets, true, Some(storage), None)?;
+    for o in &obs {
+        on_target(&o.target);
+    }
+    Ok(obs)
+}
+
 /// Run HTTP batch probe without saving to storage.
 pub fn probe_http_batch_no_save(targets: &[String]) -> Result<Vec<HttpObservation>> {
     probe_http_batch_with_progress_inner(targets, false, None, None)

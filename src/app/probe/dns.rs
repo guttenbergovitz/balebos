@@ -52,6 +52,7 @@ fn probe_dns_batch_inner(
     targets: &[String],
     save_to_storage: bool,
     storage: Option<&Arc<dyn StorageEngine>>,
+    on_target: Option<&dyn Fn(&str)>,
 ) -> Result<Vec<DnsObservation>> {
     if targets.is_empty() {
         return Ok(Vec::new());
@@ -145,6 +146,9 @@ fn probe_dns_batch_inner(
                         checked_at: Utc::now(),
                         source: "dnsx".to_string(),
                     };
+                    if let Some(cb) = on_target {
+                        cb(&obs.target);
+                    }
                     observations.push(obs);
                 }
                 Err(e) => {
@@ -169,12 +173,21 @@ pub fn probe_dns_batch(
     targets: &[String],
     storage: &Arc<dyn StorageEngine>,
 ) -> Result<Vec<DnsObservation>> {
-    probe_dns_batch_inner(targets, true, Some(storage))
+    probe_dns_batch_inner(targets, true, Some(storage), None)
+}
+
+/// Run a batch DNS probe while streaming each resolved target to `on_target`.
+pub fn probe_dns_batch_with_progress(
+    targets: &[String],
+    storage: &Arc<dyn StorageEngine>,
+    on_target: &dyn Fn(&str),
+) -> Result<Vec<DnsObservation>> {
+    probe_dns_batch_inner(targets, true, Some(storage), Some(on_target))
 }
 
 /// Run a batch DNS probe without saving to storage.
 pub fn probe_dns_batch_no_save(targets: &[String]) -> Result<Vec<DnsObservation>> {
-    probe_dns_batch_inner(targets, false, None)
+    probe_dns_batch_inner(targets, false, None, None)
 }
 
 pub fn probe_dns(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<DnsObservation> {
