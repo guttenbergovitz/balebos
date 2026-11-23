@@ -6,6 +6,7 @@ pub mod drift;
 pub mod finding;
 pub mod list;
 pub mod org;
+pub mod pivot;
 pub mod probe;
 pub mod relationships;
 pub mod report;

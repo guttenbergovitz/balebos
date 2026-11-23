@@ -105,6 +105,15 @@ fn record_edge(
 /// Project all persisted observations into deterministic, evidence-backed
 /// relationships (including historical vs current status).
 pub fn project_relationships(records: &Records) -> Vec<ObservedRelationship> {
+    project_relationships_before(records, None)
+}
+
+/// Project persisted observations at or before `before` into deterministic,
+/// evidence-backed relationships.
+pub fn project_relationships_before(
+    records: &Records,
+    before: Option<DateTime<Utc>>,
+) -> Vec<ObservedRelationship> {
     let mut acc: BTreeMap<EdgeKey, EdgeAcc> = BTreeMap::new();
     // Track the latest timestamp observed for each (source_id, kind) pair
     // so we can mark edges that are still present in the latest observation.
@@ -122,6 +131,9 @@ pub fn project_relationships(records: &Records) -> Vec<ObservedRelationship> {
     };
 
     for dns in &records.dns_observations {
+        if before.is_some_and(|cutoff| dns.checked_at > cutoff) {
+            continue;
+        }
         let src = host_entity(&dns.target);
         for ip in dns.a.iter().chain(dns.aaaa.iter()) {
             bump_latest(&src.id, RelationshipKind::ResolvesTo, dns.checked_at);
@@ -199,6 +211,9 @@ pub fn project_relationships(records: &Records) -> Vec<ObservedRelationship> {
     }
 
     for http in &records.http_observations {
+        if before.is_some_and(|cutoff| http.checked_at > cutoff) {
+            continue;
+        }
         let src = host_entity(&http.target);
         if let Some(tls) = &http.tls {
             if !tls.fingerprint_sha256.is_empty() {
@@ -264,6 +279,9 @@ pub fn project_relationships(records: &Records) -> Vec<ObservedRelationship> {
     }
 
     for asn in &records.asn_observations {
+        if before.is_some_and(|cutoff| asn.checked_at > cutoff) {
+            continue;
+        }
         let ip_ref = EntityRef::new(EntityKind::IpAddress, asn.target.trim());
         let asn_id = format!("AS{}", asn.asn);
         let asn_ref = EntityRef::new(EntityKind::Asn, asn_id).with_label(asn.org.clone());
@@ -282,6 +300,9 @@ pub fn project_relationships(records: &Records) -> Vec<ObservedRelationship> {
     }
 
     for hosting in &records.hosting_observations {
+        if before.is_some_and(|cutoff| hosting.checked_at > cutoff) {
+            continue;
+        }
         if let Some(provider) = &hosting.provider_name {
             let src = host_entity(&hosting.target);
             let target = EntityRef::new(EntityKind::Provider, provider.to_lowercase())
@@ -531,6 +552,99 @@ fn normalise_query(raw: &str) -> String {
     }
 }
 
+/// Kind of temporal change between baseline and current relationships.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationshipChangeKind {
+    Added,
+    VerifiedRemoval,
+    NotObserved,
+}
+
+/// A temporal change in an infrastructure relationship.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationshipChange {
+    pub change_kind: RelationshipChangeKind,
+    pub relationship: ObservedRelationship,
+    pub detail: String,
+}
+
+/// Compare baseline and current relationships, respecting scan coverage so
+/// incomplete scans classify missing edges as `NotObserved` rather than
+/// `VerifiedRemoval`.
+pub fn compare_relationships(
+    baseline: &[ObservedRelationship],
+    current: &[ObservedRelationship],
+    current_complete: bool,
+) -> Vec<RelationshipChange> {
+    let key_of = |r: &ObservedRelationship| {
+        (
+            r.source.kind,
+            r.source.id.clone(),
+            r.kind,
+            r.target.kind,
+            r.target.id.clone(),
+        )
+    };
+
+    let baseline_keys: BTreeSet<_> = baseline
+        .iter()
+        .filter(|r| r.is_current)
+        .map(key_of)
+        .collect();
+    let current_active_keys: BTreeSet<_> = current
+        .iter()
+        .filter(|r| r.is_current)
+        .map(key_of)
+        .collect();
+    let current_src_kinds: BTreeSet<(String, RelationshipKind)> = current
+        .iter()
+        .filter(|r| r.is_current)
+        .map(|r| (r.source.id.clone(), r.kind))
+        .collect();
+
+    let mut changes = Vec::new();
+
+    for rel in current.iter().filter(|r| r.is_current) {
+        if !baseline_keys.contains(&key_of(rel)) {
+            changes.push(RelationshipChange {
+                change_kind: RelationshipChangeKind::Added,
+                relationship: rel.clone(),
+                detail: format!(
+                    "New relationship {} --[{}]--> {}",
+                    rel.source, rel.kind, rel.target
+                ),
+            });
+        }
+    }
+
+    for rel in baseline.iter().filter(|r| r.is_current) {
+        if !current_active_keys.contains(&key_of(rel)) {
+            let reobserved_kind = current_src_kinds.contains(&(rel.source.id.clone(), rel.kind));
+            if current_complete && reobserved_kind {
+                changes.push(RelationshipChange {
+                    change_kind: RelationshipChangeKind::VerifiedRemoval,
+                    relationship: rel.clone(),
+                    detail: format!(
+                        "Relationship {} --[{}]--> {} no longer present in newer observation",
+                        rel.source, rel.kind, rel.target
+                    ),
+                });
+            } else {
+                changes.push(RelationshipChange {
+                    change_kind: RelationshipChangeKind::NotObserved,
+                    relationship: rel.clone(),
+                    detail: format!(
+                        "Relationship {} --[{}]--> {} not observed in current window (coverage incomplete or unverified)",
+                        rel.source, rel.kind, rel.target
+                    ),
+                });
+            }
+        }
+    }
+
+    changes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -646,5 +760,36 @@ mod tests {
             report.shared_clues[0].signal,
             SignalCategory::StrongCandidate
         );
+    }
+
+    #[test]
+    fn temporal_relationship_drift_distinguishes_incomplete_from_verified_removal() {
+        let t1 = Utc::now() - chrono::Duration::hours(48);
+        let t2 = Utc::now() - chrono::Duration::hours(1);
+
+        let mut records = Records::default();
+        records
+            .dns_observations
+            .push(dns_obs("d1", "app.example.com", &["203.0.113.10"], t1));
+        records
+            .dns_observations
+            .push(dns_obs("d2", "app.example.com", &["203.0.113.20"], t2));
+
+        let cutoff = Utc::now() - chrono::Duration::hours(24);
+        let baseline = project_relationships_before(&records, Some(cutoff));
+        let current = project_relationships_before(&records, None);
+
+        let incomplete = compare_relationships(&baseline, &current, false);
+        assert!(incomplete
+            .iter()
+            .any(|c| c.change_kind == RelationshipChangeKind::Added));
+        assert!(incomplete
+            .iter()
+            .any(|c| c.change_kind == RelationshipChangeKind::NotObserved));
+
+        let complete = compare_relationships(&baseline, &current, true);
+        assert!(complete
+            .iter()
+            .any(|c| c.change_kind == RelationshipChangeKind::VerifiedRemoval));
     }
 }

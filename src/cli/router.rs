@@ -54,6 +54,11 @@ pub enum Command {
     History {
         target: String,
     },
+    Pivot {
+        target: String,
+        max_depth: usize,
+        max_candidates: usize,
+    },
 }
 
 pub enum ProbeKind {
@@ -277,6 +282,20 @@ pub fn parse_command() -> Option<Command> {
         "history" => {
             let target = args.get(2)?.clone();
             Some(Command::History { target })
+        }
+        "pivot" => {
+            let target = args.get(2)?.clone();
+            let max_depth = find_flag_value(args.as_slice(), "--depth")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2);
+            let max_candidates = find_flag_value(args.as_slice(), "--limit")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
+            Some(Command::Pivot {
+                target,
+                max_depth,
+                max_candidates,
+            })
         }
         "migrate" => {
             let from = args.get(2).cloned();

@@ -29,6 +29,7 @@ fn print_usage() {
     );
     eprintln!("  balebos explain <a> <b>            - Explain connection between two entities");
     eprintln!("  balebos history <target>           - Show chronological relationship history");
+    eprintln!("  balebos pivot <target>             - Bounded local pivot candidate discovery");
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
@@ -178,6 +179,18 @@ fn main() {
         Command::History { target } => {
             if let Err(e) = handlers::relationships::cmd_history(&target, &storage) {
                 eprintln!("History query failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::Pivot {
+            target,
+            max_depth,
+            max_candidates,
+        } => {
+            if let Err(e) =
+                handlers::relationships::cmd_pivot(&target, max_depth, max_candidates, &storage)
+            {
+                eprintln!("Pivot discovery failed: {e}");
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }

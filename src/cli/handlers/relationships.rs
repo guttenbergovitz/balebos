@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::app::pivot::{discover_pivots, PivotConfig};
 use crate::app::relationships::{entity_history, explain_connection, related_entities};
 use crate::error::Result;
 use crate::storage::StorageEngine;
@@ -122,5 +123,51 @@ pub fn cmd_history(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<()>
         );
     }
 
+    Ok(())
+}
+
+/// Run bounded local pivot discovery from `target` without active probing.
+pub fn cmd_pivot(
+    target: &str,
+    max_depth: usize,
+    max_candidates: usize,
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<()> {
+    let records = storage.read_all_records()?;
+    let config = PivotConfig {
+        max_depth,
+        max_candidates,
+        ..Default::default()
+    };
+    let report = discover_pivots(&records, target, &config);
+
+    println!(
+        "Pivot candidates for: {} (depth <= {}, limit {}, suppressed {} shared-provider clue(s))",
+        report.seed, max_depth, max_candidates, report.suppressed_count
+    );
+    if report.candidates.is_empty() {
+        println!("  No candidate entities discovered.");
+        return Ok(());
+    }
+
+    for c in &report.candidates {
+        let scope = if c.in_scope {
+            "in-scope"
+        } else {
+            "out-of-scope (passive review)"
+        };
+        println!(
+            "  {}  [depth {}, {}, {}] — {} (obs: {})",
+            c.candidate,
+            c.depth,
+            scope,
+            c.signal,
+            c.reason,
+            c.provenance_observation_ids.join(", ")
+        );
+    }
+    if report.truncated_by_limit {
+        println!("  (Truncated at limit {max_candidates}; pass --limit to inspect more.)");
+    }
     Ok(())
 }

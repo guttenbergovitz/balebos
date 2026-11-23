@@ -203,6 +203,7 @@ pub struct App {
     /// Latest scan coverage: None = no scan report yet, Some(false) =
     /// incomplete (absences are not verified change).
     pub coverage_complete: Option<bool>,
+    pub relationships: Vec<crate::domain::relationship::ObservedRelationship>,
     pub storage: Arc<dyn StorageEngine>,
     pub should_quit: bool,
 
@@ -255,11 +256,13 @@ impl App {
         let org_model = OrgModel::load_from_records(&records);
         let ignore_patterns = crate::ignore::load_ignore_patterns("balebos.ignore");
         let coverage = compute_coverage_from_records(&records);
+        let relationships = crate::app::relationships::project_relationships(&records);
 
         let mut app = Self {
             model,
             org_model,
             coverage_complete: coverage,
+            relationships,
             storage,
             should_quit: false,
 
@@ -322,6 +325,7 @@ impl App {
         self.model = load_tui_model_from_records(&records);
         self.org_model = OrgModel::load_from_records(&records);
         self.coverage_complete = compute_coverage_from_records(&records);
+        self.relationships = crate::app::relationships::project_relationships(&records);
         self.load_findings_from_records(&records);
         if self.drift.loaded {
             self.load_drift_from_records(&records);
