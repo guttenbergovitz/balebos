@@ -3,14 +3,18 @@
 
 use std::sync::Arc;
 
+use crate::app::metrics::compute_discovery_metrics;
 use crate::app::pivot::{discover_pivots, PivotConfig};
 use crate::app::relationships::{
     compare_relationships, entity_history, explain_connection, project_relationships_before,
     related_entities, RelationshipChangeKind,
 };
 use crate::app::snapshot::latest_scan_is_complete;
+use crate::app::sources::{
+    novel_candidates, parse_ct_json, parse_passive_dns_json, registered_sources,
+};
 use crate::domain::normalize::normalize_domain;
-use crate::error::Result;
+use crate::error::{BalebosError, Result};
 use crate::storage::StorageEngine;
 
 /// Display direct relationships and shared-infrastructure clues for `target`.
@@ -213,6 +217,107 @@ pub fn cmd_pivot(
     }
     if report.truncated_by_limit {
         println!("  (Truncated at limit {max_candidates}; pass --limit to inspect more.)");
+    }
+    Ok(())
+}
+
+/// Print registered discovery and enrichment sources and their constraints.
+pub fn cmd_sources_status() {
+    println!("Discovery & enrichment sources:");
+    for src in registered_sources() {
+        println!(
+            "  {:<12} [{} | api {} | creds: {} | scope_req: {}] — {}",
+            src.id,
+            src.mode,
+            src.api_version,
+            if src.requires_credentials {
+                "optional/required"
+            } else {
+                "none"
+            },
+            src.scope_required,
+            src.limitations
+        );
+    }
+}
+
+/// Run offline/cached CT or Passive DNS enrichment from a JSON fixture/file
+/// (or print guidance for live fetch).
+pub fn cmd_discover(
+    source: &str,
+    domain: &str,
+    input_file: Option<&str>,
+    scope_domains: &[String],
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<()> {
+    let path = input_file.ok_or_else(|| {
+        BalebosError::Validation(format!(
+            "discover --source {source} requires --input <json-file> for offline/cached ingestion"
+        ))
+    })?;
+    let bytes = std::fs::read(path)?;
+    let scope = scope_domains
+        .iter()
+        .map(|s| normalize_domain(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let candidates = match source {
+        "ct" => parse_ct_json(&bytes, &scope, 200)?,
+        "passive-dns" => parse_passive_dns_json(&bytes, &scope, 200)?,
+        other => {
+            return Err(BalebosError::Validation(format!(
+                "unknown discovery source '{other}' (expected 'ct' or 'passive-dns')"
+            )));
+        }
+    };
+
+    let records = storage.read_all_records()?;
+    let novel = novel_candidates(&records, &candidates);
+    println!(
+        "Enrichment from {source} for {domain}: {} total candidate(s), {} novel (not in inventory)",
+        candidates.len(),
+        novel.len()
+    );
+    for c in novel {
+        let scope_label = if c.in_scope {
+            "in-scope"
+        } else {
+            "out-of-scope"
+        };
+        println!(
+            "  {} [{} | {} | {}] — {}",
+            c.entity, c.source_id, scope_label, c.signal, c.note
+        );
+    }
+    Ok(())
+}
+
+/// Print discovery effectiveness metrics for the current store.
+pub fn cmd_discovery_report(json_output: bool, storage: &Arc<dyn StorageEngine>) -> Result<()> {
+    let records = storage.read_all_records()?;
+    let report = compute_discovery_metrics(&records, &[], &[], &std::collections::BTreeMap::new());
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+        return Ok(());
+    }
+    println!(
+        "Discovery report: {} known asset(s), {} relationship(s) ({:.1}% traceable to observations, {} current, {} historical), projection {} ms",
+        report.known_assets,
+        report.evidence_quality.total_relationships,
+        report.evidence_quality.traceable_percentage,
+        report.evidence_quality.current_relationships,
+        report.evidence_quality.historical_relationships,
+        report.projection_latency_ms
+    );
+    for y in &report.per_source_yield {
+        println!(
+            "  source {:<14}: {} raw, {} unique new",
+            y.source, y.raw_candidates, y.unique_new_candidates
+        );
     }
     Ok(())
 }

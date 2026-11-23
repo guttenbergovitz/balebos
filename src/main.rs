@@ -30,6 +30,9 @@ fn print_usage() {
     eprintln!("  balebos explain <a> <b>            - Explain connection between two entities");
     eprintln!("  balebos history <target>           - Show chronological relationship history");
     eprintln!("  balebos pivot <target>             - Bounded local pivot candidate discovery");
+    eprintln!("  balebos discover --source <ct|passive-dns> <domain> --input <file>");
+    eprintln!("  balebos discovery report [--json]  - Discovery effectiveness & evidence report");
+    eprintln!("  balebos sources status             - List discovery & enrichment sources");
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
@@ -196,6 +199,30 @@ fn main() {
                 &storage,
             ) {
                 eprintln!("Pivot discovery failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::SourcesStatus => handlers::relationships::cmd_sources_status(),
+        Command::Discover {
+            source,
+            domain,
+            input_file,
+            scope_domains,
+        } => {
+            if let Err(e) = handlers::relationships::cmd_discover(
+                &source,
+                &domain,
+                input_file.as_deref(),
+                &scope_domains,
+                &storage,
+            ) {
+                eprintln!("Discovery enrichment failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DiscoveryReport { json } => {
+            if let Err(e) = handlers::relationships::cmd_discovery_report(json, &storage) {
+                eprintln!("Discovery report failed: {e}");
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }
