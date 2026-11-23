@@ -361,7 +361,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             " q: Quit | R: Refresh | 1-3: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
         }
         Tab::Drift => {
-            " q: Quit | R: Refresh | 1-3: Tabs | j/k: Nav — yellow classes are uncertainty, not incidents "
+            " q: Quit | R: Refresh | 1-3: Tabs | j/k: Nav | Enter/i: Inspect Asset — yellow classes are uncertainty, not incidents "
         }
     };
 

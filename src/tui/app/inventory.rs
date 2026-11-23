@@ -46,6 +46,37 @@ impl App {
         self.inventory.selected_asset(&self.model)
     }
 
+    /// Select an asset by name in the inventory table (expanding its
+    /// root domain if needed), returning `true` when found.
+    pub fn select_asset_by_name(&mut self, name: &str) -> bool {
+        use crate::tui::state::VisibleItem;
+
+        for group in &self.model.groups {
+            if group.subdomains.iter().any(|s| s.name == name) {
+                self.inventory
+                    .expanded_roots
+                    .insert(group.root.name.clone());
+                break;
+            }
+        }
+        self.update_visible_items();
+
+        let pos = self
+            .inventory
+            .visible_items
+            .iter()
+            .position(|item| match item {
+                VisibleItem::Root(r) => r == name,
+                VisibleItem::Subdomain(_, s) => s == name,
+            });
+        if let Some(idx) = pos {
+            self.inventory.table_state.select(Some(idx));
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn toggle_junk_filter(&mut self) {
         self.inventory.hide_junk = !self.inventory.hide_junk;
         self.update_visible_items();
