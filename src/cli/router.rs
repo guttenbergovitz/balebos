@@ -1,18 +1,39 @@
 /// Parsed CLI command with its arguments.
 pub enum Command {
-    Scan { domain: String },
-    Batch { file: String },
-    List { unique: bool },
+    Scan {
+        domain: String,
+    },
+    Batch {
+        file: String,
+    },
+    List {
+        unique: bool,
+    },
     Tree,
-    Status { export: Option<ExportArgs> },
-    Stats { by_domain: bool },
+    Status {
+        export: Option<ExportArgs>,
+    },
+    Stats {
+        by_domain: bool,
+    },
     Diff,
     Check,
     Report,
-    Probe { kind: ProbeKind, target: String },
-    Migrate { from: Option<String> },
+    Probe {
+        kind: ProbeKind,
+        target: String,
+    },
+    Migrate {
+        from: Option<String>,
+    },
+    Archive {
+        action: String,
+        segment: Option<String>,
+    },
     Ui,
-    Web { output_dir: String },
+    Web {
+        output_dir: String,
+    },
     Org(OrgCommand),
     Tag(TagCommand),
     Finding(FindingCommand),
@@ -222,6 +243,11 @@ pub fn parse_command() -> Option<Command> {
         "migrate" => {
             let from = args.get(2).cloned();
             Some(Command::Migrate { from })
+        }
+        "archive" => {
+            let action = args.get(2)?.clone();
+            let segment = args.get(3).cloned();
+            Some(Command::Archive { action, segment })
         }
         "ui" => Some(Command::Ui),
         "probe" => {

@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod asset;
 pub mod check;
 pub mod finding;

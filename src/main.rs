@@ -22,6 +22,7 @@ fn print_usage() {
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
+    eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
     eprintln!("  balebos probe subdomains <domain>  - Discover subdomains using subfinder");
     eprintln!("  balebos probe http <domain>        - Check HTTP status of a domain");
@@ -118,6 +119,12 @@ fn main() {
         Command::Migrate { from } => {
             if let Err(e) = handlers::migrate::cmd_migrate(from) {
                 eprintln!("Migration failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::Archive { action, segment } => {
+            if let Err(e) = handlers::archive::cmd_archive(&action, segment) {
+                eprintln!("Archive operation failed: {e}");
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }

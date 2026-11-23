@@ -75,10 +75,135 @@ impl SqliteStorage {
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 reason TEXT NOT NULL,
                 body TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS archive_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_sealed_rowid INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO archive_state (id, last_sealed_rowid) VALUES (1, 0);
+            CREATE TABLE IF NOT EXISTS archive_manifests (
+                rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                segment_id TEXT NOT NULL UNIQUE,
+                sha256 TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
             );",
         )
         .map_err(sqlite_err)?;
         Ok(())
+    }
+
+    /// Highest rowid currently sealed into an archive segment.
+    pub fn archive_last_sealed_rowid(&self) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let value: i64 = conn
+            .query_row(
+                "SELECT last_sealed_rowid FROM archive_state WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(sqlite_err)?;
+        Ok(value)
+    }
+
+    /// Rows not yet covered by any sealed segment, in rowid order.
+    pub fn rows_after(&self, rowid: i64) -> Result<Vec<(i64, String, String, String)>> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT rowid, record_type, record_id, body FROM records \
+                 WHERE rowid > ?1 ORDER BY rowid",
+            )
+            .map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map(params![rowid], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(sqlite_err)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(sqlite_err)
+    }
+
+    /// Record a sealed segment: manifest row plus the new boundary, in one
+    /// transaction. Called only after the segment and manifest files are
+    /// durably published and verified (ADR 0014).
+    pub fn archive_record_segment(
+        &self,
+        segment_id: &str,
+        sha256: &str,
+        manifest_json: &str,
+        last_sealed_rowid: i64,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let tx = conn.transaction().map_err(sqlite_err)?;
+        tx.execute(
+            "INSERT INTO archive_manifests (segment_id, sha256, manifest_json, created_at) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                segment_id,
+                sha256,
+                manifest_json,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )
+        .map_err(sqlite_err)?;
+        tx.execute(
+            "UPDATE archive_state SET last_sealed_rowid = ?1 WHERE id = 1",
+            params![last_sealed_rowid],
+        )
+        .map_err(sqlite_err)?;
+        tx.commit().map_err(sqlite_err)?;
+        Ok(())
+    }
+
+    /// All recorded manifests in seal order.
+    pub fn archive_manifests(&self) -> Result<Vec<(String, String, String)>> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT segment_id, sha256, manifest_json FROM archive_manifests ORDER BY rowid",
+            )
+            .map_err(sqlite_err)?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(sqlite_err)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(sqlite_err)
+    }
+
+    /// One recorded manifest by segment id.
+    pub fn archive_manifest(&self, segment_id: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().map_err(|e| {
+            BalebosError::Storage(crate::error::StorageError::Sqlite(format!(
+                "Mutex poison: {e}"
+            )))
+        })?;
+        let mut stmt = conn
+            .prepare("SELECT manifest_json FROM archive_manifests WHERE segment_id = ?1")
+            .map_err(sqlite_err)?;
+        let mut rows = stmt
+            .query_map(params![segment_id], |row| row.get(0))
+            .map_err(sqlite_err)?;
+        match rows.next() {
+            Some(value) => Ok(Some(value.map_err(sqlite_err)?)),
+            None => Ok(None),
+        }
     }
 
     /// Quarantine a raw record with an explicit reason.

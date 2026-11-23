@@ -40,6 +40,9 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
+      - name: Run Clippy (parquet-archive feature)
+        run: cargo clippy --all-targets --locked --features parquet-archive -- -D warnings
+
       - name: Build documentation
         env:
           RUSTDOCFLAGS: "-D warnings"
@@ -47,6 +50,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --locked
+
+      - name: Run tests (parquet-archive feature)
+        run: cargo test --locked --features parquet-archive
 
       - name: Build release binary
         run: cargo build --release --locked

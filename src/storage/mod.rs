@@ -3,6 +3,9 @@ pub mod parquet;
 pub mod reader;
 pub mod sqlite;
 
+#[cfg(feature = "parquet-archive")]
+pub mod archive;
+
 pub use self::parquet::ParquetStorage;
 pub use self::sqlite::SqliteStorage;
 use crate::error::Result;

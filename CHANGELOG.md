@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Parquet data into SQLite — per-row classification, verbatim quarantine
   of unknown/malformed rows, count verification, rename-not-delete
   rollback (ADR 0018).
+- `balebos archive build|verify|restore` (feature `parquet-archive`):
+  sealed evidence segments — deterministic rowid-prefix selection,
+  immutable Parquet segments with typed columns, SHA-256 manifests with
+  chain field, crash-safe publication, hash/count/chain verification and
+  idempotent restore (ADRs 0013/0014). Default build unchanged.
 
 ### Changed
 
