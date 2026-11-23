@@ -25,8 +25,14 @@ pub fn cmd_scan(domain_name: &str, storage: &Arc<dyn StorageEngine>) {
     }
 }
 
-pub fn cmd_batch(file: &str, storage: &Arc<dyn StorageEngine>, ignore_patterns: &[String]) {
-    match batch_process(file, storage, ignore_patterns) {
+pub fn cmd_batch(
+    file: &str,
+    storage: &Arc<dyn StorageEngine>,
+    ignore_patterns: &[String],
+    allow_internal: bool,
+) {
+    let allow_internal = allow_internal || crate::app::probe::scope::internal_allowed_from_env();
+    match batch_process(file, storage, ignore_patterns, allow_internal) {
         Ok(_) => {
             let _ = storage.flush();
             process::exit(EXIT_SUCCESS);

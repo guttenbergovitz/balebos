@@ -26,3 +26,6 @@ arrow-schema = { version = "60", optional = true }
 [features]
 default = []
 parquet-archive = ["dep:parquet", "dep:arrow-array", "dep:arrow-schema", "dep:sha2"]
+
+[target."cfg(unix)".dependencies]
+nix = { version = "0.32.0", features = ["process", "signal"] }

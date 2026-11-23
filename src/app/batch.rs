@@ -73,6 +73,7 @@ pub fn batch_process(
     filepath: &str,
     storage: &Arc<dyn StorageEngine>,
     ignore_patterns: &[String],
+    allow_internal: bool,
 ) -> Result<BatchStats> {
     let start = Instant::now();
     let started_at = chrono::Utc::now();
@@ -121,6 +122,23 @@ pub fn batch_process(
         .par_iter()
         .enumerate()
         .map(|(idx, domain)| {
+            if let Err(denial) = crate::app::probe::scope::check_scope(domain, allow_internal) {
+                println!(
+                    "  ⊘ [{}/{}] {} (out of scope: {})",
+                    idx + 1,
+                    domains.len(),
+                    domain,
+                    denial
+                );
+                return (
+                    idx,
+                    domain.clone(),
+                    None,
+                    None,
+                    Some(format!("out of scope: {denial}")),
+                    false,
+                );
+            }
             if crate::ignore::is_ignored(domain, ignore_patterns)
                 || crate::ignore::is_junk(domain, &junk_assets)
             {
@@ -158,6 +176,21 @@ pub fn batch_process(
 
     for (idx, domain, item_opt, rdap_opt, err_opt, _skip_rdap) in results {
         if let Some(err) = err_opt {
+            if let Some(denial) = err.strip_prefix("out of scope: ") {
+                // Scope refusals are deliberate skips, not failures.
+                println!(
+                    "  ⊘ [{}/{}] {} ({})",
+                    idx + 1,
+                    domains.len(),
+                    domain,
+                    denial
+                );
+                coverage_outcomes.push(crate::domain::coverage::TargetCoverageRecord {
+                    target: domain.clone(),
+                    coverage: crate::domain::coverage::TargetCoverage::Skipped,
+                });
+                continue;
+            }
             println!(
                 "  ✗ [{}/{}] {} (error: {})",
                 idx + 1,

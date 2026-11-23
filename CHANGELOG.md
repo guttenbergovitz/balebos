@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bounded subprocess execution for all probe adapters: uniform
+  wall-clock timeouts, bounded captured output (64 MiB ceiling), and on
+  Unix process-group termination so timed-out scanners cannot leak
+  orphaned grandchildren; killed children are always reaped. Replaces
+  the platform-dependent `gtimeout`/`timeout` shell-outs and every
+  unbounded `.output()` call (subfinder, dnsx, httpx, rdap, whois, dig,
+  asnmap). `nix` added (unix-only process-group control).
+- Inspection scope guard: `balebos probe` and `balebos batch` refuse
+  private, loopback and link-local targets (and localhost-style names)
+  unless `--allow-internal` or `BALEBOS_ALLOW_INTERNAL=1`. Refusals are
+  reported and counted as coverage skips, never silent. Documented
+  limit: literals only — pre-resolution enforcement is a follow-up.
+
 ### Changed
 
 - Default storage engine is now SQLite (`data/balebos.db`); the legacy

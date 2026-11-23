@@ -1,3 +1,4 @@
+use super::process;
 use super::types::AsnObservation;
 use crate::error::{ProbeError, Result};
 use crate::inventory::ItemType;
@@ -46,20 +47,12 @@ fn lookup_asn_cymru(ip: &str) -> Option<AsnLookupResult> {
     let reversed = format!("{}.{}.{}.{}", parts[3], parts[2], parts[1], parts[0]);
     let query = format!("{}.origin.asn.cymru.com", reversed);
 
-    // Use dig for DNS TXT lookup with timeout
-    // Try gtimeout (macOS) first, then timeout (Linux)
-    let output = match Command::new("gtimeout")
-        .args(["5", "dig", "+short", "TXT", &query, "+time=3", "+tries=2"])
-        .output()
-    {
-        Ok(o) => Some(o),
-        Err(_) => Command::new("timeout")
-            .args(["5", "dig", "+short", "TXT", &query, "+time=3", "+tries=2"])
-            .output()
-            .ok(),
-    };
-
-    let output = output?;
+    let output = process::run_bounded(
+        Command::new("dig").args(["+short", "TXT", &query, "+time=3", "+tries=2"]),
+        std::time::Duration::from_secs(10),
+        process::DEFAULT_MAX_OUTPUT,
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -92,10 +85,12 @@ fn lookup_asn_cymru(ip: &str) -> Option<AsnLookupResult> {
 fn lookup_asn_name_cymru(asn: u32) -> Option<String> {
     let query = format!("AS{}.asn.cymru.com", asn);
 
-    let output = Command::new("dig")
-        .args(["+short", "TXT", &query])
-        .output()
-        .ok()?;
+    let output = process::run_bounded(
+        Command::new("dig").args(["+short", "TXT", &query]),
+        std::time::Duration::from_secs(10),
+        process::DEFAULT_MAX_OUTPUT,
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -115,7 +110,12 @@ fn lookup_asn_name_cymru(asn: u32) -> Option<String> {
 
 /// Fallback ASN lookup using whois command.
 fn lookup_asn_whois(ip: &str) -> Option<AsnLookupResult> {
-    let output = Command::new("whois").arg(ip).output().ok()?;
+    let output = process::run_bounded(
+        Command::new("whois").arg(ip),
+        std::time::Duration::from_secs(30),
+        process::DEFAULT_MAX_OUTPUT,
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -186,18 +186,21 @@ fn lookup_asn_with_fallback(ip: &str) -> Option<AsnLookupResult> {
 
 /// Helper function to check if asnmap is correctly installed.
 fn check_asnmap_installation() -> Result<()> {
-    Command::new("asnmap")
-        .arg("-version")
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ProbeError::ToolNotFound {
-                    tool: "asnmap".to_string(),
-                }
-            } else {
-                ProbeError::Execution(e)
+    let output = process::run_bounded(
+        Command::new("asnmap").arg("-version"),
+        std::time::Duration::from_secs(10),
+        process::DEFAULT_MAX_OUTPUT,
+    )
+    .map_err(|e| match e {
+        crate::error::BalebosError::Probe(ProbeError::ToolNotFound { .. }) => {
+            ProbeError::ToolNotFound {
+                tool: "asnmap".to_string(),
             }
-        })?;
+            .into()
+        }
+        other => other,
+    })?;
+    let _ = output;
     Ok(())
 }
 
@@ -231,9 +234,16 @@ pub fn probe_asn_batch(
                 continue;
             }
 
-            let output = Command::new("asnmap")
-                .args(["-l", &temp_file.to_string_lossy(), "-json", "-silent"])
-                .output();
+            let output = process::run_bounded(
+                Command::new("asnmap").args([
+                    "-l",
+                    &temp_file.to_string_lossy(),
+                    "-json",
+                    "-silent",
+                ]),
+                std::time::Duration::from_secs(120),
+                process::DEFAULT_MAX_OUTPUT,
+            );
 
             let _ = fs::remove_file(&temp_file);
 

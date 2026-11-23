@@ -8,7 +8,18 @@ use crate::exit_codes::*;
 use crate::storage::StorageEngine;
 
 #[allow(dead_code)]
-pub fn cmd_probe(kind: ProbeKind, target: &str, storage: &Arc<dyn StorageEngine>) {
+pub fn cmd_probe(
+    kind: ProbeKind,
+    target: &str,
+    storage: &Arc<dyn StorageEngine>,
+    allow_internal: bool,
+) {
+    let allow_internal = allow_internal || crate::app::probe::scope::internal_allowed_from_env();
+    if let Err(denial) = crate::app::probe::scope::check_scope(target, allow_internal) {
+        eprintln!("Refusing to probe '{target}': {denial}");
+        process::exit(EXIT_INVALID_ARGUMENT);
+    }
+
     match kind {
         ProbeKind::Subdomains => match probe_subdomains(target, storage) {
             Ok(subdomains) => {

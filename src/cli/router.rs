@@ -5,6 +5,7 @@ pub enum Command {
     },
     Batch {
         file: String,
+        allow_internal: bool,
     },
     List {
         unique: bool,
@@ -22,6 +23,7 @@ pub enum Command {
     Probe {
         kind: ProbeKind,
         target: String,
+        allow_internal: bool,
     },
     Drift {
         within_hours: u64,
@@ -208,7 +210,11 @@ pub fn parse_command() -> Option<Command> {
         }
         "batch" => {
             let file = args.get(2)?.clone();
-            Some(Command::Batch { file })
+            let allow_internal = args.iter().any(|a| a == "--allow-internal");
+            Some(Command::Batch {
+                file,
+                allow_internal,
+            })
         }
         "list" => {
             let unique = args.get(2).is_some_and(|a| a == "--unique");
@@ -270,7 +276,12 @@ pub fn parse_command() -> Option<Command> {
                 "hosting" => ProbeKind::Hosting,
                 _ => return None,
             };
-            Some(Command::Probe { kind, target })
+            let allow_internal = args.iter().any(|a| a == "--allow-internal");
+            Some(Command::Probe {
+                kind,
+                target,
+                allow_internal,
+            })
         }
         "web" => {
             let action = args.get(2)?;

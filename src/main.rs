@@ -107,7 +107,10 @@ fn main() {
 
     match command {
         Command::Scan { domain } => handlers::scan::cmd_scan(&domain, &storage),
-        Command::Batch { file } => handlers::scan::cmd_batch(&file, &storage, &ignore_patterns),
+        Command::Batch {
+            file,
+            allow_internal,
+        } => handlers::scan::cmd_batch(&file, &storage, &ignore_patterns, allow_internal),
         Command::List { unique } => handlers::inventory::cmd_list(unique, &storage),
         Command::Tree => handlers::inventory::cmd_tree(&storage),
         Command::Status { export } => handlers::inventory::cmd_status(export, &storage),
@@ -115,7 +118,11 @@ fn main() {
         Command::Diff => handlers::inventory::cmd_diff(&storage),
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
-        Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
+        Command::Probe {
+            kind,
+            target,
+            allow_internal,
+        } => handlers::probe::cmd_probe(kind, &target, &storage, allow_internal),
         Command::Drift { within_hours } => {
             if let Err(e) = handlers::drift::cmd_drift(within_hours, &storage) {
                 eprintln!("Drift report failed: {e}");

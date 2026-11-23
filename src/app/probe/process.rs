@@ -1,0 +1,244 @@
+//! Bounded subprocess execution for probe adapters (security-audit
+//! finding: uniform timeouts, kill and reap; brief §8 explicit bounds).
+//!
+//! `run_bounded` executes a command with an outer envelope: wall-clock
+//! timeout, bounded captured output, and — on Unix — process-group
+//! termination so no grandchildren outlive a timed-out scanner. Killed
+//! children are always reaped (waited), never left as zombies.
+//!
+//! This is the outer envelope only; per-request timeouts inside scanners
+//! (e.g. httpx `-timeout`) remain the tool's own concern.
+
+use std::io::Read;
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+use crate::error::{BalebosError, Result};
+
+const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+fn process_err(msg: impl Into<String>) -> BalebosError {
+    BalebosError::Probe(crate::error::ProbeError::Execution(std::io::Error::other(
+        msg.into(),
+    )))
+}
+
+/// Default ceiling for captured scanner output (64 MiB). Scanners that
+/// legitimately exceed this are misconfigured, not busy.
+pub const DEFAULT_MAX_OUTPUT: usize = 64 * 1024 * 1024;
+
+/// Execute `cmd` within `timeout`, capturing at most `max_output` bytes
+/// per stream. On timeout the process (and its group, on Unix) is killed
+/// and reaped before the error returns.
+pub fn run_bounded(cmd: &mut Command, timeout: Duration, max_output: usize) -> Result<Output> {
+    configure_command(cmd);
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                BalebosError::Probe(crate::error::ProbeError::ToolNotFound {
+                    tool: program_name(cmd),
+                })
+            } else {
+                BalebosError::Probe(crate::error::ProbeError::Execution(e))
+            }
+        })?;
+    finish_bounded(child, timeout, max_output)
+}
+
+/// Attach the timeout envelope to an already-spawned child (streaming
+/// adapters pipe stdin/stdout themselves and only need bounded waiting).
+pub fn wait_bounded(child: Child, timeout: Duration, max_output: usize) -> Result<Output> {
+    finish_bounded(child, timeout, max_output)
+}
+
+fn finish_bounded(mut child: Child, timeout: Duration, max_output: usize) -> Result<Output> {
+    // Streams may already have been taken by a streaming adapter; missing
+    // streams read as empty.
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Dedicated reader threads: a chatty scanner must never deadlock on a
+    // full pipe buffer, and a silent one must never block the timeout
+    // loop (reads here are allowed to block; the watch loop is not).
+    let stdout_thread = std::thread::spawn(move || {
+        stdout.map_or_else(|| (Vec::new(), false), |s| read_capped(s, max_output))
+    });
+    let stderr_thread = std::thread::spawn(move || {
+        stderr.map_or_else(|| (Vec::new(), false), |s| read_capped(s, max_output))
+    });
+
+    let start = Instant::now();
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    terminate_group(&mut child);
+                    break Err(process_err(format!(
+                        "scanner exceeded the {:?} timeout and was terminated",
+                        timeout
+                    )));
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(e) => {
+                terminate_group(&mut child);
+                break Err(BalebosError::Probe(crate::error::ProbeError::Execution(e)));
+            }
+        }
+    };
+
+    // Reap after kill (terminate_group already waits; for the success path
+    // the status came from try_wait, but a final wait is still required to
+    // release the handle). Then collect the readers.
+    let status = result?;
+    // Release the process handle after the successful try_wait path.
+    let _ = child.wait();
+
+    let (stdout_data, stdout_overflow) = stdout_thread
+        .join()
+        .map_err(|_| process_err("stdout reader thread panicked"))?;
+    let (stderr_data, stderr_overflow) = stderr_thread
+        .join()
+        .map_err(|_| process_err("stderr reader thread panicked"))?;
+
+    if stdout_overflow || stderr_overflow {
+        return Err(process_err(format!(
+            "scanner output exceeded the {} MiB bound",
+            max_output / (1024 * 1024)
+        )));
+    }
+
+    Ok(Output {
+        status,
+        stdout: stdout_data,
+        stderr: stderr_data,
+    })
+}
+
+/// Read one stream to EOF, storing at most `max` bytes. Reading continues
+/// past the cap (discarding) so the child never blocks on a full pipe.
+fn read_capped(mut reader: impl Read, max: usize) -> (Vec<u8>, bool) {
+    let mut data = Vec::new();
+    let mut overflow = false;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                if !overflow {
+                    if data.len() + n > max {
+                        overflow = true;
+                    } else {
+                        data.extend_from_slice(&chunk[..n]);
+                    }
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    (data, overflow)
+}
+
+/// Put the child in its own process group (Unix) so a timeout can kill
+/// the whole group — scanners that fork helpers cannot leak orphans.
+fn configure_command(cmd: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
+                    .map_err(std::io::Error::from)
+            });
+        }
+    }
+}
+
+/// Kill the child and, on Unix, its process group; always reap.
+fn terminate_group(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pgid = nix::unistd::Pid::from_raw(child.id() as i32);
+        let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
+fn program_name(cmd: &Command) -> String {
+    cmd.get_program().to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sh(args: &str) -> Command {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.arg("-c").arg(args);
+        cmd
+    }
+
+    #[test]
+    fn quick_command_succeeds_with_output() {
+        let output = run_bounded(&mut sh("echo hello"), Duration::from_secs(5), 1024).unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
+    }
+
+    #[test]
+    fn timed_out_process_is_killed_and_reaped() {
+        let start = Instant::now();
+        let result = run_bounded(&mut sh("sleep 30"), Duration::from_millis(100), 1024);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err());
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "timeout took too long: {elapsed:?}"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("timeout"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn oversized_output_is_rejected() {
+        let result = run_bounded(
+            &mut sh("yes | head -c 100000"),
+            Duration::from_secs(10),
+            1024,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeded"));
+    }
+
+    #[test]
+    fn wait_bounded_applies_to_spawned_children() {
+        let mut cmd = sh("sleep 30");
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        configure_command(&mut cmd);
+        let child = cmd.spawn().unwrap();
+        let start = Instant::now();
+        let result = wait_bounded(child, Duration::from_millis(100), 1024);
+        assert!(result.is_err());
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn missing_tool_reports_tool_not_found() {
+        let mut cmd = Command::new("definitely-not-a-real-binary-xyz");
+        let result = run_bounded(&mut cmd, Duration::from_secs(1), 1024);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not found in PATH"), "unexpected: {err}");
+    }
+}
