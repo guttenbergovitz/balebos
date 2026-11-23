@@ -135,7 +135,13 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
                 RelationshipKind::AliasesTo
                 | RelationshipKind::RedirectsTo
                 | RelationshipKind::UsesNameserver
-                | RelationshipKind::RoutesMailTo => {
+                | RelationshipKind::RoutesMailTo
+                | RelationshipKind::ReferencesApi
+                | RelationshipKind::LoadsResourceFrom
+                | RelationshipKind::ReferencesStorage
+                | RelationshipKind::UsesIdentityProvider
+                | RelationshipKind::DeclaresService
+                | RelationshipKind::ExposesService => {
                     let target_id = edge.target.id.clone();
                     if config.suppress_shared_providers && is_shared_provider_host(&target_id) {
                         suppressed_count += 1;
@@ -166,8 +172,10 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
                         frontier.push((target_id, next_depth));
                     }
                 }
-                // 2-hop shared-intermediate pivots (IP, TLS cert)
-                RelationshipKind::ResolvesTo | RelationshipKind::PresentsCertificate => {
+                // 2-hop shared-intermediate pivots (IP, TLS cert, SSH host key)
+                RelationshipKind::ResolvesTo
+                | RelationshipKind::PresentsCertificate
+                | RelationshipKind::SharesSshHostKey => {
                     if next_depth >= config.max_depth {
                         // Still allow 2-hop correlation within max_depth == 2 if depth == 0
                         if depth + 2 > config.max_depth {
@@ -206,7 +214,9 @@ pub fn discover_pivots(records: &Records, seed: &str, config: &PivotConfig) -> P
                         });
                     }
                 }
-                RelationshipKind::BelongsToAsn | RelationshipKind::HostedBy => {}
+                RelationshipKind::BelongsToAsn
+                | RelationshipKind::HostedBy
+                | RelationshipKind::SpeaksProtocol => {}
             }
         }
 

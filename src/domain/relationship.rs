@@ -21,6 +21,11 @@ pub enum EntityKind {
     TlsCertificate,
     Endpoint,
     Provider,
+    NetworkService,
+    ApiService,
+    StorageEndpoint,
+    ApplicationInterface,
+    SshHostKey,
 }
 
 impl fmt::Display for EntityKind {
@@ -33,6 +38,11 @@ impl fmt::Display for EntityKind {
             Self::TlsCertificate => write!(f, "tls_cert"),
             Self::Endpoint => write!(f, "endpoint"),
             Self::Provider => write!(f, "provider"),
+            Self::NetworkService => write!(f, "network_service"),
+            Self::ApiService => write!(f, "api_service"),
+            Self::StorageEndpoint => write!(f, "storage_endpoint"),
+            Self::ApplicationInterface => write!(f, "application_interface"),
+            Self::SshHostKey => write!(f, "ssh_host_key"),
         }
     }
 }
@@ -83,6 +93,14 @@ pub enum RelationshipKind {
     UsesNameserver,
     RoutesMailTo,
     HostedBy,
+    ExposesService,
+    SpeaksProtocol,
+    SharesSshHostKey,
+    ReferencesApi,
+    LoadsResourceFrom,
+    ReferencesStorage,
+    UsesIdentityProvider,
+    DeclaresService,
 }
 
 impl fmt::Display for RelationshipKind {
@@ -96,6 +114,14 @@ impl fmt::Display for RelationshipKind {
             Self::UsesNameserver => write!(f, "uses_nameserver"),
             Self::RoutesMailTo => write!(f, "routes_mail_to"),
             Self::HostedBy => write!(f, "hosted_by"),
+            Self::ExposesService => write!(f, "exposes_service"),
+            Self::SpeaksProtocol => write!(f, "speaks_protocol"),
+            Self::SharesSshHostKey => write!(f, "shares_ssh_host_key"),
+            Self::ReferencesApi => write!(f, "references_api"),
+            Self::LoadsResourceFrom => write!(f, "loads_resource_from"),
+            Self::ReferencesStorage => write!(f, "references_storage"),
+            Self::UsesIdentityProvider => write!(f, "uses_identity_provider"),
+            Self::DeclaresService => write!(f, "declares_service"),
         }
     }
 }

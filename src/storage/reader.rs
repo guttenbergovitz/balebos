@@ -63,6 +63,10 @@ pub struct Records {
     pub enrichment_candidates: Vec<crate::app::sources::EnrichmentCandidateRecord>,
     /// Persisted operator candidate review decisions.
     pub candidate_reviews: Vec<crate::app::sources::CandidateReviewRecord>,
+    /// Persisted network service observations (ADR 0026).
+    pub service_observations: Vec<crate::domain::service::ServiceObservation>,
+    /// Persisted application & infrastructure reference observations (ADR 0028).
+    pub application_references: Vec<crate::domain::service::ApplicationReferenceObservation>,
     /// Records that could not be typed, with reasons. Never silently empty.
     pub skipped: Vec<SkippedRecord>,
 }
@@ -163,6 +167,18 @@ pub fn parse_records<I: Iterator<Item = String>>(lines: I) -> Result<Records> {
                 try_parse!(
                     crate::app::sources::CandidateReviewRecord,
                     candidate_reviews
+                )
+            }
+            ItemType::ServiceObservation => {
+                try_parse!(
+                    crate::domain::service::ServiceObservation,
+                    service_observations
+                )
+            }
+            ItemType::ApplicationReference => {
+                try_parse!(
+                    crate::domain::service::ApplicationReferenceObservation,
+                    application_references
                 )
             }
         }

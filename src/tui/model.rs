@@ -170,6 +170,8 @@ pub struct TuiModel {
     pub asset_tags: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
     pub lifecycle_events: Vec<crate::inventory::LifecycleEvent>,
     pub risk_scores: HashMap<String, u32>,
+    pub service_observations: Vec<crate::domain::service::ServiceObservation>,
+    pub application_references: Vec<crate::domain::service::ApplicationReferenceObservation>,
 }
 
 pub struct GlobalStats {
@@ -631,6 +633,8 @@ pub fn load_tui_model_from_records(records: &crate::storage::reader::Records) ->
         asset_tags,
         lifecycle_events: records.lifecycle_events.clone(),
         risk_scores,
+        service_observations: records.service_observations.clone(),
+        application_references: records.application_references.clone(),
     }
 }
 
