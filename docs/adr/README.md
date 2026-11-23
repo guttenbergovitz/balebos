@@ -23,7 +23,7 @@ stakeholders, approval boards or rollout theatre.
 | [0008](0008-organisational-subsystem-disposition.md) | Organisational subsystem disposition | Accepted |
 | [0009](0009-drift-detection-and-snapshot-semantics.md) | Drift detection and snapshot semantics | Proposed |
 | [0010](0010-versioned-integration-contracts.md) | Versioned machine-readable integration contracts | Proposed |
-| [0011](0011-infrastructure-relationship-graph.md) | Infrastructure relationship graph (future phase) | Proposed |
+| [0011](0011-infrastructure-relationship-graph.md) | Infrastructure relationship graph | Accepted |
 | [0012](0012-sqlite-operational-storage.md) | SQLite as authoritative operational storage | Accepted |
 | [0013](0013-parquet-evidence-archive.md) | Parquet as immutable evidence archive (optional) | Accepted |
 | [0014](0014-evidence-segment-sealing.md) | Evidence segment sealing and verification | Accepted |
@@ -32,6 +32,9 @@ stakeholders, approval boards or rollout theatre.
 | [0017](0017-dependency-and-build-time-policy.md) | Dependency and build-time policy | Accepted |
 | [0018](0018-legacy-parquet-migration.md) | Legacy Parquet migration | Accepted |
 | [0019](0019-turso-engine-candidate.md) | Turso as a candidate operational engine | Proposed |
+| [0020](0020-discovery-source-contract-and-enrichment.md) | Discovery source contract and external enrichment | Accepted |
+| [0021](0021-temporal-relationship-semantics-and-candidate-review.md) | Temporal relationship semantics and candidate attribution | Accepted |
+| [0022](0022-discovery-effectiveness-metrics.md) | Discovery effectiveness measurement framework | Accepted |
 
 ADR 0007 (local persistence) was superseded by 0012 and 0013 and is
 retained as historical record of the interim engine's verified defects.
