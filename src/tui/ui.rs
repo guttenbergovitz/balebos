@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::tui::app::{App, ExportFormat, InputMode, OrgAddType, Tab};
-use crate::tui::tabs::{draw_drift, draw_findings, draw_inventory};
+use crate::tui::tabs::{draw_drift, draw_findings, draw_inventory, draw_overview};
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -207,9 +207,10 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let selected = match app.active_tab {
-        Tab::Inventory => 0,
-        Tab::Findings => 1,
+        Tab::Overview => 0,
+        Tab::Inventory => 1,
         Tab::Drift => 2,
+        Tab::Findings => 3,
     };
 
     let tabs = Tabs::new(titles)
@@ -272,9 +273,10 @@ fn draw_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_main_content(f: &mut Frame, app: &mut App, area: Rect) {
     match app.active_tab {
+        Tab::Overview => draw_overview(f, app, area),
         Tab::Inventory => draw_inventory(f, app, area),
-        Tab::Findings => draw_findings(f, app, area),
         Tab::Drift => draw_drift(f, app, area),
+        Tab::Findings => draw_findings(f, app, area),
     }
 }
 
@@ -354,14 +356,17 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.active_tab {
-        Tab::Inventory => {
-            " q: Quit | R: Refresh | 1-3: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | L: Lifecycle | v: Risk | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
+        Tab::Overview => {
+            " q: Quit | R: Refresh | 1-4: Tabs | s: Scan | Tab/BackTab: Switch View "
         }
-        Tab::Findings => {
-            " q: Quit | R: Refresh | 1-3: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
+        Tab::Inventory => {
+            " q: Quit | R: Refresh | 1-4: Tabs | /: Filter | t: Filter Tag | T: Add Tag | d: Remove Tag | L: Lifecycle | v: Risk | x: Ext | a: Add | s: Scan | m: Mark | o: Assign | i: Info "
         }
         Tab::Drift => {
-            " q: Quit | R: Refresh | 1-3: Tabs | j/k: Nav | Enter/i: Inspect Asset — yellow classes are uncertainty, not incidents "
+            " q: Quit | R: Refresh | 1-4: Tabs | j/k: Nav | Enter/i: Inspect Asset — yellow classes are uncertainty, not incidents "
+        }
+        Tab::Findings => {
+            " q: Quit | R: Refresh | 1-4: Tabs | a: Acknowledge | r: Resolve | s: Scan | f: Filter | Space: Toggle | j/k: Nav "
         }
     };
 

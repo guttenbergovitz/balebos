@@ -22,21 +22,23 @@ use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
+    Overview,
     Inventory,
-    Findings,
     Drift,
+    Findings,
 }
 
 impl Tab {
     pub fn all() -> &'static [Tab] {
-        &[Tab::Inventory, Tab::Findings, Tab::Drift]
+        &[Tab::Overview, Tab::Inventory, Tab::Drift, Tab::Findings]
     }
 
     pub fn title(&self) -> &'static str {
         match self {
-            Tab::Inventory => "Inventory",
+            Tab::Overview => "Overview",
+            Tab::Inventory => "Assets",
+            Tab::Drift => "Changes",
             Tab::Findings => "Findings",
-            Tab::Drift => "Drift",
         }
     }
 }
@@ -303,6 +305,8 @@ impl App {
             import_path: String::new(),
         };
 
+        app.load_findings_from_records(&records);
+        app.load_drift_from_records(&records);
         app.update_visible_items();
         app.update_org_selection();
 

@@ -136,20 +136,36 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         }
 
         // Tab navigation
-        KeyCode::Char('1') => app.set_tab(Tab::Inventory),
-        KeyCode::Char('2') => app.set_tab(Tab::Findings),
+        KeyCode::Char('1') => app.set_tab(Tab::Overview),
+        KeyCode::Char('2') => app.set_tab(Tab::Inventory),
         KeyCode::Char('3') => app.set_tab(Tab::Drift),
+        KeyCode::Char('4') => app.set_tab(Tab::Findings),
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
         // Tab-specific keys
         _ => match app.active_tab {
+            Tab::Overview => handle_overview_keys(app, code),
             Tab::Inventory => handle_inventory_keys(app, code),
-            Tab::Findings => handle_findings_keys(app, code),
             Tab::Drift => handle_drift_keys(app, code),
+            Tab::Findings => handle_findings_keys(app, code),
         },
     }
     Ok(())
+}
+
+fn handle_overview_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Char('R') => {
+            if let Err(e) = app.refresh() {
+                app.set_status(format!("❌ Refresh failed: {e}"));
+            }
+        }
+        KeyCode::Char('s') => {
+            app.run_findings_scan();
+        }
+        _ => {}
+    }
 }
 
 fn handle_inventory_keys(app: &mut App, code: KeyCode) {
