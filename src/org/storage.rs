@@ -250,6 +250,14 @@ pub struct DomainRegistrationRecord {
     pub item_type: ItemType,
     pub domain: String,
     pub registrar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iana_registrar_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registrar_handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completeness: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_dates: Vec<(String, String)>,
     pub registered_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -267,6 +275,10 @@ impl DomainRegistrationRecord {
             item_type: ItemType::OrgDomainRegistration,
             domain,
             registrar: None,
+            iana_registrar_id: None,
+            registrar_handle: None,
+            completeness: None,
+            raw_dates: Vec::new(),
             registered_at: None,
             expires_at: None,
             updated_at: None,

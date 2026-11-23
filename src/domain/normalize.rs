@@ -1,3 +1,36 @@
+const TWO_PART_PUBLIC_SUFFIXES: &[&str] = &[
+    "co.uk", "org.uk", "gov.uk", "ac.uk", "net.uk", "me.uk", "ltd.uk", "plc.uk", "com.au",
+    "org.au", "net.au", "edu.au", "gov.au", "co.jp", "ne.jp", "or.jp", "ac.jp", "co.kr", "co.nz",
+    "co.za", "co.in", "co.il", "com.br", "com.cn", "com.mx", "com.pl", "org.pl", "net.pl",
+    "gov.pl", "edu.pl", "waw.pl", "com.tr", "com.ua", "com.sg", "com.hk",
+];
+
+/// Extract the registrable domain (eTLD+1) using a public-suffix table
+/// rather than naive label counting.
+pub fn registrable_domain(domain: &str) -> String {
+    let norm = normalize_domain(domain);
+    let host = norm
+        .split('/')
+        .next()
+        .unwrap_or(&norm)
+        .trim_end_matches('.');
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() < 2 {
+        return host.to_string();
+    }
+    let two_part = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
+    let needed = if TWO_PART_PUBLIC_SUFFIXES.contains(&two_part.as_str()) {
+        3
+    } else {
+        2
+    };
+    if parts.len() <= needed {
+        host.to_string()
+    } else {
+        parts[parts.len() - needed..].join(".")
+    }
+}
+
 /// Validates that a string looks like a plausible domain name.
 ///
 /// This is a lightweight structural check (no DNS lookup). It verifies:

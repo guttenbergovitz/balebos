@@ -55,6 +55,12 @@ pub struct DomainContact {
 pub struct DomainRegistration {
     pub domain: String,
     pub registrar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iana_registrar_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registrar_handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completeness: Option<String>,
     pub registered_at: Option<chrono::DateTime<chrono::Utc>>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
