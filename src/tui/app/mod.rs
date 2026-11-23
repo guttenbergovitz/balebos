@@ -191,6 +191,7 @@ pub struct ScanState {
     pub target: Option<String>,
     pub current_stage: Option<String>,
     pub total_targets: Option<usize>,
+    pub stage_processed: usize,
     pub processed_targets: usize,
     pub new_discoveries: usize,
     pub services_discovered: usize,
@@ -209,6 +210,7 @@ impl Default for ScanState {
             target: None,
             current_stage: None,
             total_targets: None,
+            stage_processed: 0,
             processed_targets: 0,
             new_discoveries: 0,
             services_discovered: 0,
@@ -237,6 +239,7 @@ impl ScanState {
                 self.target = Some(target.clone());
                 self.current_stage = Some("starting".to_string());
                 self.total_targets = None;
+                self.stage_processed = 0;
                 self.processed_targets = 0;
                 self.new_discoveries = 0;
                 self.services_discovered = 0;
@@ -252,6 +255,7 @@ impl ScanState {
             } => {
                 self.current_stage = Some(stage.clone());
                 self.total_targets = *total_targets;
+                self.stage_processed = 0;
                 self.message = stage.clone();
                 self.timestamp = *at;
             }
@@ -271,6 +275,7 @@ impl ScanState {
                 ..
             } => {
                 self.processed_targets += 1;
+                self.stage_processed += 1;
                 if !*ok {
                     self.error_count += 1;
                 }
@@ -533,5 +538,79 @@ impl App {
                 self.status_message = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::scan_event::ScanEvent;
+
+    #[test]
+    fn scan_state_tracks_per_stage_progress_errors_and_cancellation() {
+        let mut s = ScanState::new();
+        let now = chrono::Utc::now();
+        s.apply_event(ScanEvent::RunStarted {
+            run_id: "r1".to_string(),
+            target: "example.com".to_string(),
+            started_at: now,
+        });
+        s.apply_event(ScanEvent::StageStarted {
+            run_id: "r1".to_string(),
+            stage: "dns".to_string(),
+            total_targets: Some(2),
+            at: now,
+        });
+        s.apply_event(ScanEvent::TargetCompleted {
+            run_id: "r1".to_string(),
+            stage: "dns".to_string(),
+            target: "a.example.com".to_string(),
+            ok: true,
+            detail: None,
+            at: now,
+        });
+        s.apply_event(ScanEvent::TargetCompleted {
+            run_id: "r1".to_string(),
+            stage: "dns".to_string(),
+            target: "b.example.com".to_string(),
+            ok: true,
+            detail: None,
+            at: now,
+        });
+        assert_eq!(s.stage_processed, 2);
+        assert_eq!(s.processed_targets, 2);
+
+        // Moving to HTTP stage resets `stage_processed` to 0 while keeping `processed_targets`.
+        s.apply_event(ScanEvent::StageStarted {
+            run_id: "r1".to_string(),
+            stage: "http".to_string(),
+            total_targets: Some(2),
+            at: now,
+        });
+        assert_eq!(s.stage_processed, 0);
+        assert_eq!(s.processed_targets, 2);
+
+        s.apply_event(ScanEvent::StageFailed {
+            run_id: "r1".to_string(),
+            stage: "http".to_string(),
+            error: "timeout".to_string(),
+            at: now,
+        });
+        assert_eq!(s.error_count, 1);
+
+        s.apply_event(ScanEvent::RunCompleted {
+            run_id: "r1".to_string(),
+            targets_processed: s.processed_targets,
+            new_discoveries: 0,
+            errors: 1,
+            finished_at: now,
+        });
+        assert_eq!(s.current_stage.as_deref(), Some("completed_with_errors"));
+
+        s.apply_event(ScanEvent::RunCancelled {
+            run_id: "r1".to_string(),
+            finished_at: now,
+        });
+        assert_eq!(s.current_stage.as_deref(), Some("cancelled"));
     }
 }

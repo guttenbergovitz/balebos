@@ -94,7 +94,6 @@ impl App {
             let cancelled = crate::app::probe::process::is_cancelled();
             let mut status = scan_status.lock().unwrap_or_else(|p| p.into_inner());
             let failures: Vec<_> = status.steps.iter().filter(|s| !s.success).collect();
-            let err_count = failures.len();
             if cancelled {
                 status.message = "⚠ Scan cancelled".to_string();
                 status.apply_event(crate::domain::scan_event::ScanEvent::RunCancelled {
@@ -103,7 +102,9 @@ impl App {
                 });
                 return;
             }
+            let mut err_count = failures.len().max(status.error_count);
             if let Err(e) = res {
+                err_count = err_count.max(1);
                 status.message = format!("❌ Scan error: {}", e);
                 status.apply_event(crate::domain::scan_event::ScanEvent::StageFailed {
                     run_id: run_id.clone(),

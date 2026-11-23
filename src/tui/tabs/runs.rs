@@ -31,12 +31,13 @@ pub fn draw_runs(f: &mut Frame, app: &App, area: Rect) {
     // Top: Active Run card (never fabricates a % when total_targets is None)
     let progress_line = match (is_scanning, scan.total_targets) {
         (true, Some(total)) if total > 0 => {
-            let pct = (scan.processed_targets.min(total) * 100) / total;
-            format!("{} / {} targets ({}%)", scan.processed_targets, total, pct)
+            let done = scan.stage_processed.min(total);
+            let pct = (done * 100) / total;
+            format!("{} / {} targets ({}%)", done, total, pct)
         }
         (true, _) => format!(
             "{} processed (total count pending dynamic discovery)",
-            scan.processed_targets
+            scan.stage_processed
         ),
         (false, _) if scan.run_id.is_some() => format!(
             "Last run: {} | {} processed | {} errors",

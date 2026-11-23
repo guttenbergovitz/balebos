@@ -653,9 +653,19 @@ pub fn run_single_recon_with_events(
         )));
     }
 
-    let junk_assets: std::collections::BTreeSet<String> = storage
-        .read_all_records()
+    let existing_records = storage.read_all_records().ok();
+    let junk_assets: std::collections::BTreeSet<String> = existing_records
+        .as_ref()
         .map(|r| crate::app::tags::get_junk_assets(&r.asset_tags))
+        .unwrap_or_default();
+    let known_assets: std::collections::BTreeSet<String> = existing_records
+        .as_ref()
+        .map(|r| {
+            r.items
+                .iter()
+                .map(|i| crate::domain::normalize::normalize_fqdn(&i.name))
+                .collect()
+        })
         .unwrap_or_default();
 
     if crate::ignore::is_ignored(domain, ignore_patterns)
@@ -749,13 +759,16 @@ pub fn run_single_recon_with_events(
     let subdomains = match probe::probe_subdomains(domain, storage) {
         Ok(subs) => {
             for sub in &subs {
-                on_event(ScanEvent::CandidateDiscovered {
-                    run_id: run_id.to_string(),
-                    kind: "subdomain".to_string(),
-                    entity: sub.clone(),
-                    source: "subfinder".to_string(),
-                    at: chrono::Utc::now(),
-                });
+                let norm_sub = crate::domain::normalize::normalize_fqdn(sub);
+                if !known_assets.contains(&norm_sub) {
+                    on_event(ScanEvent::CandidateDiscovered {
+                        run_id: run_id.to_string(),
+                        kind: "subdomain".to_string(),
+                        entity: sub.clone(),
+                        source: "subfinder".to_string(),
+                        at: chrono::Utc::now(),
+                    });
+                }
             }
             let r = ReconStepResult {
                 name: "subdomains",
@@ -799,44 +812,46 @@ pub fn run_single_recon_with_events(
         total_targets: Some(targets.len()),
         at: chrono::Utc::now(),
     });
-    let dns_observations = match probe::probe_dns_batch(&targets, storage) {
-        Ok(obs) => {
-            for o in &obs {
-                on_event(ScanEvent::TargetCompleted {
-                    run_id: run_id.to_string(),
-                    stage: "dns".to_string(),
-                    target: o.target.clone(),
-                    ok: true,
-                    detail: None,
-                    at: chrono::Utc::now(),
-                });
-                on_event(ScanEvent::ObservationSaved {
-                    run_id: run_id.to_string(),
-                    kind: "dns".to_string(),
-                    target: o.target.clone(),
-                    at: chrono::Utc::now(),
-                });
+    let dns_observations =
+        match probe::dns::probe_dns_batch_with_progress(&targets, storage, &|host| {
+            on_event(ScanEvent::TargetCompleted {
+                run_id: run_id.to_string(),
+                stage: "dns".to_string(),
+                target: host.to_string(),
+                ok: true,
+                detail: None,
+                at: chrono::Utc::now(),
+            });
+        }) {
+            Ok(obs) => {
+                for o in &obs {
+                    on_event(ScanEvent::ObservationSaved {
+                        run_id: run_id.to_string(),
+                        kind: "dns".to_string(),
+                        target: o.target.clone(),
+                        at: chrono::Utc::now(),
+                    });
+                }
+                let r = ReconStepResult {
+                    name: "dns",
+                    success: true,
+                    message: format!("DNS resolved for {} targets", obs.len()),
+                };
+                on_result(&r);
+                results.push(r);
+                obs
             }
-            let r = ReconStepResult {
-                name: "dns",
-                success: true,
-                message: format!("DNS resolved for {} targets", obs.len()),
-            };
-            on_result(&r);
-            results.push(r);
-            obs
-        }
-        Err(e) => {
-            let r = ReconStepResult {
-                name: "dns",
-                success: false,
-                message: format!("DNS probe failed: {}", e),
-            };
-            on_result(&r);
-            results.push(r);
-            vec![]
-        }
-    };
+            Err(e) => {
+                let r = ReconStepResult {
+                    name: "dns",
+                    success: false,
+                    message: format!("DNS probe failed: {}", e),
+                };
+                on_result(&r);
+                results.push(r);
+                vec![]
+            }
+        };
 
     // 6. Batch HTTP Probe (skip targets without DNS records)
     let has_dns: std::collections::HashSet<String> = dns_observations
@@ -875,7 +890,16 @@ pub fn run_single_recon_with_events(
         results.push(r);
         vec![]
     } else {
-        match probe::probe_http_batch(&http_targets, storage) {
+        match probe::http::probe_http_batch_streaming(&http_targets, storage, &|host| {
+            on_event(ScanEvent::TargetCompleted {
+                run_id: run_id.to_string(),
+                stage: "http".to_string(),
+                target: host.to_string(),
+                ok: true,
+                detail: None,
+                at: chrono::Utc::now(),
+            });
+        }) {
             Ok(obs) => {
                 for o in &obs {
                     on_event(ScanEvent::ObservationSaved {
@@ -1026,6 +1050,48 @@ pub fn run_single_recon_with_events(
         report,
     };
     let _ = storage.save(&record);
+
+    // 9. Bounded autonomous reference & passive CT discovery (non-fatal)
+    if !crate::app::probe::process::is_cancelled() {
+        on_step("Running bounded reference & CT discovery...");
+        on_event(ScanEvent::StageStarted {
+            run_id: run_id.to_string(),
+            stage: "references".to_string(),
+            total_targets: Some(1),
+            at: chrono::Utc::now(),
+        });
+        if let Ok(summary) =
+            crate::app::discovery::run_autonomous_discovery(domain, &[], true, storage)
+        {
+            let total_refs =
+                summary.dns_references + summary.js_references + summary.openapi_references;
+            if summary.ct_candidates > 0 {
+                on_event(ScanEvent::CandidateDiscovered {
+                    run_id: run_id.to_string(),
+                    kind: "ct".to_string(),
+                    entity: format!("{} CT candidates for {}", summary.ct_candidates, domain),
+                    source: "crt_sh".to_string(),
+                    at: chrono::Utc::now(),
+                });
+            }
+            if total_refs > 0 {
+                on_event(ScanEvent::ObservationSaved {
+                    run_id: run_id.to_string(),
+                    kind: "references".to_string(),
+                    target: format!("{} ({} refs)", domain, total_refs),
+                    at: chrono::Utc::now(),
+                });
+            }
+            on_event(ScanEvent::TargetCompleted {
+                run_id: run_id.to_string(),
+                stage: "references".to_string(),
+                target: domain.to_string(),
+                ok: true,
+                detail: Some(format!("ct={}, refs={}", summary.ct_candidates, total_refs)),
+                at: chrono::Utc::now(),
+            });
+        }
+    }
 
     Ok(results)
 }

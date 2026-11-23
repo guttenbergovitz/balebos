@@ -5,6 +5,7 @@
 //! without requiring manual input files or paid API keys.
 
 use std::collections::BTreeSet;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -98,7 +99,66 @@ pub fn is_url_in_scope(raw_url: &str, approved_scope: &[String]) -> bool {
     })
 }
 
+/// Validate all DNS-resolved IP addresses for a host before connecting,
+/// preventing DNS rebinding / SSRF to private, loopback, link-local,
+/// unspecified, or multicast addresses.
+pub fn validate_resolved_ips(host: &str, ips: &[IpAddr]) -> std::result::Result<IpAddr, String> {
+    if ips.is_empty() {
+        return Err(format!("DNS resolution returned no addresses for {}", host));
+    }
+    for ip in ips {
+        if ip.is_unspecified() || ip.is_multicast() {
+            return Err(format!(
+                "refusing connection to {} ({} is unspecified/multicast)",
+                host, ip
+            ));
+        }
+        if let Err(denial) = check_scope(&ip.to_string(), false) {
+            return Err(format!(
+                "refusing connection to {} (resolved IP {} denied: {})",
+                host, ip, denial
+            ));
+        }
+    }
+    Ok(ips[0])
+}
+
+fn extract_host_and_port(url: &str) -> std::result::Result<(String, u16), String> {
+    let lower = url.trim().to_ascii_lowercase();
+    let (default_port, after_scheme) = if let Some(rest) = lower.strip_prefix("https://") {
+        (443u16, rest)
+    } else if let Some(rest) = lower.strip_prefix("http://") {
+        (80u16, rest)
+    } else {
+        return Err(format!("unsupported URL scheme: {}", url));
+    };
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .split('@')
+        .next_back()
+        .unwrap_or("");
+    if let Some((h, p)) = authority.rsplit_once(':') {
+        let port = p
+            .parse::<u16>()
+            .map_err(|_| format!("invalid port in URL: {}", url))?;
+        Ok((normalize_fqdn(h), port))
+    } else {
+        Ok((normalize_fqdn(authority), default_port))
+    }
+}
+
 fn fetch_bounded_url(url: &str) -> std::result::Result<String, String> {
+    let (host, port) = extract_host_and_port(url)?;
+    let addrs: Vec<IpAddr> = format!("{}:{}", host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("DNS resolution failed for {}: {}", host, e))?
+        .map(|sa| sa.ip())
+        .collect();
+    let pinned_ip = validate_resolved_ips(&host, &addrs)?;
+    let resolve_arg = format!("{}:{}:{}", host, port, pinned_ip);
+
     let out = process::run_bounded(
         Command::new("curl").args([
             "-sS",
@@ -108,6 +168,8 @@ fn fetch_bounded_url(url: &str) -> std::result::Result<String, String> {
             "524288",
             "--max-redirs",
             "0",
+            "--resolve",
+            &resolve_arg,
             url,
         ]),
         FETCH_TIMEOUT,
@@ -270,5 +332,30 @@ mod tests {
             "http://127.0.0.1/example.com/app.js",
             &scope
         ));
+    }
+
+    #[test]
+    fn validate_resolved_ips_blocks_private_loopback_and_unspecified() {
+        let public_ip: IpAddr = "93.184.216.34".parse().unwrap();
+        assert_eq!(
+            validate_resolved_ips("example.com", &[public_ip]).unwrap(),
+            public_ip
+        );
+        for bad in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "::1",
+        ] {
+            let ip: IpAddr = bad.parse().unwrap();
+            assert!(
+                validate_resolved_ips("example.com", &[public_ip, ip]).is_err(),
+                "expected {} to be rejected",
+                bad
+            );
+        }
     }
 }
