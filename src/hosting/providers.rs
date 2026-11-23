@@ -61,12 +61,24 @@ impl Provider {
             .any(|p| cdn_lower.contains(&p.to_lowercase()))
     }
 
-    /// Check if a CNAME contains a pattern for this provider.
+    /// Check if a CNAME matches a pattern for this provider on label boundaries.
     pub fn matches_cname(&self, cname: &str) -> bool {
-        let cname_lower = cname.to_lowercase();
-        self.cname_patterns
-            .iter()
-            .any(|p| cname_lower.contains(&p.to_lowercase()))
+        let cname_norm = cname.trim().trim_end_matches('.').to_lowercase();
+        if cname_norm.is_empty() {
+            return false;
+        }
+        self.cname_patterns.iter().any(|raw| {
+            let pat = raw.trim().trim_matches('.').to_lowercase();
+            if pat.is_empty() {
+                return false;
+            }
+            if pat.ends_with('-') {
+                // Label-prefix pattern such as `awsdns-`
+                cname_norm.starts_with(&pat) || cname_norm.contains(&format!(".{pat}"))
+            } else {
+                cname_norm == pat || cname_norm.ends_with(&format!(".{pat}"))
+            }
+        })
     }
 
     /// Check if an ASN matches this provider.
@@ -200,6 +212,34 @@ mod tests {
         let matches = kb.find_by_cname("example.amazonaws.com");
         assert!(!matches.is_empty());
         assert!(matches.iter().any(|p| p.id == "aws"));
+    }
+
+    #[test]
+    fn test_cname_respects_label_boundaries() {
+        let kb = ProviderKnowledgeBase::load();
+        assert!(kb.find_by_cname("notgoogle.com").is_empty());
+        assert!(kb.find_by_cname("myamazonaws.com").is_empty());
+        assert!(kb
+            .find_by_cname("ghs.google.com.")
+            .iter()
+            .any(|p| p.id == "gcp"));
+    }
+
+    #[test]
+    fn test_kb_integrity_no_duplicate_ids_or_generic_headers() {
+        let kb = ProviderKnowledgeBase::load();
+        let mut seen = std::collections::HashSet::new();
+        for p in kb.providers() {
+            assert!(seen.insert(&p.id), "duplicate provider id: {}", p.id);
+            for h in &p.header_patterns {
+                let lower = h.to_lowercase();
+                assert!(
+                    lower != "microsoft-iis" && lower != "nginx" && lower != "apache",
+                    "generic web server header '{h}' must not be in provider KB ({})",
+                    p.id
+                );
+            }
+        }
     }
 
     #[test]

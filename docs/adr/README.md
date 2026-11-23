@@ -35,6 +35,9 @@ stakeholders, approval boards or rollout theatre.
 | [0020](0020-discovery-source-contract-and-enrichment.md) | Discovery source contract and external enrichment | Accepted |
 | [0021](0021-temporal-relationship-semantics-and-candidate-review.md) | Temporal relationship semantics and candidate attribution | Accepted |
 | [0022](0022-discovery-effectiveness-metrics.md) | Discovery effectiveness measurement framework | Accepted |
+| [0023](0023-infrastructure-attribution-roles.md) | Infrastructure attribution taxonomy | Accepted |
+| [0024](0024-provider-detection-and-evidence-precedence.md) | Provider detection and evidence precedence | Accepted |
+| [0025](0025-authoritative-registrar-identity.md) | Authoritative registrar identity and RDAP/WHOIS parsing | Accepted |
 
 ADR 0007 (local persistence) was superseded by 0012 and 0013 and is
 retained as historical record of the interim engine's verified defects.

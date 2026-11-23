@@ -236,25 +236,60 @@ pub fn cmd_probe(
                 storage,
             ) {
                 Ok(obs) => {
-                    println!("Hosting detection completed for {}", target);
-                    println!();
-
-                    if let Some(provider) = &obs.provider_name {
-                        let category = obs.provider_category.as_deref().unwrap_or("Unknown");
-                        println!("Provider: {} ({})", provider, category);
-                    } else {
-                        println!("Provider: UNKNOWN");
-                    }
-
-                    if obs.cdn_detected {
-                        let cdn = obs.cdn_name.as_deref().unwrap_or("Unknown");
-                        println!("CDN:      {} (detected)", cdn);
-                    }
+                    let detector = crate::hosting::HostingDetector::new();
+                    let attr = detector.attribute(
+                        &crate::hosting::DetectionInput {
+                            target,
+                            dns: dns_obs.as_ref(),
+                            http: http_obs.as_ref(),
+                            asn_by_ip: &asn_by_ip,
+                        },
+                        None,
+                    );
 
                     println!(
-                        "Confidence: {} (via {})",
-                        obs.confidence, obs.detection_method
+                        "Infrastructure attribution for {} (rules {})",
+                        target, attr.rule_version
                     );
+                    if !attr.authoritative_dns.is_empty() {
+                        println!("\nAuthoritative DNS:");
+                        for d in &attr.authoritative_dns {
+                            println!("  - {} [{}]", d.provider_name, d.status);
+                        }
+                    }
+                    if !attr.cdn.is_empty() {
+                        println!("\nCDN / Edge:");
+                        for c in &attr.cdn {
+                            println!("  - {} [{}]", c.provider_name, c.status);
+                        }
+                    }
+                    if !attr.network.is_empty() {
+                        println!("\nNetwork:");
+                        for n in &attr.network {
+                            println!("  - {} AS{} ({})", n.ip, n.asn, n.org);
+                        }
+                    }
+                    if !attr.application_platform.is_empty() {
+                        println!("\nApplication platform:");
+                        for p in &attr.application_platform {
+                            println!("  - {} [{}]", p.provider_name, p.status);
+                        }
+                    }
+                    println!("\nOrigin:");
+                    match &attr.origin {
+                        crate::hosting::OriginAttribution::Observed {
+                            provider_name,
+                            provider_category,
+                            status,
+                            ..
+                        } => println!("  {} ({}) [{}]", provider_name, provider_category, status),
+                        crate::hosting::OriginAttribution::Conflicting { candidates, .. } => {
+                            println!("  Conflicting: {}", candidates.join(", "));
+                        }
+                        crate::hosting::OriginAttribution::Unknown { reason, .. } => {
+                            println!("  Unknown ({})", reason);
+                        }
+                    }
 
                     if !obs.evidence.is_empty() {
                         println!("\nEvidence:");

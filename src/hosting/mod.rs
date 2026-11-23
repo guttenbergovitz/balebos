@@ -6,4 +6,8 @@
 mod detector;
 mod providers;
 
-pub use detector::{detect_hosting, detect_hosting_batch};
+pub use detector::{
+    detect_hosting, detect_hosting_batch, AttributionStatus, DetectionInput, HostingDetector,
+    InfrastructureAttribution, NetworkAttribution, OriginAttribution, ProviderAttribution,
+    RegistrarAttribution,
+};

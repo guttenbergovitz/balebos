@@ -424,6 +424,9 @@ pub fn load_tui_model_from_records(records: &crate::storage::reader::Records) ->
             DomainRegistration {
                 domain: reg.domain.clone(),
                 registrar: reg.registrar.clone(),
+                iana_registrar_id: reg.iana_registrar_id.clone(),
+                registrar_handle: reg.registrar_handle.clone(),
+                completeness: reg.completeness.clone(),
                 registered_at: reg.registered_at,
                 expires_at: reg.expires_at,
                 updated_at: reg.updated_at,

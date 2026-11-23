@@ -27,7 +27,7 @@
       "country": "US",
       "asn_patterns": [8075, 8068, 8069, 8070, 8071],
       "cname_patterns": ["azure.com", "azurewebsites.net", "cloudapp.azure.com", "blob.core.windows.net", "azureedge.net", "trafficmanager.net", "azurefd.net"],
-      "header_patterns": ["Microsoft-IIS", "Microsoft-HTTPAPI"],
+      "header_patterns": [],
       "cdn_name_patterns": ["azure"]
     },
     {
