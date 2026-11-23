@@ -31,6 +31,7 @@ stakeholders, approval boards or rollout theatre.
 | [0016](0016-remote-worm-archival.md) | Optional remote WORM archival (contract only) | Proposed |
 | [0017](0017-dependency-and-build-time-policy.md) | Dependency and build-time policy | Accepted |
 | [0018](0018-legacy-parquet-migration.md) | Legacy Parquet migration | Accepted |
+| [0019](0019-turso-engine-candidate.md) | Turso as a candidate operational engine | Proposed |
 
 ADR 0007 (local persistence) was superseded by 0012 and 0013 and is
 retained as historical record of the interim engine's verified defects.
