@@ -505,12 +505,17 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         if let Some(provider) = &hosting.provider_name {
             let category = hosting.provider_category.as_deref().unwrap_or("Unknown");
             text.push(Line::from(format!(
-                "  Provider: {} ({})",
+                "  Origin/Platform: {} ({})",
                 provider, category
+            )));
+        } else if hosting.cdn_detected {
+            text.push(Line::from(Span::styled(
+                "  Origin: Unknown (not externally observable behind CDN)",
+                Style::default().fg(Color::DarkGray),
             )));
         } else {
             text.push(Line::from(Span::styled(
-                "  Provider: UNKNOWN",
+                "  Origin: Unknown",
                 Style::default().fg(Color::DarkGray),
             )));
         }
