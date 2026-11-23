@@ -70,12 +70,7 @@ impl App {
         count
     }
 
-    pub fn update_org_selection(&mut self) {
-        if self.active_tab == super::Tab::Organization {
-            let count = self.org_item_count();
-            self.organization.update_selection(count);
-        }
-    }
+    pub fn update_org_selection(&mut self) {}
 
     pub fn org_item_count(&self) -> usize {
         match self.organization.pane {
