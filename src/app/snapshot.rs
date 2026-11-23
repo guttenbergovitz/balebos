@@ -23,8 +23,12 @@ pub fn assemble_view(records: &Records, before: Option<DateTime<Utc>>) -> Snapsh
     let mut view = SnapshotView::default();
 
     // Every known asset appears, even without observations: absence of
-    // facts is information the classifier reasons about.
+    // facts is information the classifier reasons about. Inventory items
+    // respect the evidence window via their discovery time.
     for item in &records.items {
+        if before.is_some_and(|cutoff| item.discovered_at > cutoff) {
+            continue;
+        }
         view.facts.entry(item.name.clone()).or_default();
     }
 

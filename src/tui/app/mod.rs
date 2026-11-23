@@ -1,6 +1,7 @@
 //! TUI application state and logic.
 
 mod assignments;
+mod drift;
 mod findings;
 mod inventory;
 mod org_forms;
@@ -13,7 +14,9 @@ use crate::error::BalebosError;
 
 use crate::storage::StorageEngine;
 use crate::tui::model::{load_tui_model, OrgModel, TuiModel};
-use crate::tui::state::{FindingsState, FormState, InventoryState, OrgState, ProjectsState};
+use crate::tui::state::{
+    DriftState, FindingsState, FormState, InventoryState, OrgState, ProjectsState,
+};
 use crate::tui::workflows::{ContractorAssignWorkflow, RoleAssignWorkflow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -23,6 +26,7 @@ pub enum Tab {
     Organization,
     Projects,
     Findings,
+    Drift,
 }
 
 impl Tab {
@@ -32,6 +36,7 @@ impl Tab {
             Tab::Organization,
             Tab::Projects,
             Tab::Findings,
+            Tab::Drift,
         ]
     }
 
@@ -41,6 +46,7 @@ impl Tab {
             Tab::Organization => "Organization",
             Tab::Projects => "Projects",
             Tab::Findings => "Findings",
+            Tab::Drift => "Drift",
         }
     }
 }
@@ -204,6 +210,7 @@ pub struct App {
     pub organization: OrgState,
     pub projects: ProjectsState,
     pub findings: FindingsState,
+    pub drift: DriftState,
 
     // Input handling
     pub input: String,
@@ -257,6 +264,7 @@ impl App {
             organization: OrgState::new(),
             projects: ProjectsState::new(),
             findings: FindingsState::new(),
+            drift: DriftState::default(),
 
             // Input handling
             input: String::new(),

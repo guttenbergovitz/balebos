@@ -108,6 +108,18 @@ fn is_private_ipv6(ip: &IpAddr) -> bool {
     )
 }
 
+/// True when every address in `ips` resolves inside the internal ranges
+/// (and there is at least one). Used to enforce scope on addresses that
+/// our own DNS pass resolved — pre-probing, not just literal-level.
+/// Empty input returns false: absence of evidence is not evidence of
+/// internal infrastructure.
+pub fn all_addresses_internal(ips: &[String], allow_internal: bool) -> bool {
+    if allow_internal || ips.is_empty() {
+        return false;
+    }
+    ips.iter().all(|ip| check_scope(ip, false).is_err())
+}
+
 /// True when the operator enabled internal probing via the environment.
 pub fn internal_allowed_from_env() -> bool {
     std::env::var("BALEBOS_ALLOW_INTERNAL")

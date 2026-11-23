@@ -87,6 +87,14 @@ fn print_usage() {
 }
 
 fn main() {
+    // SIGINT cancels in-flight scanner processes: the watchdog in
+    // app::probe::process kills their process groups and reaps them
+    // before the process exits, so no orphaned scanners outlive us.
+    let _ = ctrlc::set_handler(|| {
+        balebos::app::probe::process::cancel();
+        eprintln!("\nCancelling: terminating scanner processes…");
+    });
+
     // SQLite is the authoritative operational store (ADR 0012); it became
     // the default engine in Phase E after the migration path (ADR 0018)
     // shipped. Legacy Parquet data imports via `balebos migrate`.

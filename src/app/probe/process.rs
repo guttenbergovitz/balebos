@@ -11,11 +11,30 @@
 
 use std::io::Read;
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::error::{BalebosError, Result};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+/// Operator cancellation (SIGINT): set by the signal handler in main,
+/// checked by every bounded execution watchdog.
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+/// Request cancellation of in-flight scanner processes.
+pub fn cancel() {
+    CANCELLED.store(true, Ordering::SeqCst);
+}
+
+/// Clear the cancellation flag (test isolation and fresh CLI runs).
+pub fn reset_cancel() {
+    CANCELLED.store(false, Ordering::SeqCst);
+}
+
+pub fn is_cancelled() -> bool {
+    CANCELLED.load(Ordering::SeqCst)
+}
 
 fn process_err(msg: impl Into<String>) -> BalebosError {
     BalebosError::Probe(crate::error::ProbeError::Execution(std::io::Error::other(
@@ -76,6 +95,10 @@ fn finish_bounded(mut child: Child, timeout: Duration, max_output: usize) -> Res
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) => {
+                if is_cancelled() {
+                    terminate_group(&mut child);
+                    break Err(process_err("cancelled by the operator"));
+                }
                 if start.elapsed() > timeout {
                     terminate_group(&mut child);
                     break Err(process_err(format!(
@@ -181,6 +204,10 @@ fn program_name(cmd: &Command) -> String {
 mod tests {
     use super::*;
 
+    /// The cancellation flag is process-global; time-sensitive tests must
+    /// not run concurrently with cancellation tests.
+    static FLAG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn sh(args: &str) -> Command {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg(args);
@@ -189,6 +216,7 @@ mod tests {
 
     #[test]
     fn quick_command_succeeds_with_output() {
+        let _guard = FLAG_LOCK.lock().unwrap();
         let output = run_bounded(&mut sh("echo hello"), Duration::from_secs(5), 1024).unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
@@ -196,6 +224,8 @@ mod tests {
 
     #[test]
     fn timed_out_process_is_killed_and_reaped() {
+        let _guard = FLAG_LOCK.lock().unwrap();
+        reset_cancel();
         let start = Instant::now();
         let result = run_bounded(&mut sh("sleep 30"), Duration::from_millis(100), 1024);
         let elapsed = start.elapsed();
@@ -222,6 +252,8 @@ mod tests {
 
     #[test]
     fn wait_bounded_applies_to_spawned_children() {
+        let _guard = FLAG_LOCK.lock().unwrap();
+        reset_cancel();
         let mut cmd = sh("sleep 30");
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -240,5 +272,37 @@ mod tests {
         let result = run_bounded(&mut cmd, Duration::from_secs(1), 1024);
         let err = result.unwrap_err().to_string();
         assert!(err.contains("not found in PATH"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn operator_cancellation_terminates_and_reaps() {
+        let _guard = FLAG_LOCK.lock().unwrap();
+        reset_cancel();
+        let start = Instant::now();
+        let mut cmd = sh("sleep 30");
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        configure_command(&mut cmd);
+        let child = cmd.spawn().unwrap();
+
+        // Simulate the SIGINT handler firing while the watchdog runs.
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(100));
+            cancel();
+        });
+
+        let result = wait_bounded(child, Duration::from_secs(30), 1024);
+        reset_cancel();
+
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("cancelled"),
+            "unexpected error"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "cancellation took too long"
+        );
     }
 }

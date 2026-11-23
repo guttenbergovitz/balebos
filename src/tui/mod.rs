@@ -133,6 +133,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
         KeyCode::Char('2') => app.set_tab(Tab::Organization),
         KeyCode::Char('3') => app.set_tab(Tab::Projects),
         KeyCode::Char('4') => app.set_tab(Tab::Findings),
+        KeyCode::Char('5') => app.set_tab(Tab::Drift),
         KeyCode::Tab => app.next_tab(),
         KeyCode::BackTab => app.prev_tab(),
 
@@ -142,6 +143,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode) -> crate::error::Result<()> 
             Tab::Organization => handle_organization_keys(app, code),
             Tab::Projects => handle_projects_keys(app, code),
             Tab::Findings => handle_findings_keys(app, code),
+            Tab::Drift => handle_drift_keys(app, code),
         },
     }
     Ok(())
@@ -311,6 +313,21 @@ fn handle_projects_keys(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('c') => {
             app.start_contractor_assign();
+        }
+        _ => {}
+    }
+}
+
+fn handle_drift_keys(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.drift_next();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.drift_previous();
+        }
+        KeyCode::Char('R') => {
+            let _ = app.load_drift();
         }
         _ => {}
     }

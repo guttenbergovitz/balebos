@@ -2,6 +2,7 @@ pub mod asset;
 pub mod batch;
 pub mod check;
 pub mod diff;
+pub mod drift;
 pub mod finding;
 pub mod list;
 pub mod org;

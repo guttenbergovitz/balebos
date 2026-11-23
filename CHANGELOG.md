@@ -19,8 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inspection scope guard: `balebos probe` and `balebos batch` refuse
   private, loopback and link-local targets (and localhost-style names)
   unless `--allow-internal` or `BALEBOS_ALLOW_INTERNAL=1`. Refusals are
-  reported and counted as coverage skips, never silent. Documented
-  limit: literals only — pre-resolution enforcement is a follow-up.
+  reported and counted as coverage skips, never silent. Enforced on
+  literals at the command boundary and on resolved addresses before the
+  HTTP stage; the TUI single-recon path honours the same guard.
+- Operator cancellation: SIGINT sets a process-wide flag that every
+  bounded scanner watchdog checks — in-flight scanner process groups are
+  killed and reaped before exit, so Ctrl+C mid-scan leaves no orphaned
+  scanners. `ctrlc` added for signal handling.
+- TUI Drift tab (key 5, ADR 0006): drift findings and the coverage
+  banner come from the same shared service as `balebos drift`, so both
+  surfaces agree by construction. Incomplete coverage is shown
+  explicitly; uncertainty classes render yellow, not as incidents.
 
 ### Changed
 

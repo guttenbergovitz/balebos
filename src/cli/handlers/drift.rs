@@ -3,8 +3,6 @@
 
 use std::sync::Arc;
 
-use crate::app::snapshot;
-use crate::drift::compare_snapshots;
 use crate::error::Result;
 use crate::storage::StorageEngine;
 
@@ -13,18 +11,12 @@ use crate::storage::StorageEngine;
 /// completeness taken from the most recent scan report.
 pub fn cmd_drift(within_hours: u64, storage: &Arc<dyn StorageEngine>) -> Result<()> {
     let records = storage.read_all_records()?;
-    let cutoff = chrono::Utc::now() - chrono::Duration::hours(within_hours as i64);
-
-    let baseline = snapshot::assemble_view(&records, Some(cutoff));
-    let mut current = snapshot::assemble_view(&records, None);
-    current.complete = snapshot::latest_scan_is_complete(&records);
-
-    let findings = compare_snapshots(&baseline, &current);
+    let (findings, complete) = crate::app::drift::drift_findings(&records, within_hours);
 
     println!("Drift report (window: last {within_hours} h)");
     println!(
         "Coverage: {}",
-        if current.complete {
+        if complete {
             "complete (latest scan fully observed)"
         } else {
             "incomplete — absences are 'not observed', not verified change"
