@@ -54,6 +54,21 @@ pub struct CandidateReviewMetrics {
     pub reviewed_precision: Option<f64>,
 }
 
+/// Service and application-reference discovery effectiveness metrics (ADR 0030).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServiceDiscoveryMetrics {
+    pub unique_service_endpoints: usize,
+    pub corroborated_protocols: usize,
+    pub management_interfaces: usize,
+    pub api_endpoints: usize,
+    pub storage_references: usize,
+    pub traceable_percentage: f64,
+    pub independently_verified_count: usize,
+    pub historical_only_count: usize,
+    pub uncertain_count: usize,
+    pub per_category_reviewed_precision: BTreeMap<String, Option<f64>>,
+}
+
 /// Consolidated discovery effectiveness report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryMetricsReport {
@@ -62,6 +77,7 @@ pub struct DiscoveryMetricsReport {
     pub per_source_yield: Vec<SourceYield>,
     pub evidence_quality: EvidenceQualityMetrics,
     pub candidate_review: CandidateReviewMetrics,
+    pub service_discovery: ServiceDiscoveryMetrics,
     pub projection_latency_ms: u128,
 }
 
@@ -112,6 +128,117 @@ pub fn compute_discovery_metrics(
                 .insert(id);
         }
     }
+
+    let mut unique_services = BTreeSet::new();
+    let mut corroborated_protos = BTreeSet::new();
+    let mut mgmt_ifaces = BTreeSet::new();
+    let mut verified_count = 0usize;
+    let mut historical_only_count = 0usize;
+    let mut uncertain_count = 0usize;
+    let mut traceable_count = 0usize;
+    let mut category_reviews: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+
+    for svc in &records.service_observations {
+        *per_source_raw.entry(svc.source.clone()).or_insert(0) += 1;
+        let ep_id = svc.endpoint.canonical_id();
+        if unique_services.insert(ep_id.clone()) {
+            all_novel.insert(ep_id.clone());
+            per_source_novel
+                .entry(svc.source.clone())
+                .or_default()
+                .insert(ep_id.clone());
+        }
+        if svc.protocol_id.is_corroborated() {
+            if let Some(p) = svc.protocol_id.protocol() {
+                corroborated_protos.insert(format!("{}@{}", p, ep_id));
+            }
+        }
+        if svc.category == crate::domain::service::ServiceCategory::ManagementInterface {
+            mgmt_ifaces.insert(ep_id.clone());
+        }
+        if matches!(
+            svc.verification,
+            crate::domain::service::VerificationStatus::Verified
+                | crate::domain::service::VerificationStatus::Observed
+        ) {
+            verified_count += 1;
+        }
+        if svc.state == crate::domain::service::ServiceObservationState::HistoricalOnly {
+            historical_only_count += 1;
+        }
+        if svc.uncertainty.is_some() {
+            uncertain_count += 1;
+        }
+        if !svc.evidence.is_empty() {
+            traceable_count += 1;
+        }
+        if let Some(dec) = reviews.get(&ep_id) {
+            let entry = category_reviews
+                .entry(svc.category.to_string())
+                .or_insert((0, 0));
+            match dec {
+                CandidateReviewDecision::Confirmed => entry.0 += 1,
+                CandidateReviewDecision::Rejected => entry.1 += 1,
+                CandidateReviewDecision::Deferred => {}
+            }
+        }
+    }
+
+    let mut api_endpoints = BTreeSet::new();
+    let mut storage_refs = BTreeSet::new();
+    for aref in &records.application_references {
+        *per_source_raw.entry(aref.source.clone()).or_insert(0) += 1;
+        if aref.target_kind == crate::domain::relationship::EntityKind::ApiService {
+            api_endpoints.insert(aref.referenced_target.clone());
+        } else if aref.target_kind == crate::domain::relationship::EntityKind::StorageEndpoint {
+            storage_refs.insert(aref.referenced_target.clone());
+        }
+        all_novel.insert(aref.referenced_target.clone());
+        per_source_novel
+            .entry(aref.source.clone())
+            .or_default()
+            .insert(aref.referenced_target.clone());
+        if !aref.evidence.is_empty() {
+            traceable_count += 1;
+        }
+        if aref.uncertainty.is_some() {
+            uncertain_count += 1;
+        }
+        if let Some(dec) = reviews.get(&aref.referenced_target) {
+            let cat = if aref.target_kind == crate::domain::relationship::EntityKind::ApiService {
+                "api_endpoint"
+            } else if aref.target_kind == crate::domain::relationship::EntityKind::StorageEndpoint {
+                "storage"
+            } else {
+                "inferred_dependency"
+            };
+            let entry = category_reviews.entry(cat.to_string()).or_insert((0, 0));
+            match dec {
+                CandidateReviewDecision::Confirmed => entry.0 += 1,
+                CandidateReviewDecision::Rejected => entry.1 += 1,
+                CandidateReviewDecision::Deferred => {}
+            }
+        }
+    }
+
+    let total_svc_and_refs =
+        records.service_observations.len() + records.application_references.len();
+    let svc_traceable_pct = if total_svc_and_refs == 0 {
+        100.0
+    } else {
+        (traceable_count as f64 / total_svc_and_refs as f64) * 100.0
+    };
+    let per_category_reviewed_precision = category_reviews
+        .into_iter()
+        .map(|(cat, (conf, rej))| {
+            let p = if conf + rej > 0 {
+                Some(conf as f64 / (conf + rej) as f64)
+            } else {
+                None
+            };
+            (cat, p)
+        })
+        .collect();
 
     let per_source_yield = per_source_raw
         .into_iter()
@@ -172,6 +299,18 @@ pub fn compute_discovery_metrics(
             rejected_count,
             deferred_count,
             reviewed_precision,
+        },
+        service_discovery: ServiceDiscoveryMetrics {
+            unique_service_endpoints: unique_services.len(),
+            corroborated_protocols: corroborated_protos.len(),
+            management_interfaces: mgmt_ifaces.len(),
+            api_endpoints: api_endpoints.len(),
+            storage_references: storage_refs.len(),
+            traceable_percentage: svc_traceable_pct,
+            independently_verified_count: verified_count,
+            historical_only_count,
+            uncertain_count,
+            per_category_reviewed_precision,
         },
         projection_latency_ms,
     }

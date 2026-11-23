@@ -13,6 +13,7 @@ use crate::domain::relationship::{
     EntityKind, EntityRef, ObservedRelationship, RelationshipEvidence, RelationshipKind,
     SignalCategory,
 };
+use crate::domain::service::{ServiceObservationState, VerificationStatus};
 use crate::storage::reader::Records;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,6 +35,7 @@ struct EdgeAcc {
     first_seen: DateTime<Utc>,
     last_seen: DateTime<Utc>,
     uncertainty: Option<String>,
+    historical_only: bool,
 }
 
 fn normalise_host(raw: &str) -> String {
@@ -98,6 +100,7 @@ fn record_edge(
                 first_seen: at,
                 last_seen: at,
                 uncertainty,
+                historical_only: false,
             }
         });
 }
@@ -374,11 +377,175 @@ pub fn project_relationships_before(
         }
     }
 
+    for svc in &records.service_observations {
+        let ts = svc.source_recorded_at.unwrap_or(svc.ingested_at);
+        if before.is_some_and(|cutoff| ts > cutoff) {
+            continue;
+        }
+        let svc_ref = EntityRef::new(EntityKind::NetworkService, svc.endpoint.canonical_id());
+        let is_hist = svc.state == ServiceObservationState::HistoricalOnly;
+        let edge_signal = match svc.verification {
+            VerificationStatus::Observed | VerificationStatus::Verified => {
+                SignalCategory::DirectlyObserved
+            }
+            VerificationStatus::OperatorConfirmed => SignalCategory::OperatorConfirmed,
+            _ if is_hist => SignalCategory::InsufficientEvidence,
+            _ => SignalCategory::WeakSharedClue,
+        };
+
+        if let Some(ip) = &svc.host_ip {
+            let ip_ref = EntityRef::new(EntityKind::IpAddress, ip.trim());
+            if !is_hist {
+                bump_latest(&ip_ref.id, RelationshipKind::ExposesService, ts);
+            }
+            record_edge(
+                &mut acc,
+                ip_ref.clone(),
+                RelationshipKind::ExposesService,
+                svc_ref.clone(),
+                edge_signal,
+                &svc.id,
+                &svc.source,
+                ts,
+                svc.uncertainty.clone(),
+            );
+            if is_hist {
+                if let Some(entry) = acc.get_mut(&EdgeKey {
+                    source_kind: EntityKind::IpAddress,
+                    source_id: ip_ref.id,
+                    kind: RelationshipKind::ExposesService,
+                    target_kind: EntityKind::NetworkService,
+                    target_id: svc_ref.id.clone(),
+                }) {
+                    entry.historical_only = true;
+                }
+            }
+        }
+
+        for host in &svc.associated_hosts {
+            let h_ref = host_entity(host);
+            if !h_ref.id.is_empty() {
+                if !is_hist {
+                    bump_latest(&h_ref.id, RelationshipKind::ExposesService, ts);
+                }
+                record_edge(
+                    &mut acc,
+                    h_ref,
+                    RelationshipKind::ExposesService,
+                    svc_ref.clone(),
+                    SignalCategory::WeakSharedClue,
+                    &svc.id,
+                    &svc.source,
+                    ts,
+                    svc.uncertainty.clone(),
+                );
+            }
+        }
+
+        if svc.protocol_id.is_corroborated() {
+            if let Some(proto) = svc.protocol_id.protocol() {
+                let proto_ref = EntityRef::new(
+                    EntityKind::ApplicationInterface,
+                    proto.to_string().to_ascii_lowercase(),
+                )
+                .with_label(proto.to_string());
+                if !is_hist {
+                    bump_latest(&svc_ref.id, RelationshipKind::SpeaksProtocol, ts);
+                }
+                record_edge(
+                    &mut acc,
+                    svc_ref.clone(),
+                    RelationshipKind::SpeaksProtocol,
+                    proto_ref,
+                    edge_signal,
+                    &svc.id,
+                    &svc.source,
+                    ts,
+                    svc.uncertainty.clone(),
+                );
+            }
+        }
+
+        for fp in &svc.fingerprints {
+            match fp.kind {
+                crate::domain::service::FingerprintKind::TlsCertSha256 => {
+                    let cert_ref =
+                        EntityRef::new(EntityKind::TlsCertificate, fp.value.to_ascii_lowercase());
+                    if !is_hist {
+                        bump_latest(&svc_ref.id, RelationshipKind::PresentsCertificate, ts);
+                    }
+                    record_edge(
+                        &mut acc,
+                        svc_ref.clone(),
+                        RelationshipKind::PresentsCertificate,
+                        cert_ref,
+                        edge_signal,
+                        &svc.id,
+                        &svc.source,
+                        ts,
+                        Some("TLS certificate on network service".to_string()),
+                    );
+                }
+                crate::domain::service::FingerprintKind::SshHostKey => {
+                    let ssh_ref = EntityRef::new(EntityKind::SshHostKey, fp.value.clone());
+                    if !is_hist {
+                        bump_latest(&svc_ref.id, RelationshipKind::SharesSshHostKey, ts);
+                    }
+                    record_edge(
+                        &mut acc,
+                        svc_ref.clone(),
+                        RelationshipKind::SharesSshHostKey,
+                        ssh_ref,
+                        SignalCategory::StrongCandidate,
+                        &svc.id,
+                        &svc.source,
+                        ts,
+                        Some(
+                            "SSH host public key fingerprint (strong infrastructure clue, not automatic ownership)"
+                                .to_string(),
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for aref in &records.application_references {
+        let ts = aref.source_recorded_at.unwrap_or(aref.ingested_at);
+        if before.is_some_and(|cutoff| ts > cutoff) {
+            continue;
+        }
+        let src = host_entity(&aref.origin_asset);
+        if src.id.is_empty() {
+            continue;
+        }
+        let target = EntityRef::new(aref.target_kind, aref.referenced_target.clone());
+        let signal = if aref.deprecated_hint || aref.dev_or_placeholder_hint {
+            SignalCategory::InsufficientEvidence
+        } else {
+            SignalCategory::WeakSharedClue
+        };
+        bump_latest(&src.id, aref.relationship_kind, ts);
+        record_edge(
+            &mut acc,
+            src,
+            aref.relationship_kind,
+            target,
+            signal,
+            &aref.id,
+            &aref.source,
+            ts,
+            aref.uncertainty.clone(),
+        );
+    }
+
     acc.into_values()
         .map(|e| {
-            let is_current = latest_at
-                .get(&(e.source.id.clone(), e.kind))
-                .is_some_and(|latest| e.last_seen >= *latest);
+            let is_current = !e.historical_only
+                && latest_at
+                    .get(&(e.source.id.clone(), e.kind))
+                    .is_some_and(|latest| e.last_seen >= *latest);
             ObservedRelationship {
                 source: e.source,
                 kind: e.kind,
@@ -423,6 +590,9 @@ enum SignalPlane {
     TlsIdentity,
     DnsDelegation,
     HttpNavigation,
+    ServiceExposure,
+    SshIdentity,
+    ApplicationReference,
 }
 
 fn signal_plane(kind: RelationshipKind) -> SignalPlane {
@@ -435,6 +605,15 @@ fn signal_plane(kind: RelationshipKind) -> SignalPlane {
         | RelationshipKind::UsesNameserver
         | RelationshipKind::RoutesMailTo => SignalPlane::DnsDelegation,
         RelationshipKind::RedirectsTo | RelationshipKind::HostedBy => SignalPlane::HttpNavigation,
+        RelationshipKind::ExposesService | RelationshipKind::SpeaksProtocol => {
+            SignalPlane::ServiceExposure
+        }
+        RelationshipKind::SharesSshHostKey => SignalPlane::SshIdentity,
+        RelationshipKind::ReferencesApi
+        | RelationshipKind::LoadsResourceFrom
+        | RelationshipKind::ReferencesStorage
+        | RelationshipKind::UsesIdentityProvider
+        | RelationshipKind::DeclaresService => SignalPlane::ApplicationReference,
     }
 }
 
@@ -674,6 +853,13 @@ fn normalise_query(raw: &str) -> String {
         trimmed.to_ascii_uppercase()
     } else if trimmed.parse::<std::net::IpAddr>().is_ok() {
         trimmed.to_string()
+    } else if let Some((host_port, proto)) = trimmed.rsplit_once('/') {
+        let proto_lower = proto.to_ascii_lowercase();
+        if (proto_lower == "tcp" || proto_lower == "udp") && host_port.contains(':') {
+            format!("{}/{}", host_port.to_ascii_lowercase(), proto_lower)
+        } else {
+            normalise_host(trimmed)
+        }
     } else {
         normalise_host(trimmed)
     }

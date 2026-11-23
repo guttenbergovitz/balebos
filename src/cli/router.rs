@@ -75,6 +75,32 @@ pub enum Command {
         entity: String,
         decision: String,
     },
+    CandidatesExplain {
+        candidate: String,
+        json: bool,
+    },
+    ServicesList {
+        json: bool,
+    },
+    ServicesShow {
+        endpoint: String,
+        json: bool,
+    },
+    DiscoverServices {
+        target: String,
+        provider: String,
+        input_file: Option<String>,
+        scope_domains: Vec<String>,
+        save: bool,
+    },
+    DiscoverReferences {
+        domain: String,
+        kind: String,
+        input_file: Option<String>,
+        urlscan_submitted: bool,
+        scope_domains: Vec<String>,
+        save: bool,
+    },
     DataInfo,
     DataBackup {
         dest: Option<String>,
@@ -342,10 +368,60 @@ pub fn parse_command() -> Option<Command> {
             Some(Command::DiscoveryReport { json })
         }
         "candidates" if args.get(2).is_some_and(|a| a == "list") => Some(Command::CandidatesList),
+        "candidates" if args.get(2).is_some_and(|a| a == "explain") => {
+            let candidate = args.get(3)?.clone();
+            let json = args.iter().any(|a| a == "--json");
+            Some(Command::CandidatesExplain { candidate, json })
+        }
         "candidates" if args.get(2).is_some_and(|a| a == "review") => {
             let entity = args.get(3)?.clone();
             let decision = args.get(4)?.clone();
             Some(Command::CandidatesReview { entity, decision })
+        }
+        "services" if args.get(2).is_some_and(|a| a == "list") => {
+            let json = args.iter().any(|a| a == "--json");
+            Some(Command::ServicesList { json })
+        }
+        "services" if args.get(2).is_some_and(|a| a == "show") => {
+            let endpoint = args.get(3)?.clone();
+            let json = args.iter().any(|a| a == "--json");
+            Some(Command::ServicesShow { endpoint, json })
+        }
+        "discover" if args.get(2).is_some_and(|a| a == "services") => {
+            let target = args.get(3)?.clone();
+            let provider = find_flag_value(args.as_slice(), "--provider")
+                .unwrap_or_else(|| "censys".to_string());
+            let input_file = find_flag_value(args.as_slice(), "--input");
+            let scope_domains = find_flag_value(args.as_slice(), "--scope")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
+            let save = args.iter().any(|a| a == "--save");
+            Some(Command::DiscoverServices {
+                target,
+                provider,
+                input_file,
+                scope_domains,
+                save,
+            })
+        }
+        "discover" if args.get(2).is_some_and(|a| a == "references") => {
+            let domain = args.get(3)?.clone();
+            let kind =
+                find_flag_value(args.as_slice(), "--kind").unwrap_or_else(|| "dns".to_string());
+            let input_file = find_flag_value(args.as_slice(), "--input");
+            let urlscan_submitted = args.iter().any(|a| a == "--urlscan-submitted");
+            let scope_domains = find_flag_value(args.as_slice(), "--scope")
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
+            let save = args.iter().any(|a| a == "--save");
+            Some(Command::DiscoverReferences {
+                domain,
+                kind,
+                input_file,
+                urlscan_submitted,
+                scope_domains,
+                save,
+            })
         }
         "data" if args.get(2).is_some_and(|a| a == "info") => Some(Command::DataInfo),
         "data" if args.get(2).is_some_and(|a| a == "backup") => {

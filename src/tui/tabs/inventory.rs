@@ -555,6 +555,82 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         }
     }
 
+    // Network Services & Protocol Candidates (ADR 0026)
+    let asset_ips: Vec<String> = asset
+        .latest_dns
+        .as_ref()
+        .map(|d| {
+            d.a.iter()
+                .map(|ip| ip.trim().to_ascii_lowercase())
+                .collect()
+        })
+        .unwrap_or_default();
+    let asset_norm = crate::domain::normalize::normalize_fqdn(&asset.name);
+    let matching_services: Vec<&crate::domain::service::ServiceObservation> = app
+        .model
+        .service_observations
+        .iter()
+        .filter(|s| {
+            s.associated_hosts
+                .iter()
+                .any(|h| crate::domain::normalize::normalize_fqdn(h) == asset_norm)
+                || s.host_ip
+                    .as_deref()
+                    .is_some_and(|ip| asset_ips.contains(&ip.to_ascii_lowercase()))
+        })
+        .collect();
+    if !matching_services.is_empty() {
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Network Services & Candidates:",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )));
+        for svc in matching_services.iter().take(12) {
+            let proto = svc
+                .protocol_id
+                .protocol()
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "unidentified".to_string());
+            let ts = svc
+                .source_recorded_at
+                .map(|t| t.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| svc.ingested_at.format("%Y-%m-%d").to_string());
+            text.push(Line::from(format!(
+                "  {} [{}] proto={} ({}, {}, {})",
+                svc.endpoint, svc.category, proto, svc.verification, svc.source, ts
+            )));
+            if let Some(iface) = &svc.interface_name {
+                text.push(Line::from(format!("    Interface: {}", iface)));
+            }
+        }
+    }
+
+    // Application & Infrastructure References (ADR 0028)
+    let matching_refs: Vec<&crate::domain::service::ApplicationReferenceObservation> = app
+        .model
+        .application_references
+        .iter()
+        .filter(|r| crate::domain::normalize::normalize_fqdn(&r.origin_asset) == asset_norm)
+        .collect();
+    if !matching_refs.is_empty() {
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Application References:",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )));
+        for r in matching_refs.iter().take(12) {
+            text.push(Line::from(format!(
+                "  {} -> {} [{}] ({})",
+                r.relationship_kind, r.referenced_target, r.verification, r.source
+            )));
+            text.push(Line::from(format!("    in: {}", r.discovered_in)));
+        }
+    }
+
     // Organization Details
     text.push(Line::from(""));
     text.push(Line::from(Span::styled(
