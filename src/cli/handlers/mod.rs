@@ -7,6 +7,7 @@ pub mod inventory;
 pub mod migrate;
 pub mod org;
 pub mod probe;
+pub mod relationships;
 pub mod risk;
 pub mod scan;
 pub mod tag;
