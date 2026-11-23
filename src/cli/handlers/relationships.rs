@@ -4,7 +4,12 @@
 use std::sync::Arc;
 
 use crate::app::pivot::{discover_pivots, PivotConfig};
-use crate::app::relationships::{entity_history, explain_connection, related_entities};
+use crate::app::relationships::{
+    compare_relationships, entity_history, explain_connection, project_relationships_before,
+    related_entities, RelationshipChangeKind,
+};
+use crate::app::snapshot::latest_scan_is_complete;
+use crate::domain::normalize::normalize_domain;
 use crate::error::Result;
 use crate::storage::StorageEngine;
 
@@ -50,10 +55,16 @@ pub fn cmd_related(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<()>
         );
         for clue in &report.shared_clues {
             let via: Vec<String> = clue.via.iter().map(|(k, t)| format!("{k} {t}")).collect();
+            let timing = if clue.concurrent {
+                "concurrent"
+            } else {
+                "historical-only"
+            };
             println!(
-                "  {}  [{}] via {}",
+                "  {}  [{}, {}] via {}",
                 clue.other_entity,
                 clue.signal,
+                timing,
                 via.join(" + ")
             );
             println!("    uncertainty: {}", clue.uncertainty);
@@ -82,16 +93,22 @@ pub fn cmd_explain(a: &str, b: &str, storage: &Arc<dyn StorageEngine>) -> Result
         );
     }
 
-    for (ea, eb) in &report.shared_paths {
+    for path in &report.shared_paths {
+        let timing = if path.concurrent {
+            "concurrent"
+        } else {
+            "historical-only"
+        };
         println!(
-            "  shared path: {} --[{}]--> {} <--[{}]-- {} (obs: {} / {})",
-            ea.source,
-            ea.kind,
-            ea.target,
-            eb.kind,
-            eb.source,
-            ea.evidence.observation_ids.join(", "),
-            eb.evidence.observation_ids.join(", ")
+            "  shared path [{}]: {} --[{}]--> {} <--[{}]-- {} (obs: {} / {})",
+            timing,
+            path.left.source,
+            path.left.kind,
+            path.left.target,
+            path.right.kind,
+            path.right.source,
+            path.left.evidence.observation_ids.join(", "),
+            path.right.evidence.observation_ids.join(", ")
         );
     }
 
@@ -123,6 +140,27 @@ pub fn cmd_history(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<()>
         );
     }
 
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+    let baseline = project_relationships_before(&records, Some(cutoff));
+    let current = project_relationships_before(&records, None);
+    let complete = latest_scan_is_complete(&records);
+    let norm = normalize_domain(target.trim().trim_end_matches('.'));
+    let changes: Vec<_> = compare_relationships(&baseline, &current, complete)
+        .into_iter()
+        .filter(|c| c.relationship.source.id == norm || c.relationship.target.id == norm)
+        .collect();
+    if !changes.is_empty() {
+        println!("\nRecent relationship changes (last 24h):");
+        for ch in &changes {
+            let label = match ch.change_kind {
+                RelationshipChangeKind::Added => "added",
+                RelationshipChangeKind::VerifiedRemoval => "verified-removal",
+                RelationshipChangeKind::NotObserved => "not-observed",
+            };
+            println!("  [{}] {}", label, ch.detail);
+        }
+    }
+
     Ok(())
 }
 
@@ -131,10 +169,17 @@ pub fn cmd_pivot(
     target: &str,
     max_depth: usize,
     max_candidates: usize,
+    scope_domains: &[String],
     storage: &Arc<dyn StorageEngine>,
 ) -> Result<()> {
     let records = storage.read_all_records()?;
+    let approved_domains = scope_domains
+        .iter()
+        .map(|s| normalize_domain(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect();
     let config = PivotConfig {
+        approved_domains,
         max_depth,
         max_candidates,
         ..Default::default()

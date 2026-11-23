@@ -594,5 +594,47 @@ pub fn build_details_text(asset: &AssetState, app: &App) -> Vec<Line<'static>> {
         )));
     }
 
+    // Relationships & Evidence
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Relationships & Evidence:",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::UNDERLINED),
+    )));
+
+    let rels: Vec<_> = app
+        .relationships
+        .iter()
+        .filter(|r| r.source.id == asset.name || r.target.id == asset.name)
+        .take(12)
+        .collect();
+    if rels.is_empty() {
+        text.push(Line::from(Span::styled(
+            "  No relationships observed",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for rel in rels {
+            let state = if rel.is_current { "current" } else { "past" };
+            text.push(Line::from(format!(
+                "  • {} --[{}]--> {} [{}, {}, {}..{}]",
+                rel.source.id,
+                rel.kind,
+                rel.target.id,
+                state,
+                rel.signal,
+                rel.evidence.first_seen.format("%Y-%m-%d"),
+                rel.evidence.last_seen.format("%Y-%m-%d")
+            )));
+            if let Some(note) = &rel.evidence.uncertainty {
+                text.push(Line::from(Span::styled(
+                    format!("    note: {note}"),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+
     text
 }
