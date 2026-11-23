@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-alpha.1] - 2026-11-23
+
+Pre-release of the 2.0 realignment: product scope, engineering foundation,
+storage evidence integrity, SQLite operational engine and the sealed
+evidence archive. The default engine remains the legacy Parquet store
+until the migration path has been exercised on real data; see
+`docs/migration-v2.md` and ADRs 0012-0018.
+
 ### Added
 
 - Engineering foundation for Balebos 2.0: `docs/` durable documentation

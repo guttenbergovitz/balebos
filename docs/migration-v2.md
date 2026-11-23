@@ -39,8 +39,11 @@ rows are JSON strings. Migration to SQLite follows ADR 0018 (verify-don't-trust)
 6. **Roll back**: legacy directory is renamed, never deleted; rollback =
    point the engine at the old directory and remove the SQLite file.
 
-Migration tooling ships and is failure-tested before the Parquet engine
-leaves the default build.
+The tooling exists: `balebos migrate [dir]` (default `data/parquet`)
+executes steps 1-6 — idempotent re-runs, verbatim quarantine, count
+verification, and rename of the legacy directory to
+`<dir>.migrated-<timestamp>` on success. Exercise it on a copy of real
+data before the default engine flips (Phase E).
 
 ## Removed features and their data
 
