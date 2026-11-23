@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::app::metrics::compute_discovery_metrics;
+use crate::app::metrics::{compute_discovery_metrics, CandidateReviewDecision};
 use crate::app::pivot::{discover_pivots, PivotConfig};
 use crate::app::relationships::{
     compare_relationships, entity_history, explain_connection, project_relationships_before,
@@ -12,10 +12,12 @@ use crate::app::relationships::{
 use crate::app::snapshot::latest_scan_is_complete;
 use crate::app::sources::{
     novel_candidates, parse_ct_json, parse_passive_dns_json, registered_sources,
+    CandidateReviewRecord, EnrichmentCandidateRecord,
 };
-use crate::domain::normalize::normalize_domain;
+use crate::domain::normalize::normalize_fqdn;
 use crate::error::{BalebosError, Result};
-use crate::storage::StorageEngine;
+use crate::inventory::ItemType;
+use crate::storage::{StorageEngine, StorageEngineExt};
 
 /// Display direct relationships and shared-infrastructure clues for `target`.
 pub fn cmd_related(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<()> {
@@ -148,7 +150,7 @@ pub fn cmd_history(target: &str, storage: &Arc<dyn StorageEngine>) -> Result<()>
     let baseline = project_relationships_before(&records, Some(cutoff));
     let current = project_relationships_before(&records, None);
     let complete = latest_scan_is_complete(&records);
-    let norm = normalize_domain(target.trim().trim_end_matches('.'));
+    let norm = normalize_fqdn(target);
     let changes: Vec<_> = compare_relationships(&baseline, &current, complete)
         .into_iter()
         .filter(|c| c.relationship.source.id == norm || c.relationship.target.id == norm)
@@ -179,7 +181,7 @@ pub fn cmd_pivot(
     let records = storage.read_all_records()?;
     let approved_domains = scope_domains
         .iter()
-        .map(|s| normalize_domain(s.trim()))
+        .map(|s| normalize_fqdn(s))
         .filter(|s| !s.is_empty())
         .collect();
     let config = PivotConfig {
@@ -258,7 +260,7 @@ pub fn cmd_discover(
     let bytes = std::fs::read(path)?;
     let scope = scope_domains
         .iter()
-        .map(|s| normalize_domain(s.trim()))
+        .map(|s| normalize_fqdn(s))
         .filter(|s| !s.is_empty())
         .collect();
 
@@ -274,10 +276,22 @@ pub fn cmd_discover(
 
     let records = storage.read_all_records()?;
     let novel = novel_candidates(&records, &candidates);
+    let to_persist: Vec<EnrichmentCandidateRecord> = novel
+        .iter()
+        .map(|c| EnrichmentCandidateRecord {
+            item_type: ItemType::EnrichmentCandidate,
+            id: uuid::Uuid::new_v4().to_string(),
+            candidate: (*c).clone(),
+        })
+        .collect();
+    if !to_persist.is_empty() {
+        storage.save_batch(&to_persist)?;
+    }
+
     println!(
-        "Enrichment from {source} for {domain}: {} total candidate(s), {} novel (not in inventory)",
+        "Enrichment from {source} for {domain}: {} total candidate(s), {} novel persisted",
         candidates.len(),
-        novel.len()
+        to_persist.len()
     );
     for c in novel {
         let scope_label = if c.in_scope {
@@ -293,10 +307,87 @@ pub fn cmd_discover(
     Ok(())
 }
 
+/// List persisted enrichment candidates and their review status.
+pub fn cmd_candidates_list(storage: &Arc<dyn StorageEngine>) -> Result<()> {
+    let records = storage.read_all_records()?;
+    let mut latest_review: std::collections::BTreeMap<String, CandidateReviewDecision> =
+        std::collections::BTreeMap::new();
+    for r in &records.candidate_reviews {
+        latest_review.insert(r.entity_id.clone(), r.decision);
+    }
+
+    if records.enrichment_candidates.is_empty() {
+        println!("No enrichment candidates recorded.");
+        return Ok(());
+    }
+
+    println!(
+        "Enrichment candidates ({}):",
+        records.enrichment_candidates.len()
+    );
+    for ec in &records.enrichment_candidates {
+        let status = match latest_review.get(&ec.candidate.entity.id) {
+            Some(CandidateReviewDecision::Confirmed) => "confirmed",
+            Some(CandidateReviewDecision::Rejected) => "rejected",
+            Some(CandidateReviewDecision::Deferred) => "deferred",
+            None => "unreviewed",
+        };
+        let scope = if ec.candidate.in_scope {
+            "in-scope"
+        } else {
+            "out-of-scope"
+        };
+        println!(
+            "  {}  [{} | {} | {} | {}]",
+            ec.candidate.entity, ec.candidate.source_id, scope, status, ec.candidate.signal
+        );
+    }
+    Ok(())
+}
+
+/// Persist an operator review decision for a candidate entity.
+pub fn cmd_candidates_review(
+    entity: &str,
+    decision_str: &str,
+    storage: &Arc<dyn StorageEngine>,
+) -> Result<()> {
+    let decision = match decision_str.to_lowercase().as_str() {
+        "confirmed" | "confirm" => CandidateReviewDecision::Confirmed,
+        "rejected" | "reject" => CandidateReviewDecision::Rejected,
+        "deferred" | "defer" => CandidateReviewDecision::Deferred,
+        other => {
+            return Err(BalebosError::Validation(format!(
+                "unknown review decision '{other}' (expected confirmed|rejected|deferred)"
+            )));
+        }
+    };
+    let entity_id = normalize_fqdn(entity);
+    let rec = CandidateReviewRecord {
+        item_type: ItemType::CandidateReview,
+        id: uuid::Uuid::new_v4().to_string(),
+        entity_id: entity_id.clone(),
+        decision,
+        reviewed_at: chrono::Utc::now(),
+        note: None,
+    };
+    storage.save(&rec)?;
+    println!("Recorded candidate review for {entity_id}: {decision:?}");
+    Ok(())
+}
+
 /// Print discovery effectiveness metrics for the current store.
 pub fn cmd_discovery_report(json_output: bool, storage: &Arc<dyn StorageEngine>) -> Result<()> {
     let records = storage.read_all_records()?;
-    let report = compute_discovery_metrics(&records, &[], &[], &std::collections::BTreeMap::new());
+    let enrichment: Vec<_> = records
+        .enrichment_candidates
+        .iter()
+        .map(|r| r.candidate.clone())
+        .collect();
+    let mut reviews = std::collections::BTreeMap::new();
+    for r in &records.candidate_reviews {
+        reviews.insert(r.entity_id.clone(), r.decision);
+    }
+    let report = compute_discovery_metrics(&records, &[], &enrichment, &reviews);
     if json_output {
         println!(
             "{}",
@@ -305,8 +396,10 @@ pub fn cmd_discovery_report(json_output: bool, storage: &Arc<dyn StorageEngine>)
         return Ok(());
     }
     println!(
-        "Discovery report: {} known asset(s), {} relationship(s) ({:.1}% traceable to observations, {} current, {} historical), projection {} ms",
+        "Discovery report: {} known asset(s), {} unique candidate(s), {} reviewed, {} relationship(s) ({:.1}% traceable to observations, {} current, {} historical), projection {} ms",
         report.known_assets,
+        report.total_unique_candidates,
+        report.candidate_review.reviewed_count,
         report.evidence_quality.total_relationships,
         report.evidence_quality.traceable_percentage,
         report.evidence_quality.current_relationships,
