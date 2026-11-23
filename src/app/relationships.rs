@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::normalize::normalize_domain;
+use crate::domain::normalize::normalize_fqdn;
 use crate::domain::relationship::{
     EntityKind, EntityRef, ObservedRelationship, RelationshipEvidence, RelationshipKind,
     SignalCategory,
@@ -37,7 +37,7 @@ struct EdgeAcc {
 }
 
 fn normalise_host(raw: &str) -> String {
-    normalize_domain(raw.trim().trim_end_matches('.'))
+    normalize_fqdn(raw)
 }
 
 fn host_entity(raw: &str) -> EntityRef {
@@ -344,6 +344,33 @@ pub fn project_relationships_before(
                 hosting.checked_at,
                 uncertainty,
             );
+        }
+    }
+
+    for ec in &records.enrichment_candidates {
+        let ts = ec
+            .candidate
+            .source_recorded_at
+            .unwrap_or(ec.candidate.ingested_at);
+        if before.is_some_and(|cutoff| ts > cutoff) {
+            continue;
+        }
+        if let Some(ip) = &ec.candidate.related_ip {
+            let src = host_entity(&ec.candidate.entity.id);
+            if !src.id.is_empty() {
+                bump_latest(&src.id, RelationshipKind::ResolvesTo, ts);
+                record_edge(
+                    &mut acc,
+                    src,
+                    RelationshipKind::ResolvesTo,
+                    EntityRef::new(EntityKind::IpAddress, ip.trim()),
+                    SignalCategory::WeakSharedClue,
+                    &ec.id,
+                    &ec.candidate.source_id,
+                    ts,
+                    Some(ec.candidate.note.clone()),
+                );
+            }
         }
     }
 
@@ -986,5 +1013,27 @@ mod tests {
             report.shared_clues[0].signal,
             SignalCategory::WeakSharedClue
         );
+    }
+
+    #[test]
+    fn www_and_apex_stay_distinct_in_relationships() {
+        let now = Utc::now();
+        let mut records = Records::default();
+        records
+            .dns_observations
+            .push(dns_obs("d1", "example.com", &["203.0.113.10"], now));
+        records
+            .dns_observations
+            .push(dns_obs("d2", "www.example.com", &["203.0.113.20"], now));
+
+        let apex = related_entities(&records, "example.com");
+        assert_eq!(apex.direct.len(), 1);
+        assert_eq!(apex.direct[0].source.id, "example.com");
+        assert_eq!(apex.direct[0].target.id, "203.0.113.10");
+
+        let www = related_entities(&records, "www.example.com");
+        assert_eq!(www.direct.len(), 1);
+        assert_eq!(www.direct[0].source.id, "www.example.com");
+        assert_eq!(www.direct[0].target.id, "203.0.113.20");
     }
 }

@@ -346,6 +346,7 @@ mod tests {
             confidence: crate::app::probe::Confidence::High,
             detection_method: crate::app::probe::DetectionMethod::Asn,
             evidence: vec![],
+            attribution: None,
             checked_at: Utc::now(),
             source: "test".to_string(),
         });

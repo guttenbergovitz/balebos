@@ -32,7 +32,10 @@ fn print_usage() {
     eprintln!("  balebos pivot <target>             - Bounded local pivot candidate discovery");
     eprintln!("  balebos discover --source <ct|passive-dns> <domain> --input <file>");
     eprintln!("  balebos discovery report [--json]  - Discovery effectiveness & evidence report");
-    eprintln!("  balebos sources status             - List discovery & enrichment sources");
+    eprintln!("  balebos candidates list            - List persisted enrichment candidates");
+    eprintln!("  balebos candidates review <entity> <confirmed|rejected|deferred>");
+    eprintln!("  balebos data info|backup|reset     - Inspect, back up or safely reset data dir");
+    eprintln!("  [--data-dir <dir>]                 - Override data directory (default: data)");
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
@@ -104,11 +107,19 @@ fn main() {
         eprintln!("\nCancelling: terminating scanner processes…");
     });
 
+    let raw_args: Vec<String> = std::env::args().collect();
+    let data_dir = raw_args
+        .windows(2)
+        .find(|w| w[0] == "--data-dir")
+        .map(|w| w[1].clone())
+        .unwrap_or_else(|| "data".to_string());
+    let db_path = std::path::Path::new(&data_dir).join("balebos.db");
+
     // SQLite is the authoritative operational store (ADR 0012); it became
     // the default engine in Phase E after the migration path (ADR 0018)
     // shipped. Legacy Parquet data imports via `balebos migrate`.
     let storage: Arc<dyn StorageEngine> = Arc::new(
-        balebos::storage::SqliteStorage::new("data/balebos.db")
+        balebos::storage::SqliteStorage::new(db_path.to_str().unwrap_or("data/balebos.db"))
             .expect("Failed to initialise SQLite storage"),
     );
 
@@ -223,6 +234,38 @@ fn main() {
         Command::DiscoveryReport { json } => {
             if let Err(e) = handlers::relationships::cmd_discovery_report(json, &storage) {
                 eprintln!("Discovery report failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::CandidatesList => {
+            if let Err(e) = handlers::relationships::cmd_candidates_list(&storage) {
+                eprintln!("Candidates list failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::CandidatesReview { entity, decision } => {
+            if let Err(e) =
+                handlers::relationships::cmd_candidates_review(&entity, &decision, &storage)
+            {
+                eprintln!("Candidate review failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DataInfo => {
+            if let Err(e) = handlers::data::cmd_data_info(&data_dir, &storage) {
+                eprintln!("Data info failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DataBackup { dest } => {
+            if let Err(e) = handlers::data::cmd_data_backup(&data_dir, dest.as_deref()) {
+                eprintln!("Data backup failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
+        Command::DataReset { dry_run, backup } => {
+            if let Err(e) = handlers::data::cmd_data_reset(&data_dir, dry_run, backup) {
+                eprintln!("Data reset failed: {e}");
                 process::exit(EXIT_STORAGE_ERROR);
             }
         }

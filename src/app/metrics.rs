@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::pivot::PivotCandidate;
 use crate::app::relationships::project_relationships;
 use crate::app::sources::EnrichmentCandidate;
-use crate::domain::normalize::normalize_domain;
+use crate::domain::normalize::normalize_fqdn;
 use crate::storage::reader::Records;
 
 /// Operator review decision for a surfaced candidate.
@@ -80,7 +80,7 @@ pub fn compute_discovery_metrics(
     let known: BTreeSet<String> = records
         .items
         .iter()
-        .map(|i| normalize_domain(&i.name))
+        .map(|i| normalize_fqdn(&i.name))
         .collect();
 
     let mut per_source_raw: BTreeMap<String, usize> = BTreeMap::new();
@@ -445,5 +445,133 @@ mod tests {
         assert!(changes
             .iter()
             .any(|c| c.change_kind == RelationshipChangeKind::NotObserved));
+    }
+
+    /// Milestone E2E acceptance test:
+    /// Empty DB -> 3 known domains -> discover 4th via Passive DNS -> persist
+    /// evidence & review -> reopen DB from disk -> verify linkage, explain,
+    /// metrics, and subsequent scan change without losing history.
+    #[test]
+    fn e2e_empty_db_to_pdns_discovery_explain_reopen_and_drift() {
+        use crate::app::sources::{
+            novel_candidates, CandidateReviewRecord, EnrichmentCandidateRecord,
+        };
+        use crate::storage::{SqliteStorage, StorageEngine, StorageEngineExt};
+        use std::sync::Arc;
+
+        let dir = std::env::temp_dir().join(format!("balebos_e2e_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("balebos.db");
+        let db_str = db_path.to_str().unwrap();
+
+        let t0 = Utc::now() - chrono::Duration::hours(2);
+        let t1 = Utc::now() - chrono::Duration::minutes(10);
+
+        {
+            let storage: Arc<dyn StorageEngine> = Arc::new(SqliteStorage::new(db_str).unwrap());
+            for (i, name) in ["one.example.com", "two.example.com", "three.example.com"]
+                .iter()
+                .enumerate()
+            {
+                storage
+                    .save(&InventoryItem {
+                        item_type: ItemType::Domain,
+                        id: format!("seed-{i}"),
+                        name: (*name).to_string(),
+                        discovered_at: t0,
+                        source: "cli".to_string(),
+                        original_input: None,
+                    })
+                    .unwrap();
+            }
+            storage
+                .save(&dns_obs(
+                    "dns-one",
+                    "one.example.com",
+                    &["203.0.113.10"],
+                    t0,
+                ))
+                .unwrap();
+
+            let mut scope = BTreeSet::new();
+            scope.insert("example.com".to_string());
+            let pdns_json = format!(
+                r#"[{{"fqdn":"fourth.example.com","ip":"203.0.113.10","source_last_seen":"{}","provider":"fixture-pdns"}}]"#,
+                t0.to_rfc3339()
+            );
+            let candidates = parse_passive_dns_json(pdns_json.as_bytes(), &scope, 50).unwrap();
+            let initial = storage.read_all_records().unwrap();
+            let novel = novel_candidates(&initial, &candidates);
+            assert_eq!(novel.len(), 1);
+
+            storage
+                .save(&EnrichmentCandidateRecord {
+                    item_type: ItemType::EnrichmentCandidate,
+                    id: "ec-1".to_string(),
+                    candidate: novel[0].clone(),
+                })
+                .unwrap();
+            storage
+                .save(&CandidateReviewRecord {
+                    item_type: ItemType::CandidateReview,
+                    id: "rev-1".to_string(),
+                    entity_id: "fourth.example.com".to_string(),
+                    decision: CandidateReviewDecision::Confirmed,
+                    reviewed_at: t0,
+                    note: None,
+                })
+                .unwrap();
+        }
+
+        // Reopen DB from disk and verify persistence, explanation and metrics.
+        {
+            let storage: std::sync::Arc<dyn crate::storage::StorageEngine> =
+                std::sync::Arc::new(SqliteStorage::new(db_str).unwrap());
+            let records = storage.read_all_records().unwrap();
+            assert_eq!(records.items.len(), 3);
+            assert_eq!(records.enrichment_candidates.len(), 1);
+            assert_eq!(records.candidate_reviews.len(), 1);
+
+            let exp = explain_connection(&records, "one.example.com", "fourth.example.com");
+            assert_eq!(exp.shared_paths.len(), 1);
+            assert!(exp.shared_paths[0].concurrent);
+
+            let enrichment: Vec<_> = records
+                .enrichment_candidates
+                .iter()
+                .map(|r| r.candidate.clone())
+                .collect();
+            let mut reviews = BTreeMap::new();
+            for r in &records.candidate_reviews {
+                reviews.insert(r.entity_id.clone(), r.decision);
+            }
+            let metrics = compute_discovery_metrics(&records, &[], &enrichment, &reviews);
+            assert_eq!(metrics.known_assets, 3);
+            assert_eq!(metrics.total_unique_candidates, 1);
+            assert_eq!(metrics.candidate_review.reviewed_precision, Some(1.0));
+
+            // Subsequent scan moves one.example.com to a new IP without losing history.
+            storage
+                .save(&dns_obs(
+                    "dns-one-v2",
+                    "one.example.com",
+                    &["203.0.113.99"],
+                    t1,
+                ))
+                .unwrap();
+            let updated = storage.read_all_records().unwrap();
+            let rels = related_entities(&updated, "one.example.com");
+            assert_eq!(rels.direct.len(), 2);
+            assert!(rels
+                .direct
+                .iter()
+                .any(|r| !r.is_current && r.target.id == "203.0.113.10"));
+            assert!(rels
+                .direct
+                .iter()
+                .any(|r| r.is_current && r.target.id == "203.0.113.99"));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

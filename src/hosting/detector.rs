@@ -74,7 +74,8 @@ pub struct NetworkAttribution {
 /// Origin hosting attribution kept strictly separate from CDN/edge intermediaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OriginAttribution {
-    Observed {
+    /// Hypothesis derived from non-CDN CNAME or ASN signals (not first-party confirmed).
+    Heuristic {
         provider_id: String,
         provider_name: String,
         provider_category: String,
@@ -101,7 +102,7 @@ pub struct InfrastructureAttribution {
     pub network: Vec<NetworkAttribution>,
     pub application_platform: Vec<ProviderAttribution>,
     pub origin: OriginAttribution,
-    pub rule_version: &'static str,
+    pub rule_version: String,
 }
 
 /// Hosting detection engine.
@@ -391,7 +392,7 @@ impl HostingDetector {
             } else {
                 AttributionStatus::HeuristicCandidate
             };
-            OriginAttribution::Observed {
+            OriginAttribution::Heuristic {
                 provider_id: p.id.clone(),
                 provider_name: p.name.clone(),
                 provider_category: p.category.to_string(),
@@ -431,7 +432,7 @@ impl HostingDetector {
             network,
             application_platform,
             origin,
-            rule_version: "2026-11-23.v2",
+            rule_version: "2026-11-23.v2".to_string(),
         }
     }
 
@@ -445,7 +446,7 @@ impl HostingDetector {
         if cdn_detected {
             let evidence = match &attr.origin {
                 OriginAttribution::Unknown { evidence, .. }
-                | OriginAttribution::Observed { evidence, .. }
+                | OriginAttribution::Heuristic { evidence, .. }
                 | OriginAttribution::Conflicting { evidence, .. } => evidence.clone(),
             };
             return DetectionResult {
@@ -474,7 +475,7 @@ impl HostingDetector {
         }
 
         match attr.origin {
-            OriginAttribution::Observed {
+            OriginAttribution::Heuristic {
                 provider_id,
                 provider_name,
                 provider_category,
@@ -536,6 +537,7 @@ pub fn detect_hosting(
         asn_by_ip,
     };
 
+    let attr = detector.attribute(&input, None);
     let result = detector.detect(&input);
 
     let obs = HostingObservation {
@@ -550,6 +552,7 @@ pub fn detect_hosting(
         confidence: result.confidence,
         detection_method: result.detection_method,
         evidence: result.evidence,
+        attribution: Some(attr),
         checked_at: Utc::now(),
         source: "detector".to_string(),
     };
@@ -580,6 +583,7 @@ pub fn detect_hosting_batch(
             asn_by_ip,
         };
 
+        let attr = detector.attribute(&input, None);
         let result = detector.detect(&input);
 
         let obs = HostingObservation {
@@ -594,6 +598,7 @@ pub fn detect_hosting_batch(
             confidence: result.confidence,
             detection_method: result.detection_method,
             evidence: result.evidence,
+            attribution: Some(attr),
             checked_at: Utc::now(),
             source: "detector".to_string(),
         };
