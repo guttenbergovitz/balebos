@@ -23,6 +23,9 @@ pub enum Command {
         kind: ProbeKind,
         target: String,
     },
+    Drift {
+        within_hours: u64,
+    },
     Migrate {
         from: Option<String>,
     },
@@ -240,6 +243,12 @@ pub fn parse_command() -> Option<Command> {
         "diff" => Some(Command::Diff),
         "check" => Some(Command::Check),
         "report" => Some(Command::Report),
+        "drift" => {
+            let within_hours = find_flag_value(args.as_slice(), "--within")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(24);
+            Some(Command::Drift { within_hours })
+        }
         "migrate" => {
             let from = args.get(2).cloned();
             Some(Command::Migrate { from })

@@ -9,6 +9,7 @@ pub mod probe;
 pub mod report;
 pub mod risk;
 pub mod scan;
+pub mod snapshot;
 pub mod stats;
 pub mod status;
 pub mod tags;

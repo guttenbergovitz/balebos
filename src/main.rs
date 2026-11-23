@@ -21,6 +21,9 @@ fn print_usage() {
     eprintln!("  balebos diff                       - Show domain changes (last 7 days)");
     eprintln!("  balebos check                      - Check for inventory issues and anomalies");
     eprintln!("  balebos report                     - Generate consolidated status report");
+    eprintln!(
+        "  balebos drift [--within <hours>]   - Classified drift since the window (default 24h)"
+    );
     eprintln!("  balebos migrate [dir]              - Migrate legacy Parquet data to SQLite");
     eprintln!("  balebos archive build|verify|restore [id] - Manage sealed evidence archive");
     eprintln!("  balebos ui                         - Launch interactive TUI dashboard");
@@ -113,6 +116,12 @@ fn main() {
         Command::Check => handlers::check::cmd_check(&storage, &ignore_patterns),
         Command::Report => handlers::check::cmd_report(&storage, &ignore_patterns),
         Command::Probe { kind, target } => handlers::probe::cmd_probe(kind, &target, &storage),
+        Command::Drift { within_hours } => {
+            if let Err(e) = handlers::drift::cmd_drift(within_hours, &storage) {
+                eprintln!("Drift report failed: {e}");
+                process::exit(EXIT_STORAGE_ERROR);
+            }
+        }
         Command::Migrate { from } => {
             if let Err(e) = handlers::migrate::cmd_migrate(from) {
                 eprintln!("Migration failed: {e}");

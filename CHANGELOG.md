@@ -33,6 +33,11 @@ same machine, rustc 1.100.0)
   with explicit coverage. Absence is interpreted strictly through
   completeness; unobserved aspects report insufficient evidence without
   blocking comparable aspects.
+- Snapshot assembly and `balebos drift [--within <hours>]`: materialises
+  drift views from recorded observations (latest evidence per target at an
+  optional time boundary; completeness from the latest scan report) and
+  prints classified drift with evidence. Absences in an incomplete window
+  are reported as "not observed", never as verified change.
 
 ## [2.0.0-alpha.1] - 2026-11-23
 
