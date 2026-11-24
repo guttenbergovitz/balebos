@@ -812,14 +812,6 @@ pub fn run_single_recon_with_events(
         total_targets: Some(targets.len()),
         at: chrono::Utc::now(),
     });
-    for t in &targets {
-        on_event(ScanEvent::TargetStarted {
-            run_id: run_id.to_string(),
-            stage: "dns".to_string(),
-            target: t.clone(),
-            at: chrono::Utc::now(),
-        });
-    }
     let dns_observations =
         match probe::dns::probe_dns_batch_with_progress(&targets, storage, &|host| {
             on_event(ScanEvent::TargetCompleted {
@@ -888,14 +880,6 @@ pub fn run_single_recon_with_events(
         total_targets: Some(http_targets.len()),
         at: chrono::Utc::now(),
     });
-    for t in &http_targets {
-        on_event(ScanEvent::TargetStarted {
-            run_id: run_id.to_string(),
-            stage: "http".to_string(),
-            target: t.clone(),
-            at: chrono::Utc::now(),
-        });
-    }
     let http_observations = if http_targets.is_empty() {
         let r = ReconStepResult {
             name: "http",

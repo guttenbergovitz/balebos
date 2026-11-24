@@ -48,7 +48,8 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
     app: &mut App,
 ) -> crate::error::Result<()> {
     let mut last_scan_state = false;
-    let mut last_event_count = 0usize;
+    let mut last_event_revision = 0u64;
+    let mut last_refresh_at = std::time::Instant::now();
 
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -93,20 +94,24 @@ fn run_loop<B: ratatui::backend::Backend<Error = io::Error>>(
             }
         }
 
-        // Incremental refresh while scanning + final refresh on finish
+        // Incremental rate-limited refresh while scanning + final refresh on finish
         let is_scanning = *app.is_scanning.lock().unwrap_or_else(|p| p.into_inner());
-        let event_count = app
+        let event_revision = app
             .scan_status
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .event_log
-            .len();
-        if (last_scan_state && !is_scanning) || (is_scanning && event_count > last_event_count) {
+            .event_revision;
+        let finished_now = last_scan_state && !is_scanning;
+        let due_incremental = is_scanning
+            && event_revision > last_event_revision
+            && last_refresh_at.elapsed() >= Duration::from_millis(500);
+        if finished_now || due_incremental {
             if let Err(e) = app.refresh() {
                 app.set_status(format!("❌ Refresh failed: {e}"));
             }
+            last_event_revision = event_revision;
+            last_refresh_at = std::time::Instant::now();
         }
-        last_event_count = event_count;
         last_scan_state = is_scanning;
 
         if app.should_quit {

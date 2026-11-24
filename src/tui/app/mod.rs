@@ -199,6 +199,8 @@ pub struct ScanState {
     pub error_count: usize,
     pub live_discoveries: Vec<String>,
     pub event_log: Vec<crate::domain::scan_event::ScanEvent>,
+    /// Monotonically incremented on every applied event (never capped).
+    pub event_revision: u64,
 }
 
 impl Default for ScanState {
@@ -219,6 +221,7 @@ impl Default for ScanState {
             error_count: 0,
             live_discoveries: Vec::new(),
             event_log: Vec::new(),
+            event_revision: 0,
         }
     }
 }
@@ -372,6 +375,7 @@ impl ScanState {
         if self.event_log.len() > 200 {
             self.event_log.remove(0);
         }
+        self.event_revision = self.event_revision.saturating_add(1);
     }
 }
 
@@ -622,5 +626,6 @@ mod tests {
             finished_at: now,
         });
         assert_eq!(s.current_stage.as_deref(), Some("cancelled"));
+        assert_eq!(s.event_revision, 8);
     }
 }

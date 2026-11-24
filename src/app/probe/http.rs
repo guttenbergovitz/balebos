@@ -5,10 +5,8 @@ use crate::inventory::ItemType;
 use crate::storage::{StorageEngine, StorageEngineExt};
 use chrono::Utc;
 use serde::Deserialize;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::thread;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 // DTO for httpx JSON output
@@ -271,86 +269,75 @@ fn probe_http_batch_with_progress_inner(
             );
         }
 
-        let mut child = Command::new("httpx")
-            .args([
-                "-json",
-                "-td",
-                "-title",
-                "-server",
-                "-cdn",
-                "-favicon",
-                "-tls-probe",
-                "-fc", "301,302,307,308",
-                "-fr",
-                "-include-chain",
-                "-silent",
-                "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "-x", "get",
-                "-retries", "2",
-                "-timeout", "10",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let mut stdin = child.stdin.take().ok_or(ProbeError::ToolFailed {
-            tool: "httpx".to_string(),
-            stderr: "failed to open stdin pipe".to_string(),
-        })?;
-
         let mut clean_targets = Vec::new();
         for target in chunk {
             let clean = target.trim().replace("http://", "").replace("https://", "");
             clean_targets.push(clean);
         }
-
         let targets_string = clean_targets.join("\n") + "\n";
 
-        thread::spawn(move || {
-            let _ = stdin.write_all(targets_string.as_bytes());
-        });
+        let mut cmd = Command::new("httpx");
+        cmd.args([
+            "-json",
+            "-td",
+            "-title",
+            "-server",
+            "-cdn",
+            "-favicon",
+            "-tls-probe",
+            "-fc", "301,302,307,308",
+            "-fr",
+            "-include-chain",
+            "-silent",
+            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "-x", "get",
+            "-retries", "2",
+            "-timeout", "10",
+        ]);
 
-        let stdout = child.stdout.take().ok_or(ProbeError::ToolFailed {
-            tool: "httpx".to_string(),
-            stderr: "failed to open stdout pipe".to_string(),
-        })?;
-        let reader = BufReader::new(stdout);
-        let mut observations = Vec::new();
-
-        for (line_idx, line) in reader.lines().enumerate() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(&line) {
-                let input_from_httpx = parsed.input.clone();
-
-                // Match input to the original target to preserve its casing/format
-                let original = chunk
-                    .iter()
-                    .find(|&t| {
-                        let clean = t.trim().replace("http://", "").replace("https://", "");
-                        clean == input_from_httpx
-                    })
-                    .map(|s| s.as_str())
-                    .unwrap_or(&input_from_httpx);
-
-                let obs = map_httpx_to_observation(parsed, original);
-
-                if let Some(ref cb) = on_progress {
-                    // Global progress calculation if needed, here we just use chunk local
-                    cb(line_idx + 1, chunk.len(), &obs.target);
+        let observations = Mutex::new(Vec::new());
+        let line_idx = Mutex::new(0usize);
+        let _ = process::stream_bounded(
+            &mut cmd,
+            Some(targets_string),
+            std::time::Duration::from_secs(300),
+            process::DEFAULT_MAX_OUTPUT,
+            &|line| {
+                if line.trim().is_empty() {
+                    return;
                 }
-                if let Some(cb) = on_target {
-                    cb(&obs.target);
-                }
+                if let Ok(parsed) = serde_json::from_str::<HttpxOutput>(line) {
+                    let input_from_httpx = parsed.input.clone();
+                    let original = chunk
+                        .iter()
+                        .find(|&t| {
+                            let clean = t.trim().replace("http://", "").replace("https://", "");
+                            clean == input_from_httpx
+                        })
+                        .map(|s| s.as_str())
+                        .unwrap_or(&input_from_httpx);
 
-                observations.push(obs);
-            }
-        }
+                    let obs = map_httpx_to_observation(parsed, original);
+                    let idx = if let Ok(mut g) = line_idx.lock() {
+                        *g += 1;
+                        *g
+                    } else {
+                        1
+                    };
+                    if let Some(ref cb) = on_progress {
+                        cb(idx, chunk.len(), &obs.target);
+                    }
+                    if let Some(cb) = on_target {
+                        cb(&obs.target);
+                    }
+                    if let Ok(mut guard) = observations.lock() {
+                        guard.push(obs);
+                    }
+                }
+            },
+        )?;
+        let observations = observations.into_inner().unwrap_or_default();
 
         if save_to_storage && !observations.is_empty() {
             if let Some(s) = storage {
@@ -358,14 +345,6 @@ fn probe_http_batch_with_progress_inner(
             }
         }
         all_observations.extend(observations);
-
-        // Backstop envelope: the stdout reader above finishes when httpx
-        // closes its output; if the process hangs regardless, kill and reap.
-        let _ = process::wait_bounded(
-            child,
-            std::time::Duration::from_secs(300),
-            process::DEFAULT_MAX_OUTPUT,
-        );
     }
 
     Ok(all_observations)

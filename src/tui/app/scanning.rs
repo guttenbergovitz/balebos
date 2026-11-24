@@ -115,6 +115,8 @@ impl App {
             } else if !failures.is_empty() {
                 let first = &failures[0];
                 status.message = format!("❌ {} failed: {}", first.name, first.message);
+            } else if err_count > 0 {
+                status.message = format!("⚠ Scan completed with {} partial error(s)", err_count);
             } else {
                 status.message = "✓ Scan completed".to_string();
             }

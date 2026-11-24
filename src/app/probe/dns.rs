@@ -6,9 +6,8 @@ use crate::storage::{StorageEngine, StorageEngineExt};
 use chrono::Utc;
 use serde::Deserialize;
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
@@ -80,86 +79,82 @@ fn probe_dns_batch_inner(
         let temp_file = temp_dir.join(format!("balebos_dns_{}.txt", Uuid::new_v4()));
         fs::write(&temp_file, chunk.join("\n"))?;
 
-        let mut child = Command::new("dnsx")
-            .args([
-                "-l",
-                &temp_file.to_string_lossy(),
-                "-json",
-                "-a",
-                "-aaaa",
-                "-cname",
-                "-mx",
-                "-ns",
-                "-txt",
-                "-soa",
-                "-srv",
-                "-silent",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let observations = Mutex::new(Vec::new());
+        let mut cmd = Command::new("dnsx");
+        cmd.args([
+            "-l",
+            &temp_file.to_string_lossy(),
+            "-json",
+            "-a",
+            "-aaaa",
+            "-cname",
+            "-mx",
+            "-ns",
+            "-txt",
+            "-soa",
+            "-srv",
+            "-silent",
+        ]);
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| std::io::Error::other("failed to open dnsx stdout pipe"))?;
-        let mut observations = Vec::new();
-        let reader = BufReader::new(stdout);
-
-        for line in reader.lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            match serde_json::from_str::<DnsxOutput>(&line) {
-                Ok(parsed) => {
-                    let soa_strings = parsed
-                        .soa
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|s| {
-                            format!(
-                                "ns:{} mailbox:{}",
-                                s.ns.unwrap_or_default(),
-                                s.mailbox.unwrap_or_default()
-                            )
-                        })
-                        .collect();
-
-                    let obs = DnsObservation {
-                        item_type: ItemType::DnsRecord,
-                        id: Uuid::new_v4().to_string(),
-                        asset_type: "domain".to_string(),
-                        target: parsed.host,
-                        a: parsed.a,
-                        aaaa: parsed.aaaa,
-                        cname: parsed.cname,
-                        mx: parsed.mx,
-                        ns: parsed.ns,
-                        txt: parsed.txt,
-                        soa: soa_strings,
-                        srv: parsed.srv,
-                        checked_at: Utc::now(),
-                        source: "dnsx".to_string(),
-                    };
-                    if let Some(cb) = on_target {
-                        cb(&obs.target);
-                    }
-                    observations.push(obs);
-                }
-                Err(e) => {
-                    eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
-                }
-            }
-        }
-
-        let _ = process::wait_bounded(
-            child,
+        let status = process::stream_bounded(
+            &mut cmd,
+            None,
             std::time::Duration::from_secs(300),
             process::DEFAULT_MAX_OUTPUT,
-        );
+            &|line| {
+                if line.trim().is_empty() {
+                    return;
+                }
+                match serde_json::from_str::<DnsxOutput>(line) {
+                    Ok(parsed) => {
+                        let soa_strings = parsed
+                            .soa
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|s| {
+                                format!(
+                                    "ns:{} mailbox:{}",
+                                    s.ns.unwrap_or_default(),
+                                    s.mailbox.unwrap_or_default()
+                                )
+                            })
+                            .collect();
+
+                        let obs = DnsObservation {
+                            item_type: ItemType::DnsRecord,
+                            id: Uuid::new_v4().to_string(),
+                            asset_type: "domain".to_string(),
+                            target: parsed.host,
+                            a: parsed.a,
+                            aaaa: parsed.aaaa,
+                            cname: parsed.cname,
+                            mx: parsed.mx,
+                            ns: parsed.ns,
+                            txt: parsed.txt,
+                            soa: soa_strings,
+                            srv: parsed.srv,
+                            checked_at: Utc::now(),
+                            source: "dnsx".to_string(),
+                        };
+                        if let Some(cb) = on_target {
+                            cb(&obs.target);
+                        }
+                        if let Ok(mut guard) = observations.lock() {
+                            guard.push(obs);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to parse dnsx output line: {}. Error: {}", line, e);
+                    }
+                }
+            },
+        )?;
         let _ = fs::remove_file(&temp_file);
+        if !status.success() {
+            eprintln!("      ✗ DNS chunk failed");
+            continue;
+        }
+        let observations = observations.into_inner().unwrap_or_default();
 
         if save_to_storage && !observations.is_empty() {
             if let Some(s) = storage {
