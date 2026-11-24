@@ -74,6 +74,129 @@ pub fn wait_bounded(child: Child, timeout: Duration, max_output: usize) -> Resul
     finish_bounded(child, timeout, max_output)
 }
 
+/// Execute `cmd` with optional `stdin_data`, streaming `stdout` line-by-line
+/// to `on_line` while draining `stderr` concurrently and enforcing `timeout`
+/// and operator cancellation from the moment the process starts.
+pub fn stream_bounded(
+    cmd: &mut Command,
+    stdin_data: Option<String>,
+    timeout: Duration,
+    max_output: usize,
+    on_line: &dyn Fn(&str),
+) -> Result<std::process::ExitStatus> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::mpsc::{self, RecvTimeoutError};
+
+    configure_command(cmd);
+    let mut child = cmd
+        .stdin(if stdin_data.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                BalebosError::Probe(crate::error::ProbeError::ToolNotFound {
+                    tool: program_name(cmd),
+                })
+            } else {
+                BalebosError::Probe(crate::error::ProbeError::Execution(e))
+            }
+        })?;
+
+    let stdin = child.stdin.take();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let start = Instant::now();
+
+    std::thread::scope(|scope| {
+        if let (Some(mut pipe), Some(data)) = (stdin, stdin_data) {
+            scope.spawn(move || {
+                let _ = pipe.write_all(data.as_bytes());
+            });
+        }
+
+        let stderr_handle = scope.spawn(move || {
+            stderr.map_or_else(|| (Vec::new(), false), |s| read_capped(s, max_output))
+        });
+
+        let (tx, rx) = mpsc::channel::<String>();
+        let stdout_handle = scope.spawn(move || -> bool {
+            let Some(out) = stdout else {
+                return false;
+            };
+            let mut reader = BufReader::new(out);
+            let mut total_bytes = 0usize;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) => return false,
+                    Ok(n) => {
+                        total_bytes = total_bytes.saturating_add(n);
+                        if total_bytes > max_output {
+                            return true;
+                        }
+                        let trimmed = line.trim_end_matches(['\r', '\n']);
+                        if tx.send(trimmed.to_string()).is_err() {
+                            return false;
+                        }
+                    }
+                    Err(_) => return false,
+                }
+            }
+        });
+
+        let mut aborted_err: Option<BalebosError> = None;
+        loop {
+            match rx.recv_timeout(POLL_INTERVAL) {
+                Ok(line) => {
+                    on_line(&line);
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    if is_cancelled() {
+                        terminate_group(&mut child);
+                        aborted_err = Some(process_err("cancelled by the operator"));
+                        break;
+                    }
+                    if start.elapsed() > timeout {
+                        terminate_group(&mut child);
+                        aborted_err = Some(process_err(format!(
+                            "scanner exceeded the {:?} timeout and was terminated",
+                            timeout
+                        )));
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        }
+
+        drop(rx);
+        let status = child
+            .wait()
+            .map_err(|e| BalebosError::Probe(crate::error::ProbeError::Execution(e)))?;
+
+        let stdout_overflow = stdout_handle.join().unwrap_or(false);
+        let (_stderr_data, stderr_overflow) = stderr_handle.join().unwrap_or((Vec::new(), false));
+
+        if let Some(err) = aborted_err {
+            return Err(err);
+        }
+        if stdout_overflow || stderr_overflow {
+            return Err(process_err(format!(
+                "scanner output exceeded the {} MiB bound",
+                max_output / (1024 * 1024)
+            )));
+        }
+
+        Ok(status)
+    })
+}
+
 fn finish_bounded(mut child: Child, timeout: Duration, max_output: usize) -> Result<Output> {
     // Streams may already have been taken by a streaming adapter; missing
     // streams read as empty.
@@ -304,5 +427,34 @@ mod tests {
             start.elapsed() < Duration::from_secs(5),
             "cancellation took too long"
         );
+    }
+
+    #[test]
+    fn stream_bounded_streams_lines_drains_stderr_and_enforces_timeout() {
+        let mut lines = Vec::new();
+        let lines_cell = std::sync::Mutex::new(&mut lines);
+        // Emit stdout lines while flooding stderr (>64KiB pipe buffer) concurrently.
+        let mut cmd = sh("printf 'one\\ntwo\\n'; head -c 131072 /dev/zero | tr '\\0' 'x' >&2");
+        let status = stream_bounded(
+            &mut cmd,
+            None,
+            Duration::from_secs(5),
+            1024 * 1024,
+            &|line| {
+                if let Ok(mut g) = lines_cell.lock() {
+                    g.push(line.to_string());
+                }
+            },
+        )
+        .unwrap();
+        assert!(status.success());
+        assert_eq!(lines, vec!["one", "two"]);
+
+        // Silent hung process must be terminated on timeout without blocking on stdout.
+        let start = Instant::now();
+        let mut hung = sh("sleep 30");
+        let err = stream_bounded(&mut hung, None, Duration::from_millis(200), 1024, &|_| {});
+        assert!(err.is_err());
+        assert!(start.elapsed() < Duration::from_secs(5));
     }
 }
